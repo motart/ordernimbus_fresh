@@ -70,6 +70,29 @@ bootstrap_cdk() {
     fi
 }
 
+# Function to create SNS topics for monitoring
+setup_sns_topics() {
+    echo "📢 Setting up SNS topics for monitoring..."
+    
+    TOPIC_NAME="ordernimbus-$ENVIRONMENT-alerts"
+    
+    # Check if topic exists
+    if aws sns get-topic-attributes --topic-arn "arn:aws:sns:$AWS_REGION:$ACCOUNT_ID:$TOPIC_NAME" &>/dev/null; then
+        print_warning "SNS topic $TOPIC_NAME already exists"
+    else
+        aws sns create-topic --name "$TOPIC_NAME" --region $AWS_REGION
+        print_status "Created SNS topic: $TOPIC_NAME"
+        
+        # Subscribe alert email
+        ALERT_EMAIL="alerts@ordernimbus.com"
+        aws sns subscribe \
+            --topic-arn "arn:aws:sns:$AWS_REGION:$ACCOUNT_ID:$TOPIC_NAME" \
+            --protocol email \
+            --notification-endpoint "$ALERT_EMAIL"
+        print_status "Subscribed $ALERT_EMAIL to alerts"
+    fi
+}
+
 # Function to create parameter store values
 setup_parameters() {
     echo "⚙️  Setting up Parameter Store values..."
@@ -172,6 +195,9 @@ setup_s3_buckets() {
             if [ "$bucket_type" = "website" ]; then
                 # Enable static website hosting
                 aws s3 website s3://$bucket_name --index-document index.html --error-document error.html
+                
+                # Disable public access block first for website buckets
+                aws s3api delete-public-access-block --bucket "$bucket_name" || true
                 
                 # Set public read policy for website assets
                 cat > /tmp/website-policy.json << EOF
@@ -304,8 +330,8 @@ deploy_frontend() {
     FRONTEND_BUCKET="$STACK_PREFIX-$ENVIRONMENT-frontend-assets"
     
     # Build the React application
-    if [ -d "frontend" ]; then
-        cd frontend
+    if [ -d "app/frontend" ]; then
+        cd app/frontend
         
         # Install dependencies if needed
         if [ ! -d "node_modules" ]; then
@@ -323,22 +349,27 @@ deploy_frontend() {
         print_status "Deploying to S3..."
         aws s3 sync build/ s3://$FRONTEND_BUCKET/ --delete
         
-        # Get CloudFront distribution ID from CDK outputs
-        cd ..
-        DISTRIBUTION_ID=$(jq -r '."'$STACK_PREFIX-$ENVIRONMENT-frontend'".CloudFrontDistributionId' cdk-outputs-$ENVIRONMENT.json)
-        
-        if [ "$DISTRIBUTION_ID" != "null" ] && [ -n "$DISTRIBUTION_ID" ]; then
-            print_status "Invalidating CloudFront cache..."
-            aws cloudfront create-invalidation \
-                --distribution-id $DISTRIBUTION_ID \
-                --paths "/*" \
-                --query 'Invalidation.Id' \
-                --output text
+        # Get CloudFront distribution ID from CDK outputs (if exists)
+        cd ../..
+        if [ -f "cdk-outputs-$ENVIRONMENT.json" ]; then
+            DISTRIBUTION_ID=$(jq -r '."'$STACK_PREFIX-$ENVIRONMENT-frontend'".CloudFrontDistributionId // null' cdk-outputs-$ENVIRONMENT.json)
+            
+            if [ "$DISTRIBUTION_ID" != "null" ] && [ -n "$DISTRIBUTION_ID" ]; then
+                print_status "Invalidating CloudFront cache..."
+                aws cloudfront create-invalidation \
+                    --distribution-id $DISTRIBUTION_ID \
+                    --paths "/*" \
+                    --query 'Invalidation.Id' \
+                    --output text
+            else
+                print_status "No CloudFront distribution found, S3 website hosting active"
+                print_status "Frontend URL: http://$FRONTEND_BUCKET.s3-website-$AWS_REGION.amazonaws.com"
+            fi
         fi
         
         print_status "Frontend deployed successfully"
     else
-        print_warning "Frontend directory not found, skipping frontend deployment"
+        print_warning "Frontend directory not found at app/frontend, skipping frontend deployment"
     fi
 }
 
@@ -454,6 +485,7 @@ main() {
     bootstrap_cdk
     
     # AWS resources setup
+    setup_sns_topics
     setup_parameters
     setup_secure_parameters
     setup_s3_buckets
