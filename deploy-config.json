@@ -1,0 +1,108 @@
+{
+  "environments": {
+    "dev": {
+      "region": "us-east-1",
+      "scalingConfig": {
+        "minCapacity": 1,
+        "maxCapacity": 10,
+        "targetCpuUtilization": 50
+      },
+      "databaseConfig": {
+        "minACUs": 0.5,
+        "maxACUs": 16,
+        "multiAZ": false
+      },
+      "costLimits": {
+        "dailyLimit": 20,
+        "monthlyLimit": 500
+      },
+      "monitoring": {
+        "enableDetailedMetrics": true,
+        "logRetentionDays": 7,
+        "alerting": "slack"
+      }
+    },
+    "staging": {
+      "region": "us-east-1", 
+      "scalingConfig": {
+        "minCapacity": 2,
+        "maxCapacity": 50,
+        "targetCpuUtilization": 70
+      },
+      "databaseConfig": {
+        "minACUs": 0.5,
+        "maxACUs": 64,
+        "multiAZ": true
+      },
+      "costLimits": {
+        "dailyLimit": 100,
+        "monthlyLimit": 2500
+      },
+      "monitoring": {
+        "enableDetailedMetrics": true,
+        "logRetentionDays": 30,
+        "alerting": "pagerduty"
+      }
+    },
+    "production": {
+      "region": "us-east-1",
+      "scalingConfig": {
+        "minCapacity": 5,
+        "maxCapacity": 100,
+        "targetCpuUtilization": 70
+      },
+      "databaseConfig": {
+        "minACUs": 2,
+        "maxACUs": 128,
+        "multiAZ": true
+      },
+      "costLimits": {
+        "dailyLimit": 500,
+        "monthlyLimit": 15000
+      },
+      "monitoring": {
+        "enableDetailedMetrics": true,
+        "logRetentionDays": 90,
+        "alerting": "pagerduty"
+      }
+    }
+  },
+  "global": {
+    "projectName": "sales-forecasting-platform",
+    "stackPrefix": "ordernimbus",
+    "tagging": {
+      "Environment": "{{environment}}",
+      "Project": "OrderNimbus-Forecasting",
+      "Owner": "Platform-Team",
+      "CostCenter": "Engineering",
+      "Backup": "Required"
+    },
+    "security": {
+      "enableEncryption": true,
+      "enableVPCFlowLogs": true,
+      "enableCloudTrail": true,
+      "sslCertificateArn": null
+    }
+  },
+  "features": {
+    "enableMWAA": true,
+    "enableSageMaker": true,
+    "enableRedshiftServerless": false,
+    "enableSnowflake": true,
+    "enableMultiRegion": false
+  },
+  "integrations": {
+    "shopify": {
+      "enabled": true,
+      "apiVersion": "2023-10"
+    },
+    "slack": {
+      "enabled": true,
+      "webhook": "{{SLACK_WEBHOOK_URL}}"
+    },
+    "pagerduty": {
+      "enabled": true,
+      "integrationKey": "{{PAGERDUTY_INTEGRATION_KEY}}"
+    }
+  }
+}

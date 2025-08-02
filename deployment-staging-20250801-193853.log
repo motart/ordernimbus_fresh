@@ -1,0 +1,136 @@
+Starting deployment at Fri Aug  1 19:38:53 PDT 2025
+Deployment ID: deploy-20250801-193853-60676
+[0;34mℹ️  Checking AWS configuration...[0m
+[0;32m✅ AWS Account ID: 335021149718[0m
+[0;32m✅ Current Region: us-west-1[0m
+[0;34mℹ️  Setting up deployment notifications...[0m
+{
+    "TopicArn": "arn:aws:sns:us-east-1:335021149718:ordernimbus-deployment-notifications"
+}
+[0;34mℹ️  Setting up Parameter Store values...[0m
+{
+    "Version": 1,
+    "Tier": "Standard"
+}
+[0;32m✅ Created parameter: /ordernimbus/staging/database/master-username[0m
+{
+    "Version": 1,
+    "Tier": "Standard"
+}
+[0;32m✅ Created parameter: /ordernimbus/staging/database/name[0m
+{
+    "Version": 1,
+    "Tier": "Standard"
+}
+[0;32m✅ Created parameter: /ordernimbus/staging/api/cors-origins[0m
+[0;34mℹ️  Creating S3 buckets...[0m
+{
+    "Location": "/ordernimbus-staging-frontend-assets"
+}
+[0;32m✅ Created bucket: ordernimbus-staging-frontend-assets[0m
+[0;32m✅ Configured bucket: ordernimbus-staging-frontend-assets[0m
+{
+    "Location": "/ordernimbus-staging-data-lake"
+}
+[0;32m✅ Created bucket: ordernimbus-staging-data-lake[0m
+[0;32m✅ Configured bucket: ordernimbus-staging-data-lake[0m
+{
+    "Location": "/ordernimbus-staging-logs"
+}
+[0;32m✅ Created bucket: ordernimbus-staging-logs[0m
+[0;32m✅ Configured bucket: ordernimbus-staging-logs[0m
+[0;34mℹ️  Deploying CDK stacks...[0m
+[0;34mℹ️  Deploying stack: ordernimbus-staging-networking[0m
+[0;34mℹ️  Stack ordernimbus-staging-networking does not exist, will create[0m
+Need to install the following packages:
+cdk@2.1023.0
+Ok to proceed? (y) npm WARN exec The following package was not found and will be installed: ts-node@10.9.2
+node:internal/modules/cjs/loader:1147
+  throw err;
+  ^
+
+Error: Cannot find module './forecasting-platform.ts'
+Require stack:
+- /Users/rachid/workspace/ordernimbus_fresh/bin/imaginaryUncacheableRequireResolveScript
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1144:15)
+    at Function.resolve (node:internal/modules/helpers:187:19)
+    at requireResolveNonCached (/Users/rachid/.npm/_npx/1bf7c3c15bf47d04/node_modules/ts-node/dist/bin.js:549:16)
+    at getProjectSearchDir (/Users/rachid/.npm/_npx/1bf7c3c15bf47d04/node_modules/ts-node/dist/bin.js:519:40)
+    at phase3 (/Users/rachid/.npm/_npx/1bf7c3c15bf47d04/node_modules/ts-node/dist/bin.js:267:27)
+    at bootstrap (/Users/rachid/.npm/_npx/1bf7c3c15bf47d04/node_modules/ts-node/dist/bin.js:47:30)
+    at main (/Users/rachid/.npm/_npx/1bf7c3c15bf47d04/node_modules/ts-node/dist/bin.js:33:12)
+    at Object.<anonymous> (/Users/rachid/.npm/_npx/1bf7c3c15bf47d04/node_modules/ts-node/dist/bin.js:579:5)
+    at Module._compile (node:internal/modules/cjs/loader:1376:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1435:10) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [
+    '/Users/rachid/workspace/ordernimbus_fresh/bin/imaginaryUncacheableRequireResolveScript'
+  ]
+}
+
+Node.js v20.11.1
+
+NOTICES         (What's this? https://github.com/aws/aws-cdk/wiki/CLI-Notices)
+
+34892	CDK CLI will collect telemetry data on command usage starting at version 2.1100.0 (unless opted out)
+
+	Overview: We do not collect customer content and we anonymize the
+	          telemetry we do collect. See the attached issue for more
+	          information on what data is collected, why, and how to
+	          opt-out. Telemetry will NOT be collected for any CDK CLI
+	          version prior to version 2.1100.0 - regardless of
+	          opt-in/out. You can also preview the telemetry we will start
+	          collecting by logging it to a local file, by adding
+	          `--unstable=telemetry --telemetry-file=my/local/file` to any
+	          `cdk` command.
+
+	Affected versions: cli: ^2.0.0
+
+	More information at: https://github.com/aws/aws-cdk/issues/34892
+
+
+If you don’t want to see a notice anymore, use "cdk acknowledge <id>". For example, "cdk acknowledge 34892".
+npx ts-node --prefer-ts-exts bin/forecasting-platform.ts: Subprocess exited with error 1
+grep: invalid option -- P
+usage: grep [-abcdDEFGHhIiJLlMmnOopqRSsUVvwXxZz] [-A num] [-B num] [-C[num]]
+	[-e pattern] [-f file] [--binary-files=value] [--color=when]
+	[--context[=num]] [--directories=action] [--label] [--line-buffered]
+	[--null] [pattern] [file ...]
+[0;31m❌ Deployment failed at line 520 with exit code 1[0m
+[0;31m❌ Context: Stack deployment failed: ordernimbus-staging-networking[0m
+
+[0;35m🔄 INITIATING AUTOMATIC ROLLBACK[0m
+=========================================
+[1;33mDeleting created S3 buckets...[0m
+[1;33mDeleting created parameters...[0m
+[0;32m✅ Rollback completed successfully[0m
+
+[0;35m📋 ERROR REPORT[0m
+=========================================
+
+=========================================
+Error Context: CDK deployment failed for stack: ordernimbus-staging-networking
+Error Code: 1
+Timestamp: 2025-08-02T02:43:51Z
+=========================================
+
+Recent CloudWatch Logs:
+
+An error occurred (ResourceNotFoundException) when calling the FilterLogEvents operation: The specified log group does not exist.
+2025-08-01 19:43:52 - ERROR: Deployment failed at line 520 with exit code 1
+2025-08-01 19:43:52 - ERROR: Context: Stack deployment failed: ordernimbus-staging-networking
+=========================================
+Error Context: Stack deployment failed: ordernimbus-staging-networking
+Error Code: 1
+Timestamp: 2025-08-02T02:43:52Z
+=========================================
+
+Recent CloudWatch Logs:
+
+An error occurred (ResourceNotFoundException) when calling the FilterLogEvents operation: The specified log group does not exist.
+
+[1;33mDetailed logs available at:[0m
+  - Transaction log: /tmp/deploy-20250801-193853-60676-transaction.log
+  - Rollback log: /tmp/deploy-20250801-193853-60676-rollback.log
+  - Error report: /tmp/deploy-20250801-193853-60676-error-report.txt
+  - Deployment state: /tmp/deploy-20250801-193853-60676-state.json

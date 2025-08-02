@@ -1,0 +1,24 @@
+{
+  "ordernimbus-staging-networking": {
+    "ExportsOutputRefVPCB9E5F0B4BD23A326": "vpc-01cf9a883181ffebe",
+    "ExportsOutputRefVPCPrivateSubnet2SubnetCFCDAA7AB22CF85D": "subnet-005da2963b5e1091c",
+    "VpcId": "vpc-01cf9a883181ffebe",
+    "ExportsOutputRefVPCDatabaseSubnet1Subnet3E790B6FCC2F250A": "subnet-01b5c7fec8e30aaa0",
+    "ExportsOutputRefVPCDatabaseSubnet2Subnet93B13DD5FBB3CDD7": "subnet-07040e49f7c2a64df",
+    "ExportsOutputRefVPCPublicSubnet1SubnetB4246D30D84F935B": "subnet-0356b4e3d05d38d91",
+    "ExportsOutputRefVPCPrivateSubnet1Subnet8BCA10E01F79A1B7": "subnet-03c4fc963569216f4",
+    "ExportsOutputRefECSCluster7D463CD47A8DFE2F": "staging-forecasting-cluster",
+    "ExportsOutputRefVPCPublicSubnet2Subnet74179F3969CC10AD": "subnet-0b8c62a7c7e1e7b96",
+    "EcsClusterName": "staging-forecasting-cluster"
+  },
+  "ordernimbus-staging-security": {
+    "ExportsOutputFnGetAttDatabaseSecurityGroup7319C0F6GroupId72A1B827": "sg-0fc32aac3cc92f6d1",
+    "ExportsOutputFnGetAttUserPool6BA7E5F2Arn686ACC00": "arn:aws:cognito-idp:us-west-1:335021149718:userpool/us-west-1_16AzYnYkQ",
+    "UserPoolClientId": "lu8s9ugqmgjeva1kd7mussd96",
+    "UserPoolId": "us-west-1_16AzYnYkQ",
+    "ECSTaskRoleArn": "arn:aws:iam::335021149718:role/ordernimbus-staging-security-ECSTaskRoleF2ADB362-eerdRdYfG3ov",
+    "ExportsOutputFnGetAttALBSecurityGroup29A3BDEFGroupId2A9BC0BF": "sg-0d263e9be2632da28",
+    "ECSTaskExecutionRoleArn": "arn:aws:iam::335021149718:role/ordernimbus-staging-secur-ECSTaskExecutionRole911F5-xeJvFmLQz5AP",
+    "ExportsOutputFnGetAttECSSecurityGroupA14DBE7DGroupIdF26764D6": "sg-03b4b9058da693eb8"
+  }
+}

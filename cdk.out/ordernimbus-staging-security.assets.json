@@ -1,0 +1,21 @@
+{
+  "version": "45.0.0",
+  "files": {
+    "851f3d24eec11f81dd1a20ccb63b33a79dddee85373e00a160bc4269bddc5f68": {
+      "displayName": "ordernimbus-staging-security Template",
+      "source": {
+        "path": "ordernimbus-staging-security.template.json",
+        "packaging": "file"
+      },
+      "destinations": {
+        "335021149718-us-west-1-75d80aa4": {
+          "bucketName": "cdk-hnb659fds-assets-335021149718-us-west-1",
+          "objectKey": "851f3d24eec11f81dd1a20ccb63b33a79dddee85373e00a160bc4269bddc5f68.json",
+          "region": "us-west-1",
+          "assumeRoleArn": "arn:${AWS::Partition}:iam::335021149718:role/cdk-hnb659fds-file-publishing-role-335021149718-us-west-1"
+        }
+      }
+    }
+  },
+  "dockerImages": {}
+}

@@ -1,0 +1,694 @@
+{
+ "Description": "Monitoring and alerting for staging environment",
+ "Resources": {
+  "CriticalAlerts1F1E9D64": {
+   "Type": "AWS::SNS::Topic",
+   "Properties": {
+    "DisplayName": "Critical Alerts - staging",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Engineering"
+     },
+     {
+      "Key": "Environment",
+      "Value": "staging"
+     },
+     {
+      "Key": "Owner",
+      "Value": "Platform-Team"
+     },
+     {
+      "Key": "Project",
+      "Value": "OrderNimbus-Forecasting"
+     }
+    ],
+    "TopicName": "staging-critical-alerts"
+   },
+   "Metadata": {
+    "aws:cdk:path": "ordernimbus-staging-monitoring/CriticalAlerts/Resource"
+   }
+  },
+  "CriticalAlertsalertsordernimbuscom9BC5811C": {
+   "Type": "AWS::SNS::Subscription",
+   "Properties": {
+    "Endpoint": "alerts@ordernimbus.com",
+    "Protocol": "email",
+    "TopicArn": {
+     "Ref": "CriticalAlerts1F1E9D64"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "ordernimbus-staging-monitoring/CriticalAlerts/alerts@ordernimbus.com/Resource"
+   }
+  },
+  "WarningAlerts855AE01C": {
+   "Type": "AWS::SNS::Topic",
+   "Properties": {
+    "DisplayName": "Warning Alerts - staging",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Engineering"
+     },
+     {
+      "Key": "Environment",
+      "Value": "staging"
+     },
+     {
+      "Key": "Owner",
+      "Value": "Platform-Team"
+     },
+     {
+      "Key": "Project",
+      "Value": "OrderNimbus-Forecasting"
+     }
+    ],
+    "TopicName": "staging-warning-alerts"
+   },
+   "Metadata": {
+    "aws:cdk:path": "ordernimbus-staging-monitoring/WarningAlerts/Resource"
+   }
+  },
+  "WarningAlertswarningsordernimbuscomC0862135": {
+   "Type": "AWS::SNS::Subscription",
+   "Properties": {
+    "Endpoint": "warnings@ordernimbus.com",
+    "Protocol": "email",
+    "TopicArn": {
+     "Ref": "WarningAlerts855AE01C"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "ordernimbus-staging-monitoring/WarningAlerts/warnings@ordernimbus.com/Resource"
+   }
+  },
+  "APIHighErrorRateDEE84552": {
+   "Type": "AWS::CloudWatch::Alarm",
+   "Properties": {
+    "AlarmActions": [
+     {
+      "Ref": "CriticalAlerts1F1E9D64"
+     }
+    ],
+    "AlarmDescription": "API Gateway 5xx error rate is too high",
+    "AlarmName": "staging-api-high-error-rate",
+    "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+    "DatapointsToAlarm": 2,
+    "Dimensions": [
+     {
+      "Name": "ApiName",
+      "Value": "ordernimbus-staging-api"
+     }
+    ],
+    "EvaluationPeriods": 2,
+    "MetricName": "5XXError",
+    "Namespace": "AWS/ApiGateway",
+    "Period": 300,
+    "Statistic": "Sum",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Engineering"
+     },
+     {
+      "Key": "Environment",
+      "Value": "staging"
+     },
+     {
+      "Key": "Owner",
+      "Value": "Platform-Team"
+     },
+     {
+      "Key": "Project",
+      "Value": "OrderNimbus-Forecasting"
+     }
+    ],
+    "Threshold": 10,
+    "TreatMissingData": "notBreaching"
+   },
+   "Metadata": {
+    "aws:cdk:path": "ordernimbus-staging-monitoring/APIHighErrorRate/Resource"
+   }
+  },
+  "APIHighLatency38082004": {
+   "Type": "AWS::CloudWatch::Alarm",
+   "Properties": {
+    "AlarmActions": [
+     {
+      "Ref": "WarningAlerts855AE01C"
+     }
+    ],
+    "AlarmDescription": "API Gateway latency is too high",
+    "AlarmName": "staging-api-high-latency",
+    "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+    "DatapointsToAlarm": 2,
+    "Dimensions": [
+     {
+      "Name": "ApiName",
+      "Value": "ordernimbus-staging-api"
+     }
+    ],
+    "EvaluationPeriods": 3,
+    "MetricName": "Latency",
+    "Namespace": "AWS/ApiGateway",
+    "Period": 300,
+    "Statistic": "Average",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Engineering"
+     },
+     {
+      "Key": "Environment",
+      "Value": "staging"
+     },
+     {
+      "Key": "Owner",
+      "Value": "Platform-Team"
+     },
+     {
+      "Key": "Project",
+      "Value": "OrderNimbus-Forecasting"
+     }
+    ],
+    "Threshold": 5000,
+    "TreatMissingData": "notBreaching"
+   },
+   "Metadata": {
+    "aws:cdk:path": "ordernimbus-staging-monitoring/APIHighLatency/Resource"
+   }
+  },
+  "APIThrottling37CAB296": {
+   "Type": "AWS::CloudWatch::Alarm",
+   "Properties": {
+    "AlarmActions": [
+     {
+      "Ref": "WarningAlerts855AE01C"
+     }
+    ],
+    "AlarmDescription": "API Gateway is being throttled",
+    "AlarmName": "staging-api-throttling",
+    "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+    "DatapointsToAlarm": 1,
+    "Dimensions": [
+     {
+      "Name": "ApiName",
+      "Value": "ordernimbus-staging-api"
+     }
+    ],
+    "EvaluationPeriods": 2,
+    "MetricName": "4XXError",
+    "Namespace": "AWS/ApiGateway",
+    "Period": 300,
+    "Statistic": "Sum",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Engineering"
+     },
+     {
+      "Key": "Environment",
+      "Value": "staging"
+     },
+     {
+      "Key": "Owner",
+      "Value": "Platform-Team"
+     },
+     {
+      "Key": "Project",
+      "Value": "OrderNimbus-Forecasting"
+     }
+    ],
+    "Threshold": 50,
+    "TreatMissingData": "notBreaching"
+   },
+   "Metadata": {
+    "aws:cdk:path": "ordernimbus-staging-monitoring/APIThrottling/Resource"
+   }
+  },
+  "ECSHighCPUF2B88490": {
+   "Type": "AWS::CloudWatch::Alarm",
+   "Properties": {
+    "AlarmActions": [
+     {
+      "Ref": "WarningAlerts855AE01C"
+     }
+    ],
+    "AlarmDescription": "ECS service CPU utilization is too high",
+    "AlarmName": "staging-ecs-high-cpu",
+    "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+    "DatapointsToAlarm": 2,
+    "Dimensions": [
+     {
+      "Name": "ClusterName",
+      "Value": {
+       "Fn::ImportValue": "ordernimbus-staging-networking:ExportsOutputRefECSCluster7D463CD47A8DFE2F"
+      }
+     },
+     {
+      "Name": "ServiceName",
+      "Value": {
+       "Fn::ImportValue": "ordernimbus-staging-compute:ExportsOutputFnGetAttECSService89C005CDName4FF9E5F8"
+      }
+     }
+    ],
+    "EvaluationPeriods": 3,
+    "MetricName": "CPUUtilization",
+    "Namespace": "AWS/ECS",
+    "Period": 300,
+    "Statistic": "Average",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Engineering"
+     },
+     {
+      "Key": "Environment",
+      "Value": "staging"
+     },
+     {
+      "Key": "Owner",
+      "Value": "Platform-Team"
+     },
+     {
+      "Key": "Project",
+      "Value": "OrderNimbus-Forecasting"
+     }
+    ],
+    "Threshold": 80,
+    "TreatMissingData": "notBreaching"
+   },
+   "Metadata": {
+    "aws:cdk:path": "ordernimbus-staging-monitoring/ECSHighCPU/Resource"
+   }
+  },
+  "ECSHighMemory95AA6D52": {
+   "Type": "AWS::CloudWatch::Alarm",
+   "Properties": {
+    "AlarmActions": [
+     {
+      "Ref": "WarningAlerts855AE01C"
+     }
+    ],
+    "AlarmDescription": "ECS service memory utilization is too high",
+    "AlarmName": "staging-ecs-high-memory",
+    "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+    "DatapointsToAlarm": 2,
+    "Dimensions": [
+     {
+      "Name": "ClusterName",
+      "Value": {
+       "Fn::ImportValue": "ordernimbus-staging-networking:ExportsOutputRefECSCluster7D463CD47A8DFE2F"
+      }
+     },
+     {
+      "Name": "ServiceName",
+      "Value": {
+       "Fn::ImportValue": "ordernimbus-staging-compute:ExportsOutputFnGetAttECSService89C005CDName4FF9E5F8"
+      }
+     }
+    ],
+    "EvaluationPeriods": 3,
+    "MetricName": "MemoryUtilization",
+    "Namespace": "AWS/ECS",
+    "Period": 300,
+    "Statistic": "Average",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Engineering"
+     },
+     {
+      "Key": "Environment",
+      "Value": "staging"
+     },
+     {
+      "Key": "Owner",
+      "Value": "Platform-Team"
+     },
+     {
+      "Key": "Project",
+      "Value": "OrderNimbus-Forecasting"
+     }
+    ],
+    "Threshold": 85,
+    "TreatMissingData": "notBreaching"
+   },
+   "Metadata": {
+    "aws:cdk:path": "ordernimbus-staging-monitoring/ECSHighMemory/Resource"
+   }
+  },
+  "ECSLowTaskCountA8B25F41": {
+   "Type": "AWS::CloudWatch::Alarm",
+   "Properties": {
+    "AlarmActions": [
+     {
+      "Ref": "CriticalAlerts1F1E9D64"
+     }
+    ],
+    "AlarmDescription": "ECS service has too few running tasks",
+    "AlarmName": "staging-ecs-low-task-count",
+    "ComparisonOperator": "LessThanThreshold",
+    "DatapointsToAlarm": 2,
+    "Dimensions": [
+     {
+      "Name": "ClusterName",
+      "Value": {
+       "Fn::ImportValue": "ordernimbus-staging-networking:ExportsOutputRefECSCluster7D463CD47A8DFE2F"
+      }
+     },
+     {
+      "Name": "ServiceName",
+      "Value": {
+       "Fn::ImportValue": "ordernimbus-staging-compute:ExportsOutputFnGetAttECSService89C005CDName4FF9E5F8"
+      }
+     }
+    ],
+    "EvaluationPeriods": 2,
+    "MetricName": "RunningTaskCount",
+    "Namespace": "AWS/ECS",
+    "Period": 300,
+    "Statistic": "Average",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Engineering"
+     },
+     {
+      "Key": "Environment",
+      "Value": "staging"
+     },
+     {
+      "Key": "Owner",
+      "Value": "Platform-Team"
+     },
+     {
+      "Key": "Project",
+      "Value": "OrderNimbus-Forecasting"
+     }
+    ],
+    "Threshold": 1,
+    "TreatMissingData": "breaching"
+   },
+   "Metadata": {
+    "aws:cdk:path": "ordernimbus-staging-monitoring/ECSLowTaskCount/Resource"
+   }
+  },
+  "DBHighCPUD532C188": {
+   "Type": "AWS::CloudWatch::Alarm",
+   "Properties": {
+    "AlarmActions": [
+     {
+      "Ref": "WarningAlerts855AE01C"
+     }
+    ],
+    "AlarmDescription": "Database CPU utilization is too high",
+    "AlarmName": "staging-db-high-cpu",
+    "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+    "DatapointsToAlarm": 2,
+    "Dimensions": [
+     {
+      "Name": "DBClusterIdentifier",
+      "Value": {
+       "Fn::ImportValue": "ordernimbus-staging-database:ExportsOutputRefAuroraCluster23D869C0CA1C7DB5"
+      }
+     }
+    ],
+    "EvaluationPeriods": 3,
+    "MetricName": "CPUUtilization",
+    "Namespace": "AWS/RDS",
+    "Period": 300,
+    "Statistic": "Average",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Engineering"
+     },
+     {
+      "Key": "Environment",
+      "Value": "staging"
+     },
+     {
+      "Key": "Owner",
+      "Value": "Platform-Team"
+     },
+     {
+      "Key": "Project",
+      "Value": "OrderNimbus-Forecasting"
+     }
+    ],
+    "Threshold": 80,
+    "TreatMissingData": "notBreaching"
+   },
+   "Metadata": {
+    "aws:cdk:path": "ordernimbus-staging-monitoring/DBHighCPU/Resource"
+   }
+  },
+  "DBHighConnections9B00DD63": {
+   "Type": "AWS::CloudWatch::Alarm",
+   "Properties": {
+    "AlarmActions": [
+     {
+      "Ref": "WarningAlerts855AE01C"
+     }
+    ],
+    "AlarmDescription": "Database connection count is too high",
+    "AlarmName": "staging-db-high-connections",
+    "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+    "DatapointsToAlarm": 2,
+    "Dimensions": [
+     {
+      "Name": "DBClusterIdentifier",
+      "Value": {
+       "Fn::ImportValue": "ordernimbus-staging-database:ExportsOutputRefAuroraCluster23D869C0CA1C7DB5"
+      }
+     }
+    ],
+    "EvaluationPeriods": 2,
+    "MetricName": "DatabaseConnections",
+    "Namespace": "AWS/RDS",
+    "Period": 300,
+    "Statistic": "Average",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Engineering"
+     },
+     {
+      "Key": "Environment",
+      "Value": "staging"
+     },
+     {
+      "Key": "Owner",
+      "Value": "Platform-Team"
+     },
+     {
+      "Key": "Project",
+      "Value": "OrderNimbus-Forecasting"
+     }
+    ],
+    "Threshold": 80,
+    "TreatMissingData": "notBreaching"
+   },
+   "Metadata": {
+    "aws:cdk:path": "ordernimbus-staging-monitoring/DBHighConnections/Resource"
+   }
+  },
+  "CloudFrontHighErrorRate64BF57E5": {
+   "Type": "AWS::CloudWatch::Alarm",
+   "Properties": {
+    "AlarmActions": [
+     {
+      "Ref": "WarningAlerts855AE01C"
+     }
+    ],
+    "AlarmDescription": "CloudFront 4xx/5xx error rate is too high",
+    "AlarmName": "staging-cloudfront-high-error-rate",
+    "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+    "DatapointsToAlarm": 2,
+    "Dimensions": [
+     {
+      "Name": "DistributionId",
+      "Value": {
+       "Fn::ImportValue": "ordernimbus-staging-frontend:ExportsOutputRefDistribution830FAC524DF81588"
+      }
+     }
+    ],
+    "EvaluationPeriods": 3,
+    "MetricName": "4xxErrorRate",
+    "Namespace": "AWS/CloudFront",
+    "Period": 300,
+    "Statistic": "Average",
+    "Tags": [
+     {
+      "Key": "CostCenter",
+      "Value": "Engineering"
+     },
+     {
+      "Key": "Environment",
+      "Value": "staging"
+     },
+     {
+      "Key": "Owner",
+      "Value": "Platform-Team"
+     },
+     {
+      "Key": "Project",
+      "Value": "OrderNimbus-Forecasting"
+     }
+    ],
+    "Threshold": 5,
+    "TreatMissingData": "notBreaching"
+   },
+   "Metadata": {
+    "aws:cdk:path": "ordernimbus-staging-monitoring/CloudFrontHighErrorRate/Resource"
+   }
+  },
+  "Dashboard9E4231ED": {
+   "Type": "AWS::CloudWatch::Dashboard",
+   "Properties": {
+    "DashboardBody": {
+     "Fn::Join": [
+      "",
+      [
+       "{\"widgets\":[{\"type\":\"metric\",\"width\":12,\"height\":6,\"x\":0,\"y\":0,\"properties\":{\"view\":\"timeSeries\",\"title\":\"API Gateway Metrics\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[\"AWS/ApiGateway\",\"Count\",\"ApiName\",\"ordernimbus-staging-api\",{\"label\":\"Request Count\",\"stat\":\"Sum\"}],[\"AWS/ApiGateway\",\"5XXError\",\"ApiName\",\"ordernimbus-staging-api\",{\"label\":\"5xx Errors\",\"stat\":\"Sum\"}],[\"AWS/ApiGateway\",\"4XXError\",\"ApiName\",\"ordernimbus-staging-api\",{\"label\":\"4xx Errors\",\"stat\":\"Sum\"}],[\"AWS/ApiGateway\",\"Latency\",\"ApiName\",\"ordernimbus-staging-api\",{\"label\":\"Latency (avg)\",\"yAxis\":\"right\"}]],\"yAxis\":{}}},{\"type\":\"metric\",\"width\":12,\"height\":6,\"x\":0,\"y\":6,\"properties\":{\"view\":\"timeSeries\",\"title\":\"ECS Service Metrics\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[\"AWS/ECS\",\"CPUUtilization\",\"ClusterName\",\"",
+       {
+        "Fn::ImportValue": "ordernimbus-staging-networking:ExportsOutputRefECSCluster7D463CD47A8DFE2F"
+       },
+       "\",\"ServiceName\",\"",
+       {
+        "Fn::ImportValue": "ordernimbus-staging-compute:ExportsOutputFnGetAttECSService89C005CDName4FF9E5F8"
+       },
+       "\",{\"label\":\"CPU Utilization\"}],[\"AWS/ECS\",\"MemoryUtilization\",\"ClusterName\",\"",
+       {
+        "Fn::ImportValue": "ordernimbus-staging-networking:ExportsOutputRefECSCluster7D463CD47A8DFE2F"
+       },
+       "\",\"ServiceName\",\"",
+       {
+        "Fn::ImportValue": "ordernimbus-staging-compute:ExportsOutputFnGetAttECSService89C005CDName4FF9E5F8"
+       },
+       "\",{\"label\":\"Memory Utilization\"}],[\"AWS/ECS\",\"RunningTaskCount\",\"ClusterName\",\"",
+       {
+        "Fn::ImportValue": "ordernimbus-staging-networking:ExportsOutputRefECSCluster7D463CD47A8DFE2F"
+       },
+       "\",\"ServiceName\",\"",
+       {
+        "Fn::ImportValue": "ordernimbus-staging-compute:ExportsOutputFnGetAttECSService89C005CDName4FF9E5F8"
+       },
+       "\",{\"label\":\"Running Tasks\",\"yAxis\":\"right\"}]],\"yAxis\":{}}},{\"type\":\"metric\",\"width\":12,\"height\":6,\"x\":0,\"y\":12,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Database Metrics\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[\"AWS/RDS\",\"CPUUtilization\",\"DBClusterIdentifier\",\"",
+       {
+        "Fn::ImportValue": "ordernimbus-staging-database:ExportsOutputRefAuroraCluster23D869C0CA1C7DB5"
+       },
+       "\",{\"label\":\"CPU Utilization\"}],[\"AWS/RDS\",\"DatabaseConnections\",\"DBClusterIdentifier\",\"",
+       {
+        "Fn::ImportValue": "ordernimbus-staging-database:ExportsOutputRefAuroraCluster23D869C0CA1C7DB5"
+       },
+       "\",{\"label\":\"Connections\"}],[\"AWS/RDS\",\"ServerlessDatabaseCapacity\",\"DBClusterIdentifier\",\"",
+       {
+        "Fn::ImportValue": "ordernimbus-staging-database:ExportsOutputRefAuroraCluster23D869C0CA1C7DB5"
+       },
+       "\",{\"label\":\"ACU Usage\",\"yAxis\":\"right\"}]],\"yAxis\":{}}}]}"
+      ]
+     ]
+    },
+    "DashboardName": "staging-sales-forecasting-dashboard"
+   },
+   "Metadata": {
+    "aws:cdk:path": "ordernimbus-staging-monitoring/Dashboard/Resource"
+   }
+  },
+  "CDKMetadata": {
+   "Type": "AWS::CDK::Metadata",
+   "Properties": {
+    "Analytics": "v2:deflate64:H4sIAAAAAAAA/02Kyw7CIBBFv6V7OrZduTW6N7HuzQA1nT6AMGAXhH83hMS4uuec3AGG7gxdgwe3Sq/tRhLSGFCtAg9+JTYM6WkdKXF9mwpjlKw8uUDWlPrvWajNRn1gUDOky4Z+L5cKN+RZWvS6pJ/kXPQeg4shC2P1BAufPkMHfQ99szBR66MJtE/wqPsFTSotFbYAAAA="
+   },
+   "Metadata": {
+    "aws:cdk:path": "ordernimbus-staging-monitoring/CDKMetadata/Default"
+   }
+  }
+ },
+ "Outputs": {
+  "DashboardUrl": {
+   "Description": "CloudWatch Dashboard URL",
+   "Value": {
+    "Fn::Join": [
+     "",
+     [
+      "https://console.aws.amazon.com/cloudwatch/home?region=us-west-1#dashboards:name=",
+      {
+       "Ref": "Dashboard9E4231ED"
+      }
+     ]
+    ]
+   },
+   "Export": {
+    "Name": "staging-dashboard-url"
+   }
+  },
+  "CriticalAlertsTopicArn": {
+   "Description": "Critical Alerts SNS Topic ARN",
+   "Value": {
+    "Ref": "CriticalAlerts1F1E9D64"
+   },
+   "Export": {
+    "Name": "staging-critical-alerts-topic-arn"
+   }
+  },
+  "WarningAlertsTopicArn": {
+   "Description": "Warning Alerts SNS Topic ARN",
+   "Value": {
+    "Ref": "WarningAlerts855AE01C"
+   },
+   "Export": {
+    "Name": "staging-warning-alerts-topic-arn"
+   }
+  }
+ },
+ "Parameters": {
+  "BootstrapVersion": {
+   "Type": "AWS::SSM::Parameter::Value<String>",
+   "Default": "/cdk-bootstrap/hnb659fds/version",
+   "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]"
+  }
+ },
+ "Rules": {
+  "CheckBootstrapVersion": {
+   "Assertions": [
+    {
+     "Assert": {
+      "Fn::Not": [
+       {
+        "Fn::Contains": [
+         [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5"
+         ],
+         {
+          "Ref": "BootstrapVersion"
+         }
+        ]
+       }
+      ]
+     },
+     "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI."
+    }
+   ]
+  }
+ }
+}

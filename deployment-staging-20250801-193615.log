@@ -1,0 +1,65 @@
+Starting deployment at Fri Aug  1 19:36:15 PDT 2025
+Deployment ID: deploy-20250801-193615-60339
+[0;34mℹ️  Checking AWS configuration...[0m
+[0;32m✅ AWS Account ID: 335021149718[0m
+[0;32m✅ Current Region: us-west-1[0m
+[0;34mℹ️  Setting up deployment notifications...[0m
+{
+    "TopicArn": "arn:aws:sns:us-east-1:335021149718:ordernimbus-deployment-notifications"
+}
+[0;34mℹ️  Setting up Parameter Store values...[0m
+{
+    "Version": 1,
+    "Tier": "Standard"
+}
+[0;32m✅ Created parameter: /ordernimbus/staging/database/master-username[0m
+{
+    "Version": 1,
+    "Tier": "Standard"
+}
+[0;32m✅ Created parameter: /ordernimbus/staging/database/name[0m
+{
+    "Version": 1,
+    "Tier": "Standard"
+}
+[0;32m✅ Created parameter: /ordernimbus/staging/api/cors-origins[0m
+[0;34mℹ️  Creating S3 buckets...[0m
+
+An error occurred (IllegalLocationConstraintException) when calling the CreateBucket operation: The unspecified location constraint is incompatible for the region specific endpoint this request was sent to.
+[0;31m❌ Deployment failed at line 500 with exit code 1[0m
+[0;31m❌ Context: S3 bucket creation failed: ordernimbus-staging-frontend-assets[0m
+
+[0;35m🔄 INITIATING AUTOMATIC ROLLBACK[0m
+=========================================
+[1;33mDeleting created parameters...[0m
+[0;32m✅ Rollback completed successfully[0m
+
+[0;35m📋 ERROR REPORT[0m
+=========================================
+
+=========================================
+Error Context: Failed to create bucket: ordernimbus-staging-frontend-assets
+Error Code: 254
+Timestamp: 2025-08-02T02:36:31Z
+=========================================
+
+Recent CloudWatch Logs:
+
+An error occurred (ResourceNotFoundException) when calling the FilterLogEvents operation: The specified log group does not exist.
+2025-08-01 19:36:33 - ERROR: Deployment failed at line 500 with exit code 1
+2025-08-01 19:36:33 - ERROR: Context: S3 bucket creation failed: ordernimbus-staging-frontend-assets
+=========================================
+Error Context: S3 bucket creation failed: ordernimbus-staging-frontend-assets
+Error Code: 1
+Timestamp: 2025-08-02T02:36:33Z
+=========================================
+
+Recent CloudWatch Logs:
+
+An error occurred (ResourceNotFoundException) when calling the FilterLogEvents operation: The specified log group does not exist.
+
+[1;33mDetailed logs available at:[0m
+  - Transaction log: /tmp/deploy-20250801-193615-60339-transaction.log
+  - Rollback log: /tmp/deploy-20250801-193615-60339-rollback.log
+  - Error report: /tmp/deploy-20250801-193615-60339-error-report.txt
+  - Deployment state: /tmp/deploy-20250801-193615-60339-state.json

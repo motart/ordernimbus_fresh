@@ -1,0 +1,64 @@
+{
+  "name": "sales-forecasting-platform",
+  "version": "1.0.0",
+  "description": "Multi-tenant, highly-scalable Sales Forecasting Platform with AWS-native infrastructure",
+  "main": "index.js",
+  "scripts": {
+    "deploy": "./deploy.sh",
+    "deploy:staging": "./deploy.sh staging us-east-1",
+    "deploy:production": "./deploy.sh production us-east-1", 
+    "deploy:dev": "./deploy.sh dev us-east-1 true",
+    "deploy:safe": "./deploy-with-rollback.sh",
+    "deploy:safe:staging": "./deploy-with-rollback.sh staging us-east-1",
+    "deploy:safe:production": "./deploy-with-rollback.sh production us-east-1",
+    "deploy:safe:dev": "./deploy-with-rollback.sh dev us-east-1 true",
+    "cdk:bootstrap": "npx cdk bootstrap",
+    "cdk:deploy": "npx cdk deploy --all --require-approval never",
+    "cdk:destroy": "npx cdk destroy --all --force",
+    "cdk:diff": "npx cdk diff",
+    "cdk:synth": "npx cdk synth",
+    "test:load": "k6 run load-tests/k6-suite.js",
+    "test:load:staging": "k6 run load-tests/k6-suite.js --env API_BASE_URL=https://api-staging.ordernimbus.com",
+    "monitor:cloudwatch": "aws cloudwatch get-metric-statistics --namespace AWS/ECS --metric-name CPUUtilization --start-time $(date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%S) --end-time $(date -u +%Y-%m-%dT%H:%M:%S) --period 300 --statistics Average",
+    "costs:analyze": "aws ce get-cost-and-usage --time-period Start=$(date -d '1 month ago' +%Y-%m-%d),End=$(date +%Y-%m-%d) --granularity MONTHLY --metrics BlendedCost",
+    "logs:api": "aws logs tail /aws/ecs/ordernimbus-api --follow",
+    "logs:ml": "aws logs tail /aws/mwaa/ordernimbus-airflow --follow",
+    "rollback:verify": "./rollback-verify.sh",
+    "rollback:verify:staging": "./rollback-verify.sh staging us-east-1",
+    "rollback:verify:production": "./rollback-verify.sh production us-east-1"
+  },
+  "keywords": [
+    "sales-forecasting",
+    "aws",
+    "cdk",
+    "multi-tenant",
+    "machine-learning",
+    "scalability"
+  ],
+  "author": "OrderNimbus Team",
+  "license": "MIT",
+  "devDependencies": {
+    "aws-cdk": "^2.100.0",
+    "typescript": "^5.0.0",
+    "@types/node": "^20.0.0",
+    "ts-node": "^10.9.0",
+    "source-map-support": "^0.5.21"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.100.0",
+    "constructs": "^10.0.0",
+    "aws-sdk": "^2.1400.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ordernimbus/sales-forecasting-platform.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ordernimbus/sales-forecasting-platform/issues"
+  },
+  "homepage": "https://github.com/ordernimbus/sales-forecasting-platform#readme"
+}
