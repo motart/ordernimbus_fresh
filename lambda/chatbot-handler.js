@@ -11,6 +11,7 @@
 
 const AWS = require('aws-sdk');
 const { BedrockRuntimeClient, InvokeModelCommand } = require('@aws-sdk/client-bedrock-runtime');
+const DataAnalysisEngine = require('./data-analysis-engine');
 
 // AWS Service Clients
 const dynamodb = new AWS.DynamoDB.DocumentClient();
@@ -103,54 +104,53 @@ exports.handler = async (event) => {
     }
 };
 
-// Get user context including stores and preferences
+// Get comprehensive user context using data analysis engine
 async function getUserContext(userId, userEmail) {
     try {
-        // Get user stores
-        const storesQuery = {
-            TableName: process.env.STORES_TABLE || 'ordernimbus-stores',
-            FilterExpression: 'userId = :userId',
-            ExpressionAttributeValues: {
-                ':userId': userId
-            }
-        };
-
-        const storesResult = await dynamodb.scan(storesQuery).promise();
-        const userStores = storesResult.Items || [];
-
-        // Get recent forecasts
-        const forecastsQuery = {
-            TableName: process.env.FORECAST_TABLE || 'ordernimbus-forecasts',
-            FilterExpression: 'userId = :userId AND createdAt > :weekAgo',
-            ExpressionAttributeValues: {
-                ':userId': userId,
-                ':weekAgo': new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
-            },
-            Limit: 5
-        };
-
-        const forecastsResult = await dynamodb.scan(forecastsQuery).promise();
-        const recentForecasts = forecastsResult.Items || [];
-
-        return {
+        console.log(`Getting comprehensive user context for: ${userId}`);
+        
+        // Initialize data analysis engine
+        const dataEngine = new DataAnalysisEngine(userId, userEmail);
+        const comprehensiveData = await dataEngine.loadUserData();
+        
+        // Create enhanced user context
+        const userContext = {
             userId,
             userEmail,
-            stores: userStores,
-            recentForecasts,
-            storeCount: userStores.length,
-            hasShopifyStores: userStores.some(s => s.type === 'shopify'),
-            hasBrickMortarStores: userStores.some(s => s.type === 'brick-and-mortar'),
-            totalProducts: userStores.reduce((sum, s) => sum + (s.totalProducts || 0), 0),
-            totalOrders: userStores.reduce((sum, s) => sum + (s.totalOrders || 0), 0)
+            stores: comprehensiveData.stores,
+            forecasts: comprehensiveData.forecasts,
+            salesData: comprehensiveData.salesData,
+            orderData: comprehensiveData.orderData,
+            productData: comprehensiveData.productData,
+            analytics: comprehensiveData.analytics,
+            
+            // Quick access metrics
+            storeCount: comprehensiveData.stores.length,
+            hasShopifyStores: comprehensiveData.stores.some(s => s.type === 'shopify'),
+            hasBrickMortarStores: comprehensiveData.stores.some(s => s.type === 'brick-and-mortar'),
+            totalProducts: comprehensiveData.stores.reduce((sum, s) => sum + (s.totalProducts || 0), 0),
+            totalOrders: comprehensiveData.orderData.totalOrders,
+            totalRevenue: comprehensiveData.analytics.totalRevenue,
+            dailyAverage: comprehensiveData.analytics.dailyAverage,
+            growthMetrics: comprehensiveData.analytics.growthMetrics,
+            
+            // Data search engine
+            dataEngine: dataEngine
         };
+        
+        console.log(`User context loaded: ${userContext.storeCount} stores, $${userContext.totalRevenue.monthly} monthly revenue`);
+        return userContext;
     } catch (error) {
         console.error('Error getting user context:', error);
+        // Return basic context on error
         return {
             userId,
             userEmail,
             stores: [],
-            recentForecasts: [],
-            storeCount: 0
+            forecasts: [],
+            storeCount: 0,
+            totalRevenue: { monthly: 0, daily: 0 },
+            dailyAverage: { revenue: 0, orders: 0 }
         };
     }
 }
@@ -177,55 +177,82 @@ async function getConversationHistory(conversationId, userId) {
     }
 }
 
-// Retrieve relevant context using embeddings and semantic search
+// Retrieve relevant context using global search and data analysis
 async function retrieveRelevantContext(message, userId, userContext) {
     try {
+        console.log(`Performing global search for query: "${message}"`);
+        
         const relevantContext = {
+            searchResults: {},
+            exactMatches: [],
+            relatedData: [],
+            calculations: {},
+            insights: [],
             documents: [],
-            storeData: [],
-            forecastData: [],
             sources: []
         };
 
-        // 1. Search user documents (if any uploaded)
+        // 1. Perform global data search using the data engine
+        if (userContext.dataEngine) {
+            relevantContext.searchResults = await userContext.dataEngine.globalSearch(message);
+            relevantContext.exactMatches = relevantContext.searchResults.exactMatches || [];
+            relevantContext.relatedData = relevantContext.searchResults.relatedData || [];
+            relevantContext.calculations = relevantContext.searchResults.calculations || {};
+            relevantContext.insights = relevantContext.searchResults.insights || [];
+            
+            // Add sources for search results
+            if (relevantContext.exactMatches.length > 0) {
+                relevantContext.sources.push({ type: 'analytics', title: 'Business Analytics' });
+            }
+            if (relevantContext.relatedData.length > 0) {
+                relevantContext.sources.push({ type: 'data', title: 'Store Performance Data' });
+            }
+        }
+
+        // 2. Add comprehensive analytics if relevant
+        const analyticsKeywords = ['analytics', 'performance', 'metrics', 'kpi', 'dashboard'];
+        if (analyticsKeywords.some(keyword => message.toLowerCase().includes(keyword))) {
+            relevantContext.analytics = userContext.analytics;
+            relevantContext.sources.push({ type: 'analytics', title: 'Comprehensive Analytics' });
+        }
+
+        // 3. Add sales data if relevant
+        const salesKeywords = ['sales', 'revenue', 'income', 'earnings', 'money'];
+        if (salesKeywords.some(keyword => message.toLowerCase().includes(keyword))) {
+            relevantContext.salesData = userContext.salesData;
+            relevantContext.sources.push({ type: 'sales', title: 'Sales Performance Data' });
+        }
+
+        // 4. Add store information
+        relevantContext.storeData = userContext.stores;
+        if (relevantContext.storeData.length > 0) {
+            relevantContext.sources.push({ type: 'stores', title: 'Store Information' });
+        }
+
+        // 5. Add forecast data if relevant
+        const forecastKeywords = ['forecast', 'prediction', 'future', 'projection', 'trend'];
+        if (forecastKeywords.some(keyword => message.toLowerCase().includes(keyword))) {
+            relevantContext.forecastData = userContext.forecasts;
+            relevantContext.sources.push({ type: 'forecast', title: 'Sales Forecasts' });
+        }
+
+        // 6. Search user documents (if any uploaded)
         const documents = await searchUserDocuments(message, userId);
         relevantContext.documents = documents;
         relevantContext.sources.push(...documents.map(d => ({ type: 'document', title: d.title })));
 
-        // 2. Get relevant store data based on message content
-        const storeKeywords = extractStoreKeywords(message);
-        const relevantStores = userContext.stores.filter(store => 
-            storeKeywords.some(keyword => 
-                store.name.toLowerCase().includes(keyword.toLowerCase()) ||
-                store.type.includes(keyword.toLowerCase())
-            )
-        );
-
-        if (relevantStores.length === 0 && storeKeywords.length === 0) {
-            // If no specific stores mentioned, include all stores for general questions
-            relevantContext.storeData = userContext.stores.slice(0, 3); // Limit to prevent token overflow
-        } else {
-            relevantContext.storeData = relevantStores;
-        }
-
-        // 3. Get relevant forecast data
-        const forecastKeywords = ['forecast', 'prediction', 'sales', 'revenue', 'trend', 'future'];
-        if (forecastKeywords.some(keyword => message.toLowerCase().includes(keyword))) {
-            relevantContext.forecastData = userContext.recentForecasts.slice(0, 2);
-            relevantContext.sources.push({ type: 'forecast', title: 'Recent Sales Forecasts' });
-        }
-
-        // 4. Add OrderNimbus knowledge base
+        // 7. Add OrderNimbus knowledge base
         const platformKnowledge = await getPlatformKnowledge(message);
         relevantContext.platformKnowledge = platformKnowledge;
         if (platformKnowledge.length > 0) {
             relevantContext.sources.push({ type: 'platform', title: 'OrderNimbus Knowledge Base' });
         }
 
+        console.log(`Context retrieved: ${relevantContext.exactMatches.length} exact matches, ${relevantContext.sources.length} sources`);
         return relevantContext;
     } catch (error) {
         console.error('Error retrieving relevant context:', error);
-        return { documents: [], storeData: [], forecastData: [], sources: [] };
+        return { searchResults: {}, exactMatches: [], relatedData: [], sources: [] };
     }
 }
 
@@ -395,7 +422,7 @@ GUIDELINES:
 - Keep responses focused and practical`;
 }
 
-// Build user prompt with context
+// Build comprehensive user prompt with all available data
 function buildUserPrompt(message, conversationContext, relevantContext) {
     let prompt = '';
 
@@ -403,27 +430,114 @@ function buildUserPrompt(message, conversationContext, relevantContext) {
         prompt += `CONVERSATION HISTORY:\n${conversationContext}\n\n`;
     }
 
-    if (relevantContext.storeData.length > 0) {
-        prompt += `RELEVANT STORE DATA:\n`;
+    // Add exact matches from global search
+    if (relevantContext.exactMatches && relevantContext.exactMatches.length > 0) {
+        prompt += `EXACT DATA MATCHES FOR YOUR QUERY:\n`;
+        relevantContext.exactMatches.forEach(match => {
+            prompt += `- ${match.title}: ${match.value}\n`;
+            if (match.details) {
+                Object.entries(match.details).forEach(([key, value]) => {
+                    if (typeof value === 'object' && Array.isArray(value)) {
+                        prompt += `  ${key}: ${value.map(v => typeof v === 'object' ? JSON.stringify(v) : v).join(', ')}\n`;
+                    } else {
+                        prompt += `  ${key}: ${value}\n`;
+                    }
+                });
+            }
+        });
+        prompt += '\n';
+    }
+
+    // Add store performance data
+    if (relevantContext.storeData && relevantContext.storeData.length > 0) {
+        prompt += `YOUR STORE PERFORMANCE DATA:\n`;
         relevantContext.storeData.forEach(store => {
-            prompt += `- ${store.name} (${store.type}): ${store.totalProducts || 0} products, ${store.totalOrders || 0} orders\n`;
+            prompt += `- ${store.name} (${store.type}):\n`;
+            prompt += `  Monthly Revenue: $${(store.monthlyRevenue || 0).toLocaleString()}\n`;
+            prompt += `  Products: ${store.totalProducts || 0}, Orders: ${store.totalOrders || 0}\n`;
+            prompt += `  Average Order Value: $${store.averageOrderValue || 0}\n`;
+            prompt += `  Performance Rating: ${store.performanceRating || 'N/A'}\n`;
         });
         prompt += '\n';
     }
 
-    if (relevantContext.forecastData.length > 0) {
-        prompt += `RECENT FORECASTS:\n`;
-        relevantContext.forecastData.forEach(forecast => {
-            prompt += `- Store: ${forecast.storeId}, Accuracy: ${forecast.metrics?.accuracy || 'N/A'}%\n`;
+    // Add sales analytics
+    if (relevantContext.salesData) {
+        prompt += `SALES PERFORMANCE ANALYTICS:\n`;
+        const daily = relevantContext.salesData.daily?.slice(-7) || []; // Last 7 days
+        if (daily.length > 0) {
+            prompt += `Recent Daily Revenue: ${daily.map(d => `${d.date}: $${d.revenue.toLocaleString()}`).join(', ')}\n`;
+        }
+        
+        if (relevantContext.salesData.trends) {
+            prompt += `Growth Trends: Daily ${relevantContext.salesData.trends.dailyGrowth}%, Weekly ${relevantContext.salesData.trends.weeklyGrowth}%, Monthly ${relevantContext.salesData.trends.monthlyGrowth}%\n`;
+        }
+        prompt += '\n';
+    }
+
+    // Add comprehensive analytics
+    if (relevantContext.analytics) {
+        prompt += `COMPREHENSIVE BUSINESS ANALYTICS:\n`;
+        const analytics = relevantContext.analytics;
+        
+        if (analytics.totalRevenue) {
+            prompt += `Total Revenue: $${analytics.totalRevenue.monthly.toLocaleString()}/month ($${analytics.totalRevenue.daily.toLocaleString()}/day)\n`;
+        }
+        
+        if (analytics.dailyAverage) {
+            prompt += `Daily Averages: $${analytics.dailyAverage.revenue.toLocaleString()} revenue, ${analytics.dailyAverage.orders} orders\n`;
+        }
+        
+        if (analytics.growthMetrics) {
+            prompt += `Growth: ${analytics.growthMetrics.monthOverMonth}% MoM, ${analytics.growthMetrics.yearOverYear}% YoY\n`;
+        }
+        
+        if (analytics.performanceMetrics) {
+            const perf = analytics.performanceMetrics;
+            prompt += `Performance: ${perf.conversionRate}% conversion, $${perf.averageOrderValue} AOV, ${perf.customerRetention}% retention\n`;
+        }
+        prompt += '\n';
+    }
+
+    // Add insights
+    if (relevantContext.insights && relevantContext.insights.length > 0) {
+        prompt += `BUSINESS INSIGHTS:\n`;
+        relevantContext.insights.forEach(insight => {
+            prompt += `- [${insight.type.toUpperCase()}] ${insight.message}\n`;
         });
         prompt += '\n';
     }
 
-    if (relevantContext.platformKnowledge.length > 0) {
-        prompt += `PLATFORM INFORMATION:\n${relevantContext.platformKnowledge.join('\n')}\n\n`;
+    // Add forecast data
+    if (relevantContext.forecastData && relevantContext.forecastData.length > 0) {
+        prompt += `SALES FORECASTS:\n`;
+        relevantContext.forecastData.slice(0, 7).forEach(forecast => { // Next 7 days
+            prompt += `- ${forecast.date}: $${forecast.predictedRevenue?.toLocaleString() || 'N/A'} (${forecast.confidence || 'N/A'}% confidence)\n`;
+        });
+        prompt += '\n';
     }
 
-    prompt += `CURRENT QUESTION: ${message}`;
+    // Add platform knowledge
+    if (relevantContext.platformKnowledge && relevantContext.platformKnowledge.length > 0) {
+        prompt += `ORDERNIMBUS PLATFORM INFO:\n${relevantContext.platformKnowledge.join('\n')}\n\n`;
+    }
+
+    // Add related data
+    if (relevantContext.relatedData && relevantContext.relatedData.length > 0) {
+        prompt += `RELATED DATA:\n`;
+        relevantContext.relatedData.forEach(data => {
+            prompt += `- ${data.type}: ${data.name || 'N/A'}\n`;
+            if (data.performance) {
+                Object.entries(data.performance).forEach(([key, value]) => {
+                    prompt += `  ${key}: ${value}\n`;
+                });
+            }
+        });
+        prompt += '\n';
+    }
+
+    prompt += `USER QUESTION: ${message}\n\n`;
+    prompt += `INSTRUCTIONS: Answer the user's question using the comprehensive data provided above. Be specific with numbers and provide actionable insights. If asked about totals, averages, or specific metrics, provide exact figures from the data.`;
 
     return prompt;
 }
