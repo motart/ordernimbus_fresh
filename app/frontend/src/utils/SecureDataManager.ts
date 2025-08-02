@@ -42,7 +42,14 @@ class SecureDataManager {
    */
   async initialize(): Promise<void> {
     try {
-      const user = await getCurrentUser();
+      // Add timeout to prevent hanging
+      const userPromise = getCurrentUser();
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Authentication timeout')), 5000)
+      );
+      
+      const user = await Promise.race([userPromise, timeoutPromise]) as any;
+      
       if (!user || !user.userId) {
         throw new Error('No authenticated user found');
       }
@@ -58,6 +65,28 @@ class SecureDataManager {
       };
     } catch (error) {
       console.error('Failed to initialize SecureDataManager:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Initialize with fallback (non-authenticated) mode
+   */
+  async initializeFallback(fallbackEmail: string = 'temp@example.com'): Promise<void> {
+    try {
+      const tempUserId = `temp-user-${Date.now()}`;
+      const keyMaterial = await this.deriveKeyFromUser(tempUserId, fallbackEmail);
+      const encryptionKey = await this.generateEncryptionKey(keyMaterial);
+
+      this.userContext = {
+        userId: tempUserId,
+        email: fallbackEmail,
+        encryptionKey
+      };
+      
+      console.log('SecureDataManager initialized in fallback mode');
+    } catch (error) {
+      console.error('Failed to initialize SecureDataManager in fallback mode:', error);
       throw error;
     }
   }

@@ -40,7 +40,16 @@ export const useSecureData = (options: UseSecureDataOptions = {}): UseSecureData
     const initialize = async () => {
       try {
         setError(null);
-        await dataManager.initialize();
+        
+        // Try normal initialization first
+        try {
+          await dataManager.initialize();
+        } catch (authError) {
+          console.warn('Normal initialization failed, trying fallback mode:', authError);
+          
+          // Fall back to temp mode if authentication fails
+          await (dataManager as any).initializeFallback();
+        }
         
         const context = dataManager.getUserContext();
         if (context) {
@@ -50,9 +59,14 @@ export const useSecureData = (options: UseSecureDataOptions = {}): UseSecureData
           });
         }
 
-        // Migrate legacy data if enabled
-        if (autoMigrate) {
-          await dataManager.migrateLegacyData();
+        // Migrate legacy data if enabled (only in authenticated mode)
+        if (autoMigrate && !context?.userId.startsWith('temp-user')) {
+          try {
+            await dataManager.migrateLegacyData();
+          } catch (migrationError) {
+            console.warn('Legacy data migration failed:', migrationError);
+            // Don't fail initialization for migration errors
+          }
         }
 
         setIsInitialized(true);

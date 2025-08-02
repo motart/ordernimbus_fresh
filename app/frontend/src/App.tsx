@@ -5,6 +5,7 @@ import LoginPage from './components/LoginPage';
 import SignupPage from './components/SignupPage';
 import ForgotPassword from './components/ForgotPassword';
 import Dashboard from './components/Dashboard';
+import ChatBot from './components/ChatBot';
 import { Amplify } from 'aws-amplify';
 import { awsConfig } from './aws-config';
 import { getCurrentUser } from 'aws-amplify/auth';
@@ -133,6 +134,11 @@ function App() {
         }}
       />
       {renderPage()}
+      
+      {/* Simple ChatBot - Only on dashboard when logged in */}
+      {currentPage === 'dashboard' && userEmail && (
+        <ChatBot userEmail={userEmail} />
+      )}
     </div>
   );
 }

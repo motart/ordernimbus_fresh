@@ -15,7 +15,8 @@ import {
   FiChevronLeft,
   FiHelpCircle,
   FiBell,
-  FiFileText
+  FiFileText,
+  FiUpload
 } from 'react-icons/fi';
 import { 
   MdDashboard, 
@@ -67,10 +68,11 @@ const Sidebar: React.FC<SidebarProps> = ({ userEmail, onLogout, onNavigate, acti
 
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: MdDashboard, section: 'top' },
-    { id: 'forecast', label: 'Sales Forecast', icon: FiTrendingUp, section: 'top' },
+    { id: 'forecasts', label: 'Sales Forecast', icon: FiTrendingUp, section: 'top' },
+    { id: 'stores', label: 'Stores', icon: MdStore, section: 'top' },
+    { id: 'upload', label: 'Data Upload', icon: FiUpload, section: 'top' },
     { id: 'inventory', label: 'Inventory', icon: MdInventory2, section: 'top' },
     { id: 'orders', label: 'Orders', icon: FiShoppingCart, section: 'top' },
-    { id: 'stores', label: 'Stores', icon: MdStore, section: 'top' },
     { id: 'analytics', label: 'Analytics', icon: MdAnalytics, section: 'top' },
     { id: 'reports', label: 'Reports', icon: FiFileText, section: 'top' },
     { id: 'customers', label: 'Customers', icon: FiUsers, section: 'top' },

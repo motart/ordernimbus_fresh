@@ -42,6 +42,84 @@
   text-align: center;
 }
 
+/* Error Boundary Styles */
+.chatbot-error-fallback {
+  position: fixed;
+  bottom: 30px;
+  right: 30px;
+  z-index: 1000;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  width: 350px;
+  max-width: calc(100vw - 60px);
+  border: 1px solid #e5e7eb;
+}
+
+.error-content {
+  padding: 24px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.error-content svg {
+  color: #f59e0b;
+}
+
+.error-content h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.error-content p {
+  margin: 0;
+  font-size: 14px;
+  color: #6b7280;
+  line-height: 1.5;
+}
+
+.retry-button {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.retry-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+}
+
+/* Debug Info Styles */
+.chatbot-debug-info {
+  font-family: 'Courier New', monospace;
+  line-height: 1.4;
+}
+
+/* Status indicator updates */
+.status {
+  font-size: 12px;
+  color: #10b981;
+}
+
+.status:contains("Limited Mode") {
+  color: #f59e0b;
+}
+
+.status:contains("Reconnecting") {
+  color: #ef4444;
+}
+
 .chatbot-container {
   position: fixed;
   bottom: 30px;

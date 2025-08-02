@@ -6,7 +6,7 @@ import Sidebar from './Sidebar';
 import StoresPage from './StoresPage';
 import ProfilePage from './ProfilePage';
 import ForecastPage from './ForecastPage';
-import ChatBot from './ChatBot';
+import DataUpload from './DataUpload';
 import SecureDataManager from '../utils/SecureDataManager';
 
 interface DashboardProps {
@@ -77,7 +77,7 @@ const Dashboard: React.FC<DashboardProps> = ({ userEmail, onLogout }) => {
   const handleNavigate = (page: string) => {
     setActivePage(page);
     // Add navigation logic here for different pages
-    if (page !== 'dashboard' && page !== 'stores' && page !== 'profile' && page !== 'forecasts') {
+    if (page !== 'dashboard' && page !== 'stores' && page !== 'profile' && page !== 'forecasts' && page !== 'upload') {
       toast(`${page.charAt(0).toUpperCase() + page.slice(1)} page coming soon!`, { icon: '🚀' });
     }
   };
@@ -97,6 +97,10 @@ const Dashboard: React.FC<DashboardProps> = ({ userEmail, onLogout }) => {
           <ProfilePage />
         ) : activePage === 'forecasts' ? (
           <ForecastPage />
+        ) : activePage === 'upload' ? (
+          <DataUpload onDataUploaded={(data, type) => {
+            toast.success(`Successfully uploaded ${data.length} ${type} records`);
+          }} />
         ) : (
           <>
             <header className="dashboard-header">
@@ -213,9 +217,6 @@ const Dashboard: React.FC<DashboardProps> = ({ userEmail, onLogout }) => {
           </>
         )}
       </div>
-      
-      {/* AI Chatbot */}
-      <ChatBot userEmail={userEmail} />
     </div>
   );
 };

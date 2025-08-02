@@ -296,7 +296,7 @@ const DocumentUpload: React.FC<DocumentUploadProps> = ({ onDocumentsUpdate }) =>
     <div className="document-upload">
       <div className="upload-section">
         <h3>
-          <FiFilePlus />
+          {React.createElement(FiFilePlus as any)}
           Document Library
         </h3>
         <p>Upload documents for the AI to reference when answering your questions</p>
@@ -309,7 +309,7 @@ const DocumentUpload: React.FC<DocumentUploadProps> = ({ onDocumentsUpdate }) =>
           onDrop={handleDrop}
         >
           <div className="upload-content">
-            <FiUpload size={32} />
+            {React.createElement(FiUpload as any, { size: 32 })}
             <h4>Drop files here or click to upload</h4>
             <p>Supported: TXT, CSV, PDF, DOC, DOCX, JSON (max 10MB each)</p>
             
@@ -338,7 +338,7 @@ const DocumentUpload: React.FC<DocumentUploadProps> = ({ onDocumentsUpdate }) =>
       {documents.length > 0 && (
         <div className="documents-list">
           <h4>
-            <FiFileText />
+            {React.createElement(FiFileText as any)}
             Uploaded Documents ({documents.length})
           </h4>
           
@@ -362,7 +362,7 @@ const DocumentUpload: React.FC<DocumentUploadProps> = ({ onDocumentsUpdate }) =>
                       onClick={() => removeDocument(doc.id)}
                       title="Remove document"
                     >
-                      <FiX />
+                      {React.createElement(FiX as any)}
                     </button>
                   </div>
                 </div>
