@@ -4,6 +4,10 @@ import { signOut } from 'aws-amplify/auth';
 import toast from 'react-hot-toast';
 import Sidebar from './Sidebar';
 import StoresPage from './StoresPage';
+import ProfilePage from './ProfilePage';
+import ForecastPage from './ForecastPage';
+import ChatBot from './ChatBot';
+import SecureDataManager from '../utils/SecureDataManager';
 
 interface DashboardProps {
   userEmail: string;
@@ -24,6 +28,10 @@ const Dashboard: React.FC<DashboardProps> = ({ userEmail, onLogout }) => {
 
   const handleLogout = async () => {
     try {
+      // Reset secure data manager to clear encryption keys
+      const secureDataManager = SecureDataManager.getInstance();
+      secureDataManager.reset();
+      
       await signOut();
       toast.success('Logged out successfully', {
         icon: '👋',
@@ -32,6 +40,11 @@ const Dashboard: React.FC<DashboardProps> = ({ userEmail, onLogout }) => {
     } catch (error) {
       console.error('Error signing out:', error);
       toast.error('Logout failed, but clearing local session');
+      
+      // Still reset secure data manager even if Cognito fails
+      const secureDataManager = SecureDataManager.getInstance();
+      secureDataManager.reset();
+      
       onLogout(); // Still logout locally even if Cognito fails
     }
   };
@@ -64,7 +77,7 @@ const Dashboard: React.FC<DashboardProps> = ({ userEmail, onLogout }) => {
   const handleNavigate = (page: string) => {
     setActivePage(page);
     // Add navigation logic here for different pages
-    if (page !== 'dashboard' && page !== 'stores') {
+    if (page !== 'dashboard' && page !== 'stores' && page !== 'profile' && page !== 'forecasts') {
       toast(`${page.charAt(0).toUpperCase() + page.slice(1)} page coming soon!`, { icon: '🚀' });
     }
   };
@@ -80,6 +93,10 @@ const Dashboard: React.FC<DashboardProps> = ({ userEmail, onLogout }) => {
       <div className="dashboard-main">
         {activePage === 'stores' ? (
           <StoresPage />
+        ) : activePage === 'profile' ? (
+          <ProfilePage />
+        ) : activePage === 'forecasts' ? (
+          <ForecastPage />
         ) : (
           <>
             <header className="dashboard-header">
@@ -196,6 +213,9 @@ const Dashboard: React.FC<DashboardProps> = ({ userEmail, onLogout }) => {
           </>
         )}
       </div>
+      
+      {/* AI Chatbot */}
+      <ChatBot userEmail={userEmail} />
     </div>
   );
 };

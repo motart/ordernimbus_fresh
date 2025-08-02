@@ -14,6 +14,7 @@ import {
 } from 'react-icons/fi';
 import { SiShopify } from 'react-icons/si';
 import { MdStorefront } from 'react-icons/md';
+import useSecureData from '../hooks/useSecureData';
 
 interface Store {
   id: string;
@@ -32,12 +33,28 @@ interface Store {
   lastSync?: string;
   totalProducts?: number;
   totalOrders?: number;
+  lastForecast?: string;
+  forecastAccuracy?: number;
+  nextForecast?: string;
+  forecastStatus?: 'pending' | 'processing' | 'ready' | 'error';
+}
+
+interface Forecast {
+  date: string;
+  predictedSales: number;
+  confidence: number;
+  trend: 'increasing' | 'decreasing' | 'stable';
 }
 
 const StoresPage: React.FC = () => {
   const [stores, setStores] = useState<Store[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingStore, setEditingStore] = useState<Store | null>(null);
+  const [showForecastModal, setShowForecastModal] = useState(false);
+  const [selectedStoreForForecast, setSelectedStoreForForecast] = useState<Store | null>(null);
+  const [forecastData, setForecastData] = useState<Forecast[]>([]);
+  const [isGeneratingForecast, setIsGeneratingForecast] = useState(false);
+  const [isLoadingStores, setIsLoadingStores] = useState(true);
   const [formData, setFormData] = useState({
     name: '',
     type: 'brick-and-mortar' as Store['type'],
@@ -52,45 +69,75 @@ const StoresPage: React.FC = () => {
     status: 'active' as Store['status']
   });
 
+  // Initialize secure data management
+  const { 
+    isInitialized, 
+    error: secureDataError, 
+    setData, 
+    getData, 
+    userContext 
+  } = useSecureData();
+
+  // Load stores securely when initialized
   useEffect(() => {
-    // Load stores from localStorage
-    const savedStores = localStorage.getItem('ordernimbus_stores');
-    if (savedStores) {
-      setStores(JSON.parse(savedStores));
-    } else {
-      // Set demo stores if none exist
-      const demoStores: Store[] = [
-        {
-          id: '1',
-          name: 'Downtown Flagship Store',
-          type: 'brick-and-mortar',
-          address: '123 Main Street',
-          city: 'San Francisco',
-          state: 'CA',
-          zipCode: '94105',
-          country: 'United States',
-          status: 'active',
-          createdAt: '2024-01-15',
-          totalProducts: 1250,
-          totalOrders: 3420
-        },
-        {
-          id: '2',
-          name: 'Online Boutique',
-          type: 'shopify',
-          shopifyDomain: 'my-boutique.myshopify.com',
-          website: 'https://www.myboutique.com',
-          status: 'active',
-          createdAt: '2024-02-01',
-          lastSync: '2024-03-15',
-          totalProducts: 850,
-          totalOrders: 2100
+    const loadStores = async () => {
+      if (!isInitialized) return;
+      
+      setIsLoadingStores(true);
+      try {
+        const savedStores = await getData<Store[]>('stores');
+        if (savedStores && savedStores.length > 0) {
+          setStores(savedStores);
+        } else {
+          // Set demo stores if none exist for this user
+          const demoStores: Store[] = [
+            {
+              id: `${userContext?.userId}_1`,
+              name: 'Downtown Flagship Store',
+              type: 'brick-and-mortar',
+              address: '123 Main Street',
+              city: 'San Francisco',
+              state: 'CA',
+              zipCode: '94105',
+              country: 'United States',
+              status: 'active',
+              createdAt: '2024-01-15',
+              totalProducts: 1250,
+              totalOrders: 3420
+            },
+            {
+              id: `${userContext?.userId}_2`,
+              name: 'Online Boutique',
+              type: 'shopify',
+              shopifyDomain: 'my-boutique.myshopify.com',
+              website: 'https://www.myboutique.com',
+              status: 'active',
+              createdAt: '2024-02-01',
+              lastSync: '2024-03-15',
+              totalProducts: 850,
+              totalOrders: 2100
+            }
+          ];
+          setStores(demoStores);
+          await setData('stores', demoStores);
         }
-      ];
-      setStores(demoStores);
-      localStorage.setItem('ordernimbus_stores', JSON.stringify(demoStores));
+      } catch (error) {
+        console.error('Failed to load stores:', error);
+        toast.error('Failed to load stores');
+      } finally {
+        setIsLoadingStores(false);
+      }
+    };
+
+    loadStores();
+  }, [isInitialized, getData, setData, userContext]);
+
+  // Handle secure data errors
+  useEffect(() => {
+    if (secureDataError) {
+      toast.error(`Security Error: ${secureDataError}`);
     }
-  }, []);
+  }, [secureDataError]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormData({
@@ -116,8 +163,13 @@ const StoresPage: React.FC = () => {
     setEditingStore(null);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!isInitialized) {
+      toast.error('System not ready. Please wait...');
+      return;
+    }
 
     if (!formData.name) {
       toast.error('Please enter a store name');
@@ -129,39 +181,44 @@ const StoresPage: React.FC = () => {
       return;
     }
 
-    const newStore: Store = {
-      id: editingStore ? editingStore.id : Date.now().toString(),
-      name: formData.name,
-      type: formData.type,
-      address: formData.address,
-      city: formData.city,
-      state: formData.state,
-      zipCode: formData.zipCode,
-      country: formData.country,
-      website: formData.website,
-      shopifyDomain: formData.shopifyDomain,
-      apiKey: formData.apiKey,
-      status: formData.status,
-      createdAt: editingStore ? editingStore.createdAt : new Date().toISOString().split('T')[0],
-      totalProducts: editingStore ? editingStore.totalProducts : 0,
-      totalOrders: editingStore ? editingStore.totalOrders : 0
-    };
+    try {
+      const newStore: Store = {
+        id: editingStore ? editingStore.id : `${userContext?.userId}_${Date.now()}`,
+        name: formData.name,
+        type: formData.type,
+        address: formData.address,
+        city: formData.city,
+        state: formData.state,
+        zipCode: formData.zipCode,
+        country: formData.country,
+        website: formData.website,
+        shopifyDomain: formData.shopifyDomain,
+        apiKey: formData.apiKey,
+        status: formData.status,
+        createdAt: editingStore ? editingStore.createdAt : new Date().toISOString().split('T')[0],
+        totalProducts: editingStore ? editingStore.totalProducts : 0,
+        totalOrders: editingStore ? editingStore.totalOrders : 0
+      };
 
-    let updatedStores;
-    if (editingStore) {
-      updatedStores = stores.map(store => 
-        store.id === editingStore.id ? newStore : store
-      );
-      toast.success('Store updated successfully');
-    } else {
-      updatedStores = [...stores, newStore];
-      toast.success('Store added successfully');
+      let updatedStores;
+      if (editingStore) {
+        updatedStores = stores.map(store => 
+          store.id === editingStore.id ? newStore : store
+        );
+        toast.success('Store updated successfully');
+      } else {
+        updatedStores = [...stores, newStore];
+        toast.success('Store added successfully');
+      }
+
+      setStores(updatedStores);
+      await setData('stores', updatedStores);
+      setShowAddModal(false);
+      resetForm();
+    } catch (error) {
+      console.error('Failed to save store:', error);
+      toast.error('Failed to save store securely');
     }
-
-    setStores(updatedStores);
-    localStorage.setItem('ordernimbus_stores', JSON.stringify(updatedStores));
-    setShowAddModal(false);
-    resetForm();
   };
 
   const handleEdit = (store: Store) => {
@@ -182,13 +239,87 @@ const StoresPage: React.FC = () => {
     setShowAddModal(true);
   };
 
-  const handleDelete = (storeId: string) => {
-    if (window.confirm('Are you sure you want to delete this store?')) {
-      const updatedStores = stores.filter(store => store.id !== storeId);
-      setStores(updatedStores);
-      localStorage.setItem('ordernimbus_stores', JSON.stringify(updatedStores));
-      toast.success('Store deleted successfully');
+  const handleDelete = async (storeId: string) => {
+    if (!isInitialized) {
+      toast.error('System not ready. Please wait...');
+      return;
     }
+
+    if (window.confirm('Are you sure you want to delete this store?')) {
+      try {
+        const updatedStores = stores.filter(store => store.id !== storeId);
+        setStores(updatedStores);
+        await setData('stores', updatedStores);
+        toast.success('Store deleted successfully');
+      } catch (error) {
+        console.error('Failed to delete store:', error);
+        toast.error('Failed to delete store securely');
+      }
+    }
+  };
+
+  const generateForecast = async (store: Store) => {
+    setSelectedStoreForForecast(store);
+    setIsGeneratingForecast(true);
+    setShowForecastModal(true);
+    
+    // Simulate ML forecast generation
+    toast('🤖 Generating AI forecast...', { duration: 3000 });
+    
+    setTimeout(async () => {
+      // Generate mock forecast data
+      const forecast: Forecast[] = [];
+      const baseValue = 5000 + Math.random() * 10000;
+      
+      for (let i = 0; i < 30; i++) {
+        const date = new Date();
+        date.setDate(date.getDate() + i);
+        
+        // Add weekly pattern
+        const dayOfWeek = date.getDay();
+        const weekendBoost = (dayOfWeek === 0 || dayOfWeek === 6) ? 1.3 : 1.0;
+        
+        // Add some randomness
+        const variation = 0.8 + Math.random() * 0.4;
+        
+        // Trend direction
+        const trend = i < 10 ? 'increasing' : i < 20 ? 'stable' : 'decreasing';
+        const trendMultiplier = trend === 'increasing' ? 1 + (i * 0.01) : 
+                               trend === 'decreasing' ? 1 - ((i - 20) * 0.01) : 1;
+        
+        forecast.push({
+          date: date.toISOString().split('T')[0],
+          predictedSales: Math.round(baseValue * weekendBoost * variation * trendMultiplier),
+          confidence: Math.max(50, 95 - i * 2),
+          trend: trend as 'increasing' | 'decreasing' | 'stable'
+        });
+      }
+      
+      setForecastData(forecast);
+      setIsGeneratingForecast(false);
+      
+      // Update store with forecast info
+      const updatedStores = stores.map(s => 
+        s.id === store.id 
+          ? { 
+              ...s, 
+              lastForecast: new Date().toISOString(),
+              forecastAccuracy: 85 + Math.random() * 10,
+              nextForecast: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+              forecastStatus: 'ready' as const
+            }
+          : s
+      );
+      setStores(updatedStores);
+      
+      try {
+        await setData('stores', updatedStores);
+        toast.success('✨ Forecast generated successfully!');
+      } catch (error) {
+        console.error('Failed to save forecast data:', error);
+        toast.error('Forecast generated but failed to save securely');
+      }
+    }, 3000);
   };
 
   const getStoreIcon = (type: Store['type']) => {
@@ -213,16 +344,48 @@ const StoresPage: React.FC = () => {
     }
   };
 
+  // Show loading state while secure data is initializing
+  if (!isInitialized || isLoadingStores) {
+    return (
+      <div className="stores-page">
+        <div className="page-header">
+          <div className="header-content">
+            <h1>Stores</h1>
+            <h2 className="page-title">Manage your retail locations and online stores</h2>
+          </div>
+        </div>
+        <div style={{
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          height: '300px',
+          flexDirection: 'column',
+          gap: '20px'
+        }}>
+          <div className="spinner"></div>
+          <p style={{ color: '#667eea', fontSize: '16px' }}>
+            {!isInitialized ? 'Initializing secure data...' : 'Loading your stores...'}
+          </p>
+          {userContext && (
+            <p style={{ color: '#6b7280', fontSize: '14px' }}>
+              User: {userContext.email}
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="stores-page">
       <div className="page-header">
         <div className="header-content">
           <h1>Stores</h1>
-          <p className="subtitle">Manage your retail locations and online stores</p>
+          <h2 className="page-title">Manage your retail locations and online stores</h2>
         </div>
-        <button className="btn-primary" onClick={() => setShowAddModal(true)}>
+        <button className="btn-primary add-store-btn" onClick={() => setShowAddModal(true)}>
           {React.createElement(FiPlus as any)}
-          Add Store
+          <span>Add Store</span>
         </button>
       </div>
 
@@ -320,6 +483,37 @@ const StoresPage: React.FC = () => {
               <span className="created-date">Added {store.createdAt}</span>
               {store.lastSync && (
                 <span className="sync-date">Synced {store.lastSync}</span>
+              )}
+            </div>
+
+            {/* Forecast Section */}
+            <div className="store-forecast-section">
+              <button 
+                className="btn-forecast"
+                onClick={() => generateForecast(store)}
+                disabled={isGeneratingForecast && selectedStoreForForecast?.id === store.id}
+              >
+                {isGeneratingForecast && selectedStoreForForecast?.id === store.id ? (
+                  <>
+                    <span className="spinner"></span>
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    📊 Generate Forecast
+                  </>
+                )}
+              </button>
+              
+              {store.forecastStatus === 'ready' && store.lastForecast && (
+                <div className="forecast-info">
+                  <span className="forecast-accuracy">
+                    {store.forecastAccuracy ? `${Math.round(store.forecastAccuracy)}% Accuracy` : ''}
+                  </span>
+                  <span className="forecast-date">
+                    Last: {new Date(store.lastForecast).toLocaleDateString()}
+                  </span>
+                </div>
               )}
             </div>
           </div>
@@ -504,6 +698,91 @@ const StoresPage: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Forecast Modal */}
+      {showForecastModal && selectedStoreForForecast && (
+        <div className="modal-overlay" onClick={() => {setShowForecastModal(false); setSelectedStoreForForecast(null);}}>
+          <div className="modal-content forecast-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Sales Forecast - {selectedStoreForForecast.name}</h2>
+              <button 
+                className="btn-icon"
+                onClick={() => {setShowForecastModal(false); setSelectedStoreForForecast(null);}}
+              >
+                {React.createElement(FiX as any)}
+              </button>
+            </div>
+
+            <div className="forecast-content">
+              {isGeneratingForecast ? (
+                <div className="forecast-loading">
+                  <div className="loading-spinner"></div>
+                  <h3>Analyzing Historical Data...</h3>
+                  <p>Our AI is processing sales patterns and generating accurate predictions</p>
+                </div>
+              ) : (
+                <>
+                  <div className="forecast-summary">
+                    <div className="summary-card">
+                      <div className="summary-value">
+                        ${forecastData.slice(0, 7).reduce((sum, f) => sum + f.predictedSales, 0).toLocaleString()}
+                      </div>
+                      <div className="summary-label">Next 7 Days Revenue</div>
+                    </div>
+                    <div className="summary-card">
+                      <div className="summary-value">
+                        ${forecastData.slice(0, 30).reduce((sum, f) => sum + f.predictedSales, 0).toLocaleString()}
+                      </div>
+                      <div className="summary-label">Next 30 Days Revenue</div>
+                    </div>
+                    <div className="summary-card">
+                      <div className="summary-value">
+                        {Math.round(forecastData.slice(0, 7).reduce((sum, f) => sum + f.confidence, 0) / 7)}%
+                      </div>
+                      <div className="summary-label">Avg Confidence</div>
+                    </div>
+                  </div>
+
+                  <div className="forecast-table">
+                    <h3>Daily Forecast</h3>
+                    <div className="table-header">
+                      <span>Date</span>
+                      <span>Predicted Sales</span>
+                      <span>Confidence</span>
+                      <span>Trend</span>
+                    </div>
+                    {forecastData.slice(0, 7).map((forecast, index) => (
+                      <div key={index} className="table-row">
+                        <span>{new Date(forecast.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
+                        <span className="sales-value">${forecast.predictedSales.toLocaleString()}</span>
+                        <span className={`confidence ${forecast.confidence > 80 ? 'high' : forecast.confidence > 60 ? 'medium' : 'low'}`}>
+                          {forecast.confidence}%
+                        </span>
+                        <span className={`trend ${forecast.trend}`}>
+                          {forecast.trend === 'increasing' ? '📈' : forecast.trend === 'decreasing' ? '📉' : '➡️'}
+                          {' '}{forecast.trend}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="forecast-actions">
+                    <button 
+                      className="btn-secondary"
+                      onClick={() => {setShowForecastModal(false); setSelectedStoreForForecast(null);}}
+                    >
+                      Close
+                    </button>
+                    <button className="btn-primary">
+                      View Full Report
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
       )}

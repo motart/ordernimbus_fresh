@@ -1,0 +1,301 @@
+/**
+ * SecureDataManager - User-specific data isolation with encryption
+ * 
+ * This utility provides:
+ * 1. User-scoped data storage using Cognito user ID as partition key
+ * 2. Client-side encryption using Web Crypto API
+ * 3. Secure localStorage with user context
+ * 4. Data separation enforcement
+ */
+
+import { getCurrentUser } from 'aws-amplify/auth';
+
+interface EncryptedData {
+  encryptedData: string;
+  iv: string;
+  userId: string;
+  timestamp: string;
+}
+
+interface UserContext {
+  userId: string;
+  email: string;
+  encryptionKey: CryptoKey;
+}
+
+class SecureDataManager {
+  private static instance: SecureDataManager;
+  private userContext: UserContext | null = null;
+  private encryptionAlgorithm = 'AES-GCM';
+  
+  private constructor() {}
+
+  static getInstance(): SecureDataManager {
+    if (!SecureDataManager.instance) {
+      SecureDataManager.instance = new SecureDataManager();
+    }
+    return SecureDataManager.instance;
+  }
+
+  /**
+   * Initialize the secure data manager with current user context
+   */
+  async initialize(): Promise<void> {
+    try {
+      const user = await getCurrentUser();
+      if (!user || !user.userId) {
+        throw new Error('No authenticated user found');
+      }
+
+      // Generate user-specific encryption key from user credentials
+      const keyMaterial = await this.deriveKeyFromUser(user.userId, user.signInDetails?.loginId || '');
+      const encryptionKey = await this.generateEncryptionKey(keyMaterial);
+
+      this.userContext = {
+        userId: user.userId,
+        email: user.signInDetails?.loginId || '',
+        encryptionKey
+      };
+    } catch (error) {
+      console.error('Failed to initialize SecureDataManager:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Derive a consistent key material from user credentials
+   */
+  private async deriveKeyFromUser(userId: string, email: string): Promise<ArrayBuffer> {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(`${userId}:${email}:ordernimbus_salt_2024`);
+    return await crypto.subtle.digest('SHA-256', data);
+  }
+
+  /**
+   * Generate encryption key from key material
+   */
+  private async generateEncryptionKey(keyMaterial: ArrayBuffer): Promise<CryptoKey> {
+    return await crypto.subtle.importKey(
+      'raw',
+      keyMaterial,
+      { name: this.encryptionAlgorithm },
+      false,
+      ['encrypt', 'decrypt']
+    );
+  }
+
+  /**
+   * Encrypt data with user-specific key
+   */
+  private async encryptData(data: string): Promise<EncryptedData> {
+    if (!this.userContext) {
+      throw new Error('SecureDataManager not initialized');
+    }
+
+    const encoder = new TextEncoder();
+    const dataBuffer = encoder.encode(data);
+    const iv = crypto.getRandomValues(new Uint8Array(12)); // 96-bit IV for AES-GCM
+
+    const encryptedBuffer = await crypto.subtle.encrypt(
+      {
+        name: this.encryptionAlgorithm,
+        iv: iv
+      },
+      this.userContext.encryptionKey,
+      dataBuffer
+    );
+
+    return {
+      encryptedData: this.arrayBufferToBase64(encryptedBuffer),
+      iv: this.arrayBufferToBase64(iv),
+      userId: this.userContext.userId,
+      timestamp: new Date().toISOString()
+    };
+  }
+
+  /**
+   * Decrypt data with user-specific key
+   */
+  private async decryptData(encryptedData: EncryptedData): Promise<string> {
+    if (!this.userContext) {
+      throw new Error('SecureDataManager not initialized');
+    }
+
+    // Verify the data belongs to the current user
+    if (encryptedData.userId !== this.userContext.userId) {
+      throw new Error('Access denied: Data belongs to different user');
+    }
+
+    const encryptedBuffer = this.base64ToArrayBuffer(encryptedData.encryptedData);
+    const iv = this.base64ToArrayBuffer(encryptedData.iv);
+
+    const decryptedBuffer = await crypto.subtle.decrypt(
+      {
+        name: this.encryptionAlgorithm,
+        iv: iv
+      },
+      this.userContext.encryptionKey,
+      encryptedBuffer
+    );
+
+    const decoder = new TextDecoder();
+    return decoder.decode(decryptedBuffer);
+  }
+
+  /**
+   * Store data securely with user isolation
+   */
+  async setSecureData(key: string, data: any): Promise<void> {
+    if (!this.userContext) {
+      throw new Error('SecureDataManager not initialized');
+    }
+
+    try {
+      const jsonData = JSON.stringify(data);
+      const encryptedData = await this.encryptData(jsonData);
+      const storageKey = `ordernimbus_${this.userContext.userId}_${key}`;
+      
+      localStorage.setItem(storageKey, JSON.stringify(encryptedData));
+    } catch (error) {
+      console.error('Failed to store secure data:', error);
+      throw new Error('Failed to store data securely');
+    }
+  }
+
+  /**
+   * Retrieve data securely with user isolation
+   */
+  async getSecureData<T>(key: string): Promise<T | null> {
+    if (!this.userContext) {
+      throw new Error('SecureDataManager not initialized');
+    }
+
+    try {
+      const storageKey = `ordernimbus_${this.userContext.userId}_${key}`;
+      const storedData = localStorage.getItem(storageKey);
+      
+      if (!storedData) {
+        return null;
+      }
+
+      const encryptedData: EncryptedData = JSON.parse(storedData);
+      const decryptedJson = await this.decryptData(encryptedData);
+      return JSON.parse(decryptedJson) as T;
+    } catch (error) {
+      console.error('Failed to retrieve secure data:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Remove user-specific data
+   */
+  async removeSecureData(key: string): Promise<void> {
+    if (!this.userContext) {
+      throw new Error('SecureDataManager not initialized');
+    }
+
+    const storageKey = `ordernimbus_${this.userContext.userId}_${key}`;
+    localStorage.removeItem(storageKey);
+  }
+
+  /**
+   * Clear all data for current user
+   */
+  async clearUserData(): Promise<void> {
+    if (!this.userContext) {
+      return;
+    }
+
+    const prefix = `ordernimbus_${this.userContext.userId}_`;
+    const keysToRemove: string[] = [];
+
+    // Find all keys belonging to current user
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith(prefix)) {
+        keysToRemove.push(key);
+      }
+    }
+
+    // Remove all user-specific keys
+    keysToRemove.forEach(key => localStorage.removeItem(key));
+  }
+
+  /**
+   * Get current user context
+   */
+  getUserContext(): UserContext | null {
+    return this.userContext;
+  }
+
+  /**
+   * Reset the data manager (for logout)
+   */
+  reset(): void {
+    this.userContext = null;
+  }
+
+  /**
+   * Utility: Convert ArrayBuffer to Base64
+   */
+  private arrayBufferToBase64(buffer: ArrayBuffer): string {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    bytes.forEach(byte => binary += String.fromCharCode(byte));
+    return btoa(binary);
+  }
+
+  /**
+   * Utility: Convert Base64 to ArrayBuffer
+   */
+  private base64ToArrayBuffer(base64: string): ArrayBuffer {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes.buffer;
+  }
+
+  /**
+   * Migrate legacy localStorage data to secure storage
+   */
+  async migrateLegacyData(): Promise<void> {
+    if (!this.userContext) {
+      throw new Error('SecureDataManager not initialized');
+    }
+
+    // Migrate stores data
+    const legacyStores = localStorage.getItem('ordernimbus_stores');
+    if (legacyStores) {
+      try {
+        const stores = JSON.parse(legacyStores);
+        await this.setSecureData('stores', stores);
+        localStorage.removeItem('ordernimbus_stores');
+        console.log('Migrated legacy stores data to secure storage');
+      } catch (error) {
+        console.error('Failed to migrate legacy stores data:', error);
+      }
+    }
+
+    // Migrate other legacy data as needed
+    const legacyKeys = ['ordernimbus_forecasts', 'ordernimbus_settings', 'ordernimbus_preferences'];
+    for (const legacyKey of legacyKeys) {
+      const legacyData = localStorage.getItem(legacyKey);
+      if (legacyData) {
+        try {
+          const data = JSON.parse(legacyData);
+          const secureKey = legacyKey.replace('ordernimbus_', '');
+          await this.setSecureData(secureKey, data);
+          localStorage.removeItem(legacyKey);
+          console.log(`Migrated legacy ${secureKey} data to secure storage`);
+        } catch (error) {
+          console.error(`Failed to migrate legacy ${legacyKey} data:`, error);
+        }
+      }
+    }
+  }
+}
+
+export default SecureDataManager;
