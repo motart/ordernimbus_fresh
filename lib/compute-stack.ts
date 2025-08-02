@@ -6,6 +6,10 @@ import * as rds from 'aws-cdk-lib/aws-rds';
 import * as applicationautoscaling from 'aws-cdk-lib/aws-applicationautoscaling';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
+import * as iam from 'aws-cdk-lib/aws-iam';
+import * as xray from 'aws-cdk-lib/aws-xray';
+import * as logs from 'aws-cdk-lib/aws-logs';
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import { Construct } from 'constructs';
 
 export interface ComputeStackProps extends cdk.StackProps {
@@ -36,17 +40,17 @@ export class ComputeStack extends cdk.Stack {
     // Create Target Group
     const targetGroup = new elbv2.ApplicationTargetGroup(this, 'TargetGroup', {
       vpc: props.vpc,
-      port: 80,
+      port: 3000,
       protocol: elbv2.ApplicationProtocol.HTTP,
       targetType: elbv2.TargetType.IP,
       healthCheck: {
         enabled: true,
         healthyHttpCodes: '200',
-        path: '/',
+        path: '/api/v1/health',
         interval: cdk.Duration.seconds(30),
-        timeout: cdk.Duration.seconds(5),
+        timeout: cdk.Duration.seconds(10),
         healthyThresholdCount: 2,
-        unhealthyThresholdCount: 5,
+        unhealthyThresholdCount: 3,
       },
     });
 
@@ -57,25 +61,89 @@ export class ComputeStack extends cdk.Stack {
       defaultAction: elbv2.ListenerAction.forward([targetGroup]),
     });
 
-    // Create ECS Task Definition
+    // Create ECS Task Definition with enhanced AWS capabilities
+    const taskRole = new iam.Role(this, 'TaskRole', {
+      assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
+      roleName: `ordernimbus-${props.environment}-api-task-role`,
+      managedPolicies: [
+        iam.ManagedPolicy.fromAwsManagedPolicyName('CloudWatchLogsFullAccess'),
+        iam.ManagedPolicy.fromAwsManagedPolicyName('AWSXRayDaemonWriteAccess'),
+      ],
+    });
+
+    // Add permissions for Secrets Manager and Parameter Store
+    taskRole.addToPolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: [
+        'secretsmanager:GetSecretValue',
+        'ssm:GetParameter',
+        'ssm:GetParameters',
+        'ssm:GetParametersByPath',
+      ],
+      resources: [
+        `arn:aws:secretsmanager:${this.region}:${this.account}:secret:ordernimbus/*`,
+        `arn:aws:ssm:${this.region}:${this.account}:parameter/ordernimbus/*`,
+      ],
+    }));
+
+    // Add DynamoDB permissions
+    taskRole.addToPolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: [
+        'dynamodb:*',
+      ],
+      resources: [
+        `arn:aws:dynamodb:${this.region}:${this.account}:table/ordernimbus-*`,
+      ],
+    }));
+
+    // Add Cognito permissions
+    taskRole.addToPolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: [
+        'cognito-idp:*',
+      ],
+      resources: ['*'],
+    }));
+
     const taskDefinition = new ecs.FargateTaskDefinition(this, 'TaskDefinition', {
       family: `ordernimbus-${props.environment}-api`,
       cpu: props.environment === 'production' ? 2048 : 1024,
       memoryLimitMiB: props.environment === 'production' ? 4096 : 2048,
+      taskRole: taskRole,
     });
 
-    // Add container to task definition
+    // Create CloudWatch Log Group
+    const logGroup = new logs.LogGroup(this, 'ApiLogGroup', {
+      logGroupName: `/aws/ecs/ordernimbus-${props.environment}-api`,
+      retention: props.environment === 'production' ? 
+        logs.RetentionDays.THREE_MONTHS : 
+        logs.RetentionDays.ONE_MONTH,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+
+    // Add container with AWS-optimized configuration
     const container = taskDefinition.addContainer('ApiContainer', {
-      image: ecs.ContainerImage.fromRegistry('nginx:latest'), // Nginx placeholder
-      containerName: 'api',
+      image: ecs.ContainerImage.fromAsset('/Users/rachid/workspace/ordernimbus_fresh/app/backend'),
+      containerName: 'ordernimbus-api',
       logging: ecs.LogDrivers.awsLogs({
-        streamPrefix: 'ordernimbus-api',
-        logRetention: props.environment === 'production' ? 90 : 30,
+        streamPrefix: 'api',
+        logGroup: logGroup,
       }),
       environment: {
         NODE_ENV: props.environment,
+        PORT: '3000',
         DATABASE_HOST: props.database.clusterEndpoint.hostname,
         AWS_REGION: this.region,
+        AWS_XRAY_TRACING: 'true',
+        ENABLE_CLOUDWATCH_LOGS: 'true',
+        USE_PARAMETER_STORE: 'true',
+        PARAMETER_STORE_PREFIX: '/ordernimbus/api/',
+        USE_COGNITO: 'true',
+        ALLOWED_ORIGINS: props.environment === 'production' ? 
+          'https://app.ordernimbus.com,https://ordernimbus.com' : 
+          'http://localhost:3000,http://localhost:3001',
+        ENABLE_SWAGGER_UI: props.environment !== 'production' ? 'true' : 'false',
       },
       secrets: {
         DATABASE_PASSWORD: ecs.Secret.fromSecretsManager(
@@ -87,25 +155,43 @@ export class ComputeStack extends cdk.Stack {
           'username'
         ),
         JWT_SECRET: ecs.Secret.fromSsmParameter(
-          ssm.StringParameter.fromStringParameterName(
-            this,
-            'JwtSecret',
-            `/ordernimbus/${props.environment}/auth/jwt-secret`
-          )
+          ssm.StringParameter.fromSecureStringParameterAttributes(this, 'JWTSecret', {
+            parameterName: '/ordernimbus/api/jwt-secret',
+          })
         ),
       },
       healthCheck: {
-        command: ['CMD-SHELL', 'curl -f http://localhost/ || exit 1'],
+        command: ['CMD-SHELL', 'curl -f http://localhost:3000/api/v1/health || exit 1'],
         interval: cdk.Duration.seconds(30),
         timeout: cdk.Duration.seconds(5),
         retries: 3,
         startPeriod: cdk.Duration.seconds(60),
       },
+      stopTimeout: cdk.Duration.seconds(30),
+      essential: true,
     });
+
+    // Add X-Ray sidecar container for distributed tracing
+    if (props.environment === 'production') {
+      taskDefinition.addContainer('XRayDaemon', {
+        image: ecs.ContainerImage.fromRegistry('public.ecr.aws/xray/aws-xray-daemon:latest'),
+        containerName: 'xray-daemon',
+        memoryLimitMiB: 256,
+        cpu: 32,
+        logging: ecs.LogDrivers.awsLogs({
+          streamPrefix: 'xray',
+          logGroup: logGroup,
+        }),
+        portMappings: [{
+          containerPort: 2000,
+          protocol: ecs.Protocol.UDP,
+        }],
+      });
+    }
 
     // Add port mapping
     container.addPortMappings({
-      containerPort: 80,
+      containerPort: 3000,
       protocol: ecs.Protocol.TCP,
     });
 
@@ -114,8 +200,8 @@ export class ComputeStack extends cdk.Stack {
       cluster: props.cluster,
       taskDefinition,
       serviceName: `ordernimbus-${props.environment}-api`,
-      desiredCount: props.environment === 'production' ? 3 : 2,
-      minHealthyPercent: 50,
+      desiredCount: props.environment === 'production' ? 3 : 1,
+      minHealthyPercent: 0,
       maxHealthyPercent: 200,
       vpcSubnets: {
         subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
@@ -123,6 +209,7 @@ export class ComputeStack extends cdk.Stack {
       securityGroups: [props.ecsSecurityGroup],
       enableExecuteCommand: props.environment !== 'production',
       platformVersion: ecs.FargatePlatformVersion.LATEST,
+      circuitBreaker: { rollback: true },
     });
 
     // Attach service to target group
@@ -138,15 +225,18 @@ export class ComputeStack extends cdk.Stack {
     // Create NLB Target Group pointing to ECS tasks directly
     const nlbTargetGroup = new elbv2.NetworkTargetGroup(this, 'NLBTargetGroup', {
       vpc: props.vpc,
-      port: 80,
+      port: 3000,
       protocol: elbv2.Protocol.TCP,
       targetType: elbv2.TargetType.IP,
       healthCheck: {
         enabled: true,
         protocol: elbv2.Protocol.HTTP,
-        path: '/',
+        path: '/api/v1/health',
         interval: cdk.Duration.seconds(30),
-        port: '80',
+        port: '3000',
+        timeout: cdk.Duration.seconds(30),
+        healthyThresholdCount: 2,
+        unhealthyThresholdCount: 10,
       },
     });
 

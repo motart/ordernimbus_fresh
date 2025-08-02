@@ -1,0 +1,112 @@
+{
+  "family": "ordernimbus-api",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::ACCOUNT_ID:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::ACCOUNT_ID:role/ordernimbus-api-task-role",
+  "containerDefinitions": [
+    {
+      "name": "ordernimbus-api",
+      "image": "ACCOUNT_ID.dkr.ecr.REGION.amazonaws.com/ordernimbus-api:latest",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 3000,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        {
+          "name": "NODE_ENV",
+          "value": "production"
+        },
+        {
+          "name": "PORT",
+          "value": "3000"
+        },
+        {
+          "name": "AWS_REGION",
+          "value": "us-west-1"
+        },
+        {
+          "name": "ENABLE_CLOUDWATCH_LOGS",
+          "value": "true"
+        },
+        {
+          "name": "AWS_XRAY_TRACING",
+          "value": "true"
+        },
+        {
+          "name": "USE_PARAMETER_STORE",
+          "value": "true"
+        },
+        {
+          "name": "PARAMETER_STORE_PREFIX",
+          "value": "/ordernimbus/api/"
+        },
+        {
+          "name": "USE_COGNITO",
+          "value": "true"
+        }
+      ],
+      "secrets": [
+        {
+          "name": "JWT_SECRET",
+          "valueFrom": "arn:aws:secretsmanager:us-west-1:ACCOUNT_ID:secret:ordernimbus/api/jwt-secret"
+        },
+        {
+          "name": "COGNITO_CLIENT_ID",
+          "valueFrom": "arn:aws:ssm:us-west-1:ACCOUNT_ID:parameter/ordernimbus/api/cognito-client-id"
+        },
+        {
+          "name": "COGNITO_USER_POOL_ID",
+          "valueFrom": "arn:aws:ssm:us-west-1:ACCOUNT_ID:parameter/ordernimbus/api/cognito-user-pool-id"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/aws/ecs/ordernimbus-api",
+          "awslogs-region": "us-west-1",
+          "awslogs-stream-prefix": "api",
+          "awslogs-create-group": "true"
+        }
+      },
+      "healthCheck": {
+        "command": ["CMD-SHELL", "curl -f http://localhost:3000/api/v1/health || exit 1"],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 60
+      },
+      "ulimits": [
+        {
+          "name": "nofile",
+          "softLimit": 65536,
+          "hardLimit": 65536
+        }
+      ],
+      "mountPoints": [],
+      "volumesFrom": [],
+      "stopTimeout": 30,
+      "startTimeout": 30
+    }
+  ],
+  "placementConstraints": [],
+  "tags": [
+    {
+      "key": "Project",
+      "value": "OrderNimbus"
+    },
+    {
+      "key": "Component",
+      "value": "API"
+    },
+    {
+      "key": "Environment",
+      "value": "production"
+    }
+  ]
+}

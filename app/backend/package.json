@@ -1,0 +1,50 @@
+{
+  "name": "ordernimbus-backend",
+  "version": "2.0.0",
+  "description": "OrderNimbus Sales Forecasting Backend - Modern REST API",
+  "main": "server-v2.js",
+  "scripts": {
+    "start": "node server-aws.js",
+    "start:v2": "node server-v2.js",
+    "start:legacy": "node server.js",
+    "dev": "nodemon server-aws.js",
+    "dev:v2": "nodemon server-v2.js",
+    "dev:legacy": "nodemon server.js",
+    "test": "jest --coverage",
+    "test:watch": "jest --watch",
+    "test:api": "node test-api.js",
+    "lint": "eslint src/**/*.js",
+    "format": "prettier --write src/**/*.js",
+    "docker:build": "docker build -t ordernimbus-api .",
+    "docker:run": "docker run -p 3000:3000 --env-file .env ordernimbus-api",
+    "aws:setup": "./scripts/setup-aws-resources.sh",
+    "aws:deploy": "./scripts/deploy-ecs.sh",
+    "aws:deploy:staging": "./scripts/deploy-ecs.sh staging us-west-1",
+    "aws:deploy:production": "./scripts/deploy-ecs.sh production us-west-1"
+  },
+  "dependencies": {
+    "@aws-sdk/client-cognito-identity-provider": "^3.859.0",
+    "@aws-sdk/client-dynamodb": "^3.859.0",
+    "@aws-sdk/client-secrets-manager": "^3.859.0",
+    "@aws-sdk/client-ssm": "^3.859.0",
+    "@aws-sdk/lib-dynamodb": "^3.859.0",
+    "aws-xray-sdk-core": "^3.10.3",
+    "bcryptjs": "^3.0.2",
+    "compression": "^1.8.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "express-rate-limit": "^8.0.1",
+    "express-validator": "^7.2.1",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "morgan": "^1.10.1",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.1",
+    "winston": "^3.17.0",
+    "winston-cloudwatch": "^6.3.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}

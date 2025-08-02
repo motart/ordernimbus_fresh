@@ -20,5 +20,12 @@
     "ExportsOutputFnGetAttALBSecurityGroup29A3BDEFGroupId2A9BC0BF": "sg-0d263e9be2632da28",
     "ECSTaskExecutionRoleArn": "arn:aws:iam::335021149718:role/ordernimbus-staging-secur-ECSTaskExecutionRole911F5-xeJvFmLQz5AP",
     "ExportsOutputFnGetAttECSSecurityGroupA14DBE7DGroupIdF26764D6": "sg-03b4b9058da693eb8"
+  },
+  "ordernimbus-staging-database": {
+    "ExportsOutputFnGetAttAuroraCluster23D869C0EndpointAddress064B8907": "ordernimbus-staging-db-cluster.cluster-csspjq4mecat.us-west-1.rds.amazonaws.com",
+    "ExportsOutputRefAuroraClusterSecretAttachmentDB8032DAFDEEBE73": "arn:aws:secretsmanager:us-west-1:335021149718:secret:ordernimbus-staging-db-credentials-T6Tjpi",
+    "DatabaseName": "forecasting_db",
+    "ExportsOutputRefAuroraCluster23D869C0CA1C7DB5": "ordernimbus-staging-db-cluster",
+    "DatabaseEndpoint": "ordernimbus-staging-db-cluster.cluster-csspjq4mecat.us-west-1.rds.amazonaws.com"
   }
 }
