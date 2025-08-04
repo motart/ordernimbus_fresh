@@ -52,7 +52,7 @@ const envUrls = getEnvironmentUrls();
 const SHOPIFY_APP_CONFIG = {
   apiKey: process.env.SHOPIFY_API_KEY || 'your-app-api-key',
   apiSecret: process.env.SHOPIFY_API_SECRET || 'your-app-secret',
-  scopes: 'read_products,read_orders,read_inventory,read_customers,read_analytics',
+  scopes: 'read_products,read_orders,write_orders,read_inventory,read_customers,read_analytics,read_locations,read_fulfillments',
   redirectUri: envUrls.redirectUri,
   appUrl: envUrls.appUrl
 };
@@ -163,32 +163,91 @@ const handleOAuthCallback = async (code, shop, state, hmac) => {
     
     const shopInfo = shopInfoResponse.data.shop;
     
+    // Get additional shop details
+    let locationId = null;
+    try {
+      // Get primary location for inventory tracking
+      const locationsResponse = await axios.get(`https://${shop}/admin/api/2024-01/locations.json`, {
+        headers: {
+          'X-Shopify-Access-Token': access_token
+        }
+      });
+      
+      if (locationsResponse.data.locations && locationsResponse.data.locations.length > 0) {
+        // Find primary location or use first one
+        const primaryLocation = locationsResponse.data.locations.find(loc => loc.active) || locationsResponse.data.locations[0];
+        locationId = primaryLocation.id;
+      }
+    } catch (locError) {
+      console.log('Could not fetch locations:', locError.message);
+    }
+    
     // Store the access token securely
     const storeId = `store_${crypto.randomBytes(8).toString('hex')}`;
     
-    // Save store with access token
+    // Save store with comprehensive information from Shopify
     await dynamodb.put({
       TableName: `${process.env.TABLE_PREFIX || 'ordernimbus-local'}-stores`,
       Item: {
         userId,
         id: storeId,
-        name: shopInfo.name,
+        name: shopInfo.name || shop.replace('.myshopify.com', ''),
+        displayName: shopInfo.name,
         type: 'shopify',
         shopifyDomain: shop,
         apiKey: access_token, // In production, encrypt this
         shopifyShopId: shopInfo.id,
         email: shopInfo.email,
+        phone: shopInfo.phone || null,
         country: shopInfo.country_name,
+        countryCode: shopInfo.country_code,
+        province: shopInfo.province || null,
+        provinceCode: shopInfo.province_code || null,
+        city: shopInfo.city || null,
+        address1: shopInfo.address1 || null,
+        address2: shopInfo.address2 || null,
+        zip: shopInfo.zip || null,
         currency: shopInfo.currency,
+        moneyFormat: shopInfo.money_format,
+        moneyWithCurrencyFormat: shopInfo.money_with_currency_format,
         timezone: shopInfo.iana_timezone,
+        timezoneOffset: shopInfo.timezone,
+        weightUnit: shopInfo.weight_unit,
+        taxesIncluded: shopInfo.taxes_included,
+        taxShipping: shopInfo.tax_shipping,
+        planName: shopInfo.plan_name,
+        planDisplayName: shopInfo.plan_display_name,
+        primaryDomain: shopInfo.domain,
+        myshopifyDomain: shopInfo.myshopify_domain,
+        primaryLocationId: locationId,
+        shopOwner: shopInfo.shop_owner,
+        customerEmail: shopInfo.customer_email,
+        hasStorefront: shopInfo.has_storefront,
+        hasDiscounts: shopInfo.has_discounts,
+        hasGiftCards: shopInfo.has_gift_cards,
+        eligibleForPayments: shopInfo.eligible_for_payments,
+        eligibleForCardReaderGiveaway: shopInfo.eligible_for_card_reader_giveaway,
+        passwordEnabled: shopInfo.password_enabled,
+        setupRequired: shopInfo.setup_required,
+        checkoutApiSupported: shopInfo.checkout_api_supported,
+        multiLocationEnabled: shopInfo.multi_location_enabled,
         status: 'active',
         createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        shopifyCreatedAt: shopInfo.created_at,
+        shopifyUpdatedAt: shopInfo.updated_at,
         syncStatus: 'pending',
+        lastSync: null,
         shopifyData: {
           planName: shopInfo.plan_name,
           primaryDomain: shopInfo.domain,
           createdAt: shopInfo.created_at,
-          productCount: shopInfo.products_count
+          googleAppsDomain: shopInfo.google_apps_domain,
+          googleAppsLoginEnabled: shopInfo.google_apps_login_enabled,
+          source: shopInfo.source,
+          forceSsl: shopInfo.force_ssl,
+          prelaunchEnabled: shopInfo.pre_launch_enabled,
+          enabledPresentmentCurrencies: shopInfo.enabled_presentment_currencies
         }
       }
     }).promise();
@@ -200,18 +259,46 @@ const handleOAuthCallback = async (code, shop, state, hmac) => {
     }).promise();
     
     // Trigger initial sync
-    const lambda = new AWS.Lambda();
-    await lambda.invoke({
-      FunctionName: process.env.SHOPIFY_SYNC_FUNCTION || 'ordernimbus-local-shopify-integration',
-      InvocationType: 'Event',
-      Payload: JSON.stringify({
-        userId,
-        storeId,
-        shopifyDomain: shop,
-        apiKey: access_token,
-        syncType: 'full'
-      })
-    }).promise();
+    // In local environment, call the function directly
+    if (process.env.ENVIRONMENT === 'local') {
+      try {
+        console.log('Triggering initial sync for store:', shop);
+        
+        // Directly call the shopify-integration handler
+        const shopifyIntegration = require('./shopify-integration');
+        const syncEvent = {
+          body: JSON.stringify({
+            userId,
+            storeId,
+            shopifyDomain: shop,
+            apiKey: access_token,
+            syncType: 'full',
+            locationId: locationId
+          })
+        };
+        
+        const syncResponse = await shopifyIntegration.handler(syncEvent);
+        console.log('Local sync triggered:', JSON.parse(syncResponse.body));
+      } catch (syncError) {
+        console.log('Sync will be performed later:', syncError.message);
+        // Don't fail the OAuth flow if sync fails
+      }
+    } else {
+      // In AWS, use Lambda invoke
+      const lambda = new AWS.Lambda();
+      await lambda.invoke({
+        FunctionName: process.env.SHOPIFY_SYNC_FUNCTION || 'ordernimbus-local-shopify-integration',
+        InvocationType: 'Event',
+        Payload: JSON.stringify({
+          userId,
+          storeId,
+          shopifyDomain: shop,
+          apiKey: access_token,
+          syncType: 'full',
+          locationId: locationId
+        })
+      }).promise();
+    }
     
     return {
       success: true,

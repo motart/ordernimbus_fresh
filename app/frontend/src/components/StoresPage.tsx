@@ -6,33 +6,41 @@ import {
   FiEdit2, 
   FiTrash2, 
   FiMapPin,
-  FiShoppingBag,
   FiGlobe,
   FiX,
   FiCheck,
-  FiAlertCircle
+  FiUpload
 } from 'react-icons/fi';
 import { SiShopify } from 'react-icons/si';
 import { MdStorefront } from 'react-icons/md';
 import useSecureData from '../hooks/useSecureData';
 import ShopifyConnect from './ShopifyConnect';
+import CSVUploadModal from './CSVUploadModal';
+import './CSVUploadModal.css';
 
 interface Store {
   id: string;
   name: string;
+  displayName?: string;
   type: 'brick-and-mortar' | 'shopify' | 'other';
   address?: string;
+  address1?: string;
   city?: string;
   state?: string;
+  province?: string;
   zipCode?: string;
+  zip?: string;
   country?: string;
   website?: string;
   shopifyDomain?: string;
+  myshopifyDomain?: string;
+  primaryDomain?: string;
   apiKey?: string;
   status: 'active' | 'inactive';
   createdAt: string;
   lastSync?: string;
-  syncStatus?: 'pending' | 'syncing' | 'completed' | 'failed';
+  syncStatus?: 'pending' | 'syncing' | 'completed' | 'failed' | 'partial';
+  primaryLocationId?: number;
   syncMetadata?: {
     productsCount?: number;
     ordersCount?: number;
@@ -45,6 +53,11 @@ interface Store {
   forecastAccuracy?: number;
   nextForecast?: string;
   forecastStatus?: 'pending' | 'processing' | 'ready' | 'error';
+  email?: string;
+  phone?: string;
+  shopOwner?: string;
+  planName?: string;
+  currency?: string;
 }
 
 interface Forecast {
@@ -64,6 +77,11 @@ const StoresPage: React.FC = () => {
   const [forecastData, setForecastData] = useState<Forecast[]>([]);
   const [isGeneratingForecast, setIsGeneratingForecast] = useState(false);
   const [isLoadingStores, setIsLoadingStores] = useState(true);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [storeToDelete, setStoreToDelete] = useState<Store | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [showCSVUpload, setShowCSVUpload] = useState(false);
+  const [selectedStoreForCSV, setSelectedStoreForCSV] = useState<Store | null>(null);
   const [formData, setFormData] = useState({
     name: '',
     type: 'brick-and-mortar' as Store['type'],
@@ -90,20 +108,57 @@ const StoresPage: React.FC = () => {
   // Load stores securely when initialized
   useEffect(() => {
     const loadStores = async () => {
-      if (!isInitialized) return;
+      if (!isInitialized || !userContext) return;
       
       setIsLoadingStores(true);
       try {
-        const savedStores = await getData<Store[]>('stores');
-        if (savedStores && savedStores.length > 0) {
-          setStores(savedStores);
+        // First, try to load from API to get the latest data
+        const apiUrl = process.env.REACT_APP_API_URL || 'http://127.0.0.1:3001';
+        const response = await fetch(`${apiUrl}/api/stores`, {
+          headers: {
+            'userId': userContext.userId
+          }
+        });
+        
+        if (response.ok) {
+          const result = await response.json();
+          if (result.stores && result.stores.length > 0) {
+            setStores(result.stores);
+            // Save to local storage for offline access
+            await setData('stores', result.stores);
+          } else {
+            // No stores in API, check local storage
+            const savedStores = await getData<Store[]>('stores');
+            if (savedStores && savedStores.length > 0) {
+              setStores(savedStores);
+            } else {
+              setStores([]);
+            }
+          }
         } else {
-          // No demo stores - start with empty array for new users
-          setStores([]);
+          // API failed, fall back to local storage
+          const savedStores = await getData<Store[]>('stores');
+          if (savedStores && savedStores.length > 0) {
+            setStores(savedStores);
+          } else {
+            setStores([]);
+          }
         }
       } catch (error) {
         console.error('Failed to load stores:', error);
-        toast.error('Failed to load stores');
+        // Try local storage as fallback
+        try {
+          const savedStores = await getData<Store[]>('stores');
+          if (savedStores && savedStores.length > 0) {
+            setStores(savedStores);
+          } else {
+            setStores([]);
+          }
+        } catch (localError) {
+          console.error('Failed to load stores from local storage:', localError);
+          toast.error('Failed to load stores');
+          setStores([]);
+        }
       } finally {
         setIsLoadingStores(false);
       }
@@ -234,20 +289,37 @@ const StoresPage: React.FC = () => {
 
   // Poll for Shopify sync status
   const handleShopifyConnectSuccess = async (storeData: any) => {
-    // Store has been created via OAuth, just update local state
-    const newStore = {
-      ...storeData,
-      syncStatus: 'syncing' as const
-    };
+    // Store has been created via OAuth, fetch the full store data
+    try {
+      const apiUrl = process.env.REACT_APP_API_URL || 'http://127.0.0.1:3001';
+      const response = await fetch(`${apiUrl}/api/stores`, {
+        headers: {
+          'userId': userContext?.userId || 'test-user'
+        }
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        const newStore = result.stores.find((s: Store) => s.id === storeData.storeId);
+        
+        if (newStore) {
+          // Update stores list with the new store
+          const updatedStores = [...stores, newStore];
+          setStores(updatedStores);
+          await setData('stores', updatedStores);
+          
+          toast.success(`✅ ${newStore.name} connected! Syncing data...`);
+          
+          // Start polling for sync status
+          setTimeout(() => pollSyncStatus(storeData.storeId), 3000);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch store after OAuth:', error);
+      toast.error('Store connected but failed to load details');
+    }
     
-    setStores(prev => [...prev, newStore]);
-    await setData('stores', [...stores, newStore]);
     setShowShopifyConnect(false);
-    
-    toast.success('Shopify store connected! Syncing data...');
-    
-    // Start polling for sync status
-    setTimeout(() => pollSyncStatus(storeData.storeId), 3000);
   };
 
   const pollSyncStatus = async (storeId: string) => {
@@ -309,22 +381,166 @@ const StoresPage: React.FC = () => {
     setShowAddModal(true);
   };
 
-  const handleDelete = async (storeId: string) => {
-    if (!isInitialized) {
+  const handleDeleteClick = (store: Store) => {
+    setStoreToDelete(store);
+    setShowDeleteModal(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!isInitialized || !storeToDelete) {
       toast.error('System not ready. Please wait...');
       return;
     }
 
-    if (window.confirm('Are you sure you want to delete this store?')) {
-      try {
-        const updatedStores = stores.filter(store => store.id !== storeId);
+    setIsDeleting(true);
+    try {
+      const apiUrl = process.env.REACT_APP_API_URL || 'http://127.0.0.1:3001';
+      
+      // Call API to delete store
+      const response = await fetch(`${apiUrl}/api/stores/${storeToDelete.id}`, {
+        method: 'DELETE',
+        headers: {
+          'userId': userContext?.userId || 'test-user'
+        }
+      });
+
+      if (response.ok) {
+        const updatedStores = stores.filter(store => store.id !== storeToDelete.id);
         setStores(updatedStores);
         await setData('stores', updatedStores);
-        toast.success('Store deleted successfully');
-      } catch (error) {
-        console.error('Failed to delete store:', error);
-        toast.error('Failed to delete store securely');
+        toast.success(`${storeToDelete.name} has been deleted`);
+      } else {
+        throw new Error('Failed to delete store');
       }
+    } catch (error) {
+      console.error('Failed to delete store:', error);
+      toast.error('Failed to delete store');
+    } finally {
+      setIsDeleting(false);
+      setShowDeleteModal(false);
+      setStoreToDelete(null);
+    }
+  };
+
+  const cancelDelete = () => {
+    setShowDeleteModal(false);
+    setStoreToDelete(null);
+  };
+
+  const handleCSVUploadClick = (store: Store) => {
+    setSelectedStoreForCSV(store);
+    setShowCSVUpload(true);
+  };
+
+  const handleCSVUpload = async (csvData: any[], columnMappings: any, dataType: string) => {
+    if (!selectedStoreForCSV) return;
+    
+    try {
+      const apiUrl = process.env.REACT_APP_API_URL || 'http://127.0.0.1:3001';
+      const endpoint = dataType === 'orders' ? '/api/orders/upload-csv' : '/api/data/upload-csv';
+      
+      const response = await fetch(`${apiUrl}${endpoint}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'userId': userContext?.userId || 'test-user'
+        },
+        body: JSON.stringify({
+          storeId: selectedStoreForCSV.id,
+          csvData,
+          columnMappings,
+          dataType
+        })
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        const count = result.itemsCreated || result.ordersCreated || result.productsCreated || result.inventoryCreated || result.customersCreated || 0;
+        toast.success(`Successfully uploaded ${count} ${dataType} to ${selectedStoreForCSV.name}`);
+        
+        // Refresh stores to update order counts if applicable
+        // This would be handled by the order management system
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to upload CSV');
+      }
+    } catch (error) {
+      console.error('Error uploading CSV:', error);
+      throw error; // Re-throw to let the modal handle the error
+    }
+  };
+
+  const triggerManualSync = async (store: Store) => {
+    if (store.type !== 'shopify' || !store.apiKey) {
+      toast.error('Cannot sync: Store is not properly connected to Shopify');
+      return;
+    }
+
+    try {
+      toast('🔄 Starting manual sync...', { duration: 2000 });
+      
+      const apiUrl = process.env.REACT_APP_API_URL || 'http://127.0.0.1:3001';
+      const response = await fetch(`${apiUrl}/api/shopify/sync`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'userId': userContext?.userId || 'test-user'
+        },
+        body: JSON.stringify({
+          userId: userContext?.userId || 'test-user',
+          storeId: store.id,
+          shopifyDomain: store.shopifyDomain,
+          apiKey: store.apiKey,
+          syncType: 'full',
+          locationId: store.primaryLocationId
+        })
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        
+        // Check if there were any warnings (partial sync)
+        if (result.warnings && result.warnings.length > 0) {
+          toast.success(`⚠️ Partial sync complete! Imported ${result.stats?.products || 0} products. Some data requires additional permissions.`, { duration: 5000 });
+        } else {
+          toast.success(`✅ Sync complete! Imported ${result.stats?.products || 0} products, ${result.stats?.orders || 0} orders`);
+        }
+        
+        // Update store sync status
+        const syncStatus = result.warnings && result.warnings.length > 0 ? 'partial' : 'completed';
+        const updatedStores = stores.map(s => 
+          s.id === store.id 
+            ? { 
+                ...s, 
+                syncStatus: syncStatus as any,
+                lastSync: new Date().toISOString(),
+                syncMetadata: {
+                  productsCount: result.stats?.products || 0,
+                  ordersCount: result.stats?.orders || 0,
+                  inventoryCount: result.stats?.inventory || 0,
+                  notes: result.note
+                }
+              }
+            : s
+        );
+        setStores(updatedStores);
+        await setData('stores', updatedStores);
+      } else {
+        const error = await response.json();
+        toast.error(`Sync failed: ${error.message || 'Unknown error'}`);
+        
+        // Update store sync status to failed
+        const updatedStores = stores.map(s => 
+          s.id === store.id 
+            ? { ...s, syncStatus: 'failed' as const }
+            : s
+        );
+        setStores(updatedStores);
+        await setData('stores', updatedStores);
+      }
+    } catch (error) {
+      console.error('Manual sync error:', error);
+      toast.error('Failed to trigger sync');
     }
   };
 
@@ -482,16 +698,18 @@ const StoresPage: React.FC = () => {
                 {getStoreIcon(store.type)}
               </div>
               <div className="store-actions">
-                <button 
-                  className="btn-icon" 
-                  onClick={() => handleEdit(store)}
-                  title="Edit store"
-                >
-                  {React.createElement(FiEdit2 as any)}
-                </button>
+                {store.type !== 'shopify' && (
+                  <button 
+                    className="btn-icon" 
+                    onClick={() => handleEdit(store)}
+                    title="Edit store"
+                  >
+                    {React.createElement(FiEdit2 as any)}
+                  </button>
+                )}
                 <button 
                   className="btn-icon delete" 
-                  onClick={() => handleDelete(store.id)}
+                  onClick={() => handleDeleteClick(store)}
                   title="Delete store"
                 >
                   {React.createElement(FiTrash2 as any)}
@@ -499,7 +717,7 @@ const StoresPage: React.FC = () => {
               </div>
             </div>
             
-            <h3 className="store-name">{store.name}</h3>
+            <h3 className="store-name">{store.name || store.displayName || 'Unnamed Store'}</h3>
             
             <div className="store-type">
               <span className={`type-badge ${store.type}`}>
@@ -517,24 +735,40 @@ const StoresPage: React.FC = () => {
               </div>
             )}
 
-            {store.type === 'shopify' && store.shopifyDomain && (
-              <div className="store-domain">
-                {React.createElement(FiGlobe as any)}
-                {store.shopifyDomain}
-              </div>
+            {store.type === 'shopify' && (
+              <>
+                <div className="store-domain">
+                  {React.createElement(FiGlobe as any)}
+                  {store.myshopifyDomain || store.shopifyDomain || store.primaryDomain || 'Shopify Store'}
+                </div>
+                {(store.city || store.province) && (
+                  <div className="store-location">
+                    {React.createElement(FiMapPin as any)}
+                    {store.city || ''}{store.city && (store.province || store.state) ? ', ' : ''}
+                    {store.province || store.state || ''}
+                    {store.country ? `, ${store.country}` : ''}
+                  </div>
+                )}
+              </>
             )}
 
             <div className="store-stats">
-              {store.totalProducts !== undefined && (
+              {(store.totalProducts !== undefined || store.syncMetadata?.productsCount !== undefined) && (
                 <div className="stat">
                   <span className="stat-value">{store.syncMetadata?.productsCount || store.totalProducts || 0}</span>
                   <span className="stat-label">Products</span>
                 </div>
               )}
-              {store.totalOrders !== undefined && (
+              {(store.totalOrders !== undefined || store.syncMetadata?.ordersCount !== undefined) && (
                 <div className="stat">
                   <span className="stat-value">{store.syncMetadata?.ordersCount || store.totalOrders || 0}</span>
                   <span className="stat-label">Orders</span>
+                </div>
+              )}
+              {store.type === 'shopify' && store.planName && (
+                <div className="stat">
+                  <span className="stat-value">{store.planName}</span>
+                  <span className="stat-label">Plan</span>
                 </div>
               )}
             </div>
@@ -542,22 +776,70 @@ const StoresPage: React.FC = () => {
             {/* Sync Status Indicator */}
             {store.type === 'shopify' && store.syncStatus && (
               <div className={`sync-status sync-${store.syncStatus}`}>
-                {store.syncStatus === 'pending' && '⏳ Sync Pending'}
+                {store.syncStatus === 'pending' && (
+                  <>
+                    <span>⏳ Sync Pending</span>
+                    <button
+                      onClick={() => triggerManualSync(store)}
+                      className="sync-now-btn"
+                      title="Manually trigger sync"
+                    >
+                      Sync Now
+                    </button>
+                  </>
+                )}
                 {store.syncStatus === 'syncing' && '🔄 Syncing...'}
                 {store.syncStatus === 'completed' && '✅ Synced'}
-                {store.syncStatus === 'failed' && '❌ Sync Failed'}
+                {store.syncStatus === 'partial' && (
+                  <>
+                    <span>⚠️ Partial Sync</span>
+                    <button
+                      onClick={() => triggerManualSync(store)}
+                      className="sync-now-btn"
+                      title="Retry full sync"
+                    >
+                      Retry
+                    </button>
+                  </>
+                )}
+                {store.syncStatus === 'failed' && (
+                  <>
+                    <span>❌ Sync Failed</span>
+                    <button
+                      onClick={() => triggerManualSync(store)}
+                      className="sync-now-btn"
+                      title="Retry sync"
+                    >
+                      Retry
+                    </button>
+                  </>
+                )}
               </div>
             )}
 
             <div className="store-footer">
-              <span className="created-date">Added {store.createdAt}</span>
+              {store.type === 'shopify' && store.shopOwner && (
+                <span className="store-owner">Owner: {store.shopOwner}</span>
+              )}
+              <span className="created-date">Added {new Date(store.createdAt).toLocaleDateString()}</span>
               {store.lastSync && (
-                <span className="sync-date">Synced {store.lastSync}</span>
+                <span className="sync-date">Synced {new Date(store.lastSync).toLocaleDateString()}</span>
               )}
             </div>
 
-            {/* Forecast Section */}
-            <div className="store-forecast-section">
+            {/* Actions Section */}
+            <div className="store-actions-section">
+              {store.type === 'brick-and-mortar' && (
+                <button 
+                  className="btn-csv-upload"
+                  onClick={() => handleCSVUploadClick(store)}
+                  title="Import any business data from CSV - Orders, Products, Inventory, and more"
+                >
+                  {React.createElement(FiUpload as any)}
+                  📁 Import Data
+                </button>
+              )}
+              
               <button 
                 className="btn-forecast"
                 onClick={() => generateForecast(store)}
@@ -881,6 +1163,101 @@ const StoresPage: React.FC = () => {
           userId={userContext?.userId || 'test-user'}
           onSuccess={handleShopifyConnectSuccess}
           onCancel={() => setShowShopifyConnect(false)}
+        />
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && storeToDelete && (
+        <div className="modal-overlay" onClick={cancelDelete}>
+          <div className="modal-content delete-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Delete Store</h2>
+              <button 
+                className="btn-icon"
+                onClick={cancelDelete}
+                disabled={isDeleting}
+              >
+                {React.createElement(FiX as any)}
+              </button>
+            </div>
+
+            <div className="delete-modal-body">
+              <div className="delete-warning-icon">
+                {React.createElement(FiTrash2 as any, { size: 48 })}
+              </div>
+              
+              <h3>Are you sure you want to delete this store?</h3>
+              
+              <div className="store-delete-info">
+                <div className="store-delete-details">
+                  <div className="store-icon-small">
+                    {getStoreIcon(storeToDelete.type)}
+                  </div>
+                  <div>
+                    <div className="store-name-delete">{storeToDelete.name}</div>
+                    <div className="store-type-delete">{getStoreTypeLabel(storeToDelete.type)}</div>
+                    {storeToDelete.type === 'shopify' && storeToDelete.shopifyDomain && (
+                      <div className="store-domain-delete">{storeToDelete.shopifyDomain}</div>
+                    )}
+                    {storeToDelete.type === 'brick-and-mortar' && storeToDelete.city && (
+                      <div className="store-location-delete">
+                        {storeToDelete.city}, {storeToDelete.state}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+              
+              <div className="delete-warning-text">
+                <p className="warning-title">⚠️ This action cannot be undone</p>
+                <p>All data associated with this store will be permanently deleted, including:</p>
+                <ul>
+                  <li>• Historical sales data</li>
+                  <li>• Product inventory</li>
+                  <li>• Forecasts and analytics</li>
+                  <li>• Store configuration</li>
+                </ul>
+              </div>
+            </div>
+
+            <div className="modal-actions">
+              <button 
+                className="btn-secondary"
+                onClick={cancelDelete}
+                disabled={isDeleting}
+              >
+                Cancel
+              </button>
+              <button 
+                className="btn-danger"
+                onClick={confirmDelete}
+                disabled={isDeleting}
+              >
+                {isDeleting ? (
+                  <>
+                    <span className="spinner"></span>
+                    Deleting...
+                  </>
+                ) : (
+                  <>
+                    {React.createElement(FiTrash2 as any)}
+                    Delete Store
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CSV Upload Modal */}
+      {showCSVUpload && (
+        <CSVUploadModal
+          isOpen={showCSVUpload}
+          onClose={() => setShowCSVUpload(false)}
+          onUpload={handleCSVUpload}
+          storeId={selectedStoreForCSV?.id || ''}
+          storeName={selectedStoreForCSV?.name || ''}
         />
       )}
     </div>

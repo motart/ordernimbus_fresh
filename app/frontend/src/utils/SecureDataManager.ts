@@ -74,7 +74,16 @@ class SecureDataManager {
    */
   async initializeFallback(fallbackEmail: string = 'temp@example.com'): Promise<void> {
     try {
-      const tempUserId = `temp-user-${Date.now()}`;
+      // Use a consistent userId for local development
+      // Check if we have a stored userId first
+      let tempUserId = localStorage.getItem('ordernimbus_local_userId');
+      
+      if (!tempUserId) {
+        // Generate a new UUID-like userId and store it
+        tempUserId = `local-user-${crypto.randomUUID ? crypto.randomUUID() : Date.now()}`;
+        localStorage.setItem('ordernimbus_local_userId', tempUserId);
+      }
+      
       const keyMaterial = await this.deriveKeyFromUser(tempUserId, fallbackEmail);
       const encryptionKey = await this.generateEncryptionKey(keyMaterial);
 

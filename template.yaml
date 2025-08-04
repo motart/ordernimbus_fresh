@@ -117,29 +117,6 @@ Resources:
                 - ses:SendTemplatedEmail
               Resource: '*'
 
-  ChatbotHandlerFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      FunctionName: !Sub 'ordernimbus-${Environment}-chatbot-handler'
-      CodeUri: lambda/
-      Handler: chatbot-handler.handler
-      Environment:
-        Variables:
-          CONVERSATION_TABLE: !Ref ConversationsTable
-          DATA_ANALYSIS_FUNCTION: !Ref DataAnalysisFunction
-      Events:
-        ApiEvent:
-          Type: Api
-          Properties:
-            RestApiId: !Ref ApiGateway
-            Path: /api/chatbot
-            Method: POST
-      Policies:
-        - DynamoDBCrudPolicy:
-            TableName: !Ref ConversationsTable
-        - LambdaInvokePolicy:
-            FunctionName: !Ref DataAnalysisFunction
-
   DataAnalysisFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -151,7 +128,6 @@ Resources:
       Environment:
         Variables:
           FORECAST_TABLE: !Ref ForecastsTable
-          CONVERSATION_TABLE: !Ref ConversationsTable
           DATA_UPLOADS_TABLE: !Ref DataUploadsTable
       Events:
         ApiEvent:
@@ -163,8 +139,6 @@ Resources:
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref ForecastsTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref ConversationsTable
         - DynamoDBCrudPolicy:
             TableName: !Ref DataUploadsTable
 
@@ -465,22 +439,6 @@ Resources:
         - AttributeName: userId
           KeyType: HASH
         - AttributeName: sessionId
-          KeyType: RANGE
-
-  ConversationsTable:
-    Type: AWS::DynamoDB::Table
-    Properties:
-      TableName: !Sub 'ordernimbus-${Environment}-conversations'
-      BillingMode: PAY_PER_REQUEST
-      AttributeDefinitions:
-        - AttributeName: userId
-          AttributeType: S
-        - AttributeName: timestamp
-          AttributeType: N
-      KeySchema:
-        - AttributeName: userId
-          KeyType: HASH
-        - AttributeName: timestamp
           KeyType: RANGE
 
   ForecastsTable:

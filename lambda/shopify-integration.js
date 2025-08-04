@@ -55,13 +55,116 @@ const fetchShopifyProducts = async (domain, apiKey) => {
   return data.products || [];
 };
 
-// Fetch orders from Shopify
+// Fetch orders from Shopify - Try GraphQL first, fallback to REST
 const fetchShopifyOrders = async (domain, apiKey) => {
   if (!apiKey) {
     throw new Error('API key is required. Please connect your Shopify store using OAuth or provide an API token.');
   }
   
-  // Fetch orders from the last 90 days
+  // Try GraphQL API first (often has better access in dev stores)
+  try {
+    const sinceDate = new Date();
+    sinceDate.setDate(sinceDate.getDate() - 90);
+    
+    const graphqlQuery = {
+      query: `
+        query GetOrders($first: Int!, $query: String) {
+          orders(first: $first, query: $query) {
+            edges {
+              node {
+                id
+                name
+                createdAt
+                updatedAt
+                totalPriceSet {
+                  shopMoney {
+                    amount
+                    currencyCode
+                  }
+                }
+                subtotalPriceSet {
+                  shopMoney {
+                    amount
+                  }
+                }
+                lineItems(first: 100) {
+                  edges {
+                    node {
+                      id
+                      title
+                      quantity
+                      product {
+                        id
+                      }
+                      variant {
+                        id
+                        price
+                      }
+                      originalTotalSet {
+                        shopMoney {
+                          amount
+                        }
+                      }
+                    }
+                  }
+                }
+                customer {
+                  id
+                }
+                fulfillmentStatus
+                financialStatus
+              }
+            }
+          }
+        }
+      `,
+      variables: {
+        first: 100,
+        query: `created_at:>'${sinceDate.toISOString().split('T')[0]}'`
+      }
+    };
+    
+    const url = buildShopifyUrl(domain, 'graphql.json');
+    const response = await axios.post(url, graphqlQuery, {
+      headers: {
+        'X-Shopify-Access-Token': apiKey,
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    if (response.data.data && response.data.data.orders) {
+      // Transform GraphQL response to match REST format
+      const orders = response.data.data.orders.edges.map(edge => {
+        const node = edge.node;
+        return {
+          id: node.id.split('/').pop(),
+          name: node.name,
+          created_at: node.createdAt,
+          updated_at: node.updatedAt,
+          total_price: node.totalPriceSet.shopMoney.amount,
+          subtotal_price: node.subtotalPriceSet.shopMoney.amount,
+          currency: node.totalPriceSet.shopMoney.currencyCode,
+          financial_status: node.financialStatus,
+          fulfillment_status: node.fulfillmentStatus,
+          line_items: node.lineItems.edges.map(item => ({
+            id: item.node.id.split('/').pop(),
+            product_id: item.node.product ? item.node.product.id.split('/').pop() : null,
+            title: item.node.title,
+            quantity: item.node.quantity,
+            price: item.node.variant ? item.node.variant.price : '0',
+            total: item.node.originalTotalSet.shopMoney.amount
+          }))
+        };
+      });
+      
+      console.log(`Successfully fetched ${orders.length} orders via GraphQL`);
+      return orders;
+    }
+  } catch (graphqlError) {
+    console.log('GraphQL failed, trying REST API:', graphqlError.response?.data?.errors || graphqlError.message);
+  }
+  
+  // Fallback to REST API
   const sinceDate = new Date();
   sinceDate.setDate(sinceDate.getDate() - 90);
   const since = sinceDate.toISOString();
@@ -70,14 +173,135 @@ const fetchShopifyOrders = async (domain, apiKey) => {
   return data.orders || [];
 };
 
+// Generate sample orders for development/testing when real orders are blocked
+const generateSampleOrders = (products, dayCount = 90) => {
+  console.log('Generating sample orders for development...');
+  const orders = [];
+  const today = new Date();
+  
+  for (let i = 0; i < dayCount; i++) {
+    const orderDate = new Date(today);
+    orderDate.setDate(orderDate.getDate() - i);
+    
+    // Generate 0-5 orders per day with some randomness
+    const ordersPerDay = Math.floor(Math.random() * 6);
+    
+    for (let j = 0; j < ordersPerDay; j++) {
+      const orderTime = new Date(orderDate);
+      orderTime.setHours(Math.floor(Math.random() * 24), Math.floor(Math.random() * 60));
+      
+      // Pick 1-3 random products for this order
+      const itemCount = Math.floor(Math.random() * 3) + 1;
+      const orderProducts = [];
+      let totalPrice = 0;
+      
+      for (let k = 0; k < itemCount && k < products.length; k++) {
+        const product = products[Math.floor(Math.random() * products.length)];
+        const quantity = Math.floor(Math.random() * 3) + 1;
+        const price = parseFloat(product.variants?.[0]?.price || Math.random() * 100);
+        const lineTotal = price * quantity;
+        
+        orderProducts.push({
+          product_id: product.id,
+          title: product.title,
+          quantity: quantity,
+          price: price.toFixed(2),
+          total: lineTotal.toFixed(2)
+        });
+        
+        totalPrice += lineTotal;
+      }
+      
+      orders.push({
+        id: `sample_order_${i}_${j}`,
+        name: `#${1000 + i * 10 + j}`,
+        created_at: orderTime.toISOString(),
+        updated_at: orderTime.toISOString(),
+        total_price: totalPrice.toFixed(2),
+        subtotal_price: totalPrice.toFixed(2),
+        currency: 'USD',
+        financial_status: 'paid',
+        fulfillment_status: 'fulfilled',
+        line_items: orderProducts,
+        sample_data: true // Flag to identify sample data
+      });
+    }
+  }
+  
+  console.log(`Generated ${orders.length} sample orders for testing`);
+  return orders;
+};
+
+// Fetch sales analytics data as alternative to orders
+const fetchShopifyAnalytics = async (domain, apiKey) => {
+  if (!apiKey) {
+    throw new Error('API key is required.');
+  }
+  
+  try {
+    // Try to get sales reports via Analytics API
+    const analyticsQuery = {
+      query: `
+        query {
+          shopifyqlQuery(query: "FROM sales SHOW total_sales, net_quantity BY day SINCE -90d ORDER BY day") {
+            tableData {
+              columns {
+                name
+                dataType
+              }
+              rowData
+            }
+          }
+        }
+      `
+    };
+    
+    const url = buildShopifyUrl(domain, 'graphql.json');
+    const response = await axios.post(url, analyticsQuery, {
+      headers: {
+        'X-Shopify-Access-Token': apiKey,
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    if (response.data.data && response.data.data.shopifyqlQuery) {
+      console.log('Successfully fetched analytics data');
+      return response.data.data.shopifyqlQuery.tableData;
+    }
+  } catch (error) {
+    console.log('Analytics API error:', error.response?.data || error.message);
+  }
+  
+  return null;
+};
+
 // Fetch inventory levels from Shopify
-const fetchShopifyInventory = async (domain, apiKey) => {
+const fetchShopifyInventory = async (domain, apiKey, locationId) => {
   if (!apiKey) {
     throw new Error('API key is required. Please connect your Shopify store using OAuth or provide an API token.');
   }
   
-  const data = await shopifyRequest(domain, apiKey, 'inventory_levels.json?limit=250');
-  return data.inventory_levels || [];
+  // If we have a locationId, use it to get inventory for that location
+  // Otherwise, try to get the primary location first
+  if (!locationId) {
+    try {
+      const locationsData = await shopifyRequest(domain, apiKey, 'locations.json');
+      if (locationsData.locations && locationsData.locations.length > 0) {
+        locationId = locationsData.locations[0].id;
+        console.log('Using location ID:', locationId);
+      }
+    } catch (error) {
+      console.log('Could not fetch locations, skipping inventory sync');
+      return [];
+    }
+  }
+  
+  if (locationId) {
+    const data = await shopifyRequest(domain, apiKey, `inventory_levels.json?location_ids=${locationId}&limit=250`);
+    return data.inventory_levels || [];
+  }
+  
+  return [];
 };
 
 
@@ -113,7 +337,7 @@ const storeProducts = async (userId, storeId, products) => {
 };
 
 // Process and store orders as sales data
-const storeSalesData = async (userId, storeId, orders) => {
+const storeSalesData = async (userId, storeId, orders, isSampleData = false) => {
   const tableName = `${process.env.TABLE_PREFIX || 'ordernimbus-local'}-sales`;
   const timestamp = Date.now();
   
@@ -160,7 +384,8 @@ const storeSalesData = async (userId, storeId, orders) => {
       orderCount: data.orderCount,
       avgOrderValue: data.totalSales / data.orderCount,
       productSales: data.products,
-      syncedAt: timestamp
+      syncedAt: timestamp,
+      isSampleData: isSampleData // Flag to identify sample data in DB
     };
     
     await dynamodb.put({
@@ -222,7 +447,7 @@ exports.handler = async (event) => {
   console.log('Shopify Integration Lambda triggered:', JSON.stringify(event));
   
   try {
-    const { userId, storeId, shopifyDomain, apiKey, syncType = 'full' } = 
+    const { userId, storeId, shopifyDomain, apiKey, syncType = 'full', locationId } = 
       event.body ? JSON.parse(event.body) : event;
     
     if (!userId || !storeId || !shopifyDomain) {
@@ -258,28 +483,108 @@ exports.handler = async (event) => {
     // Fetch data from Shopify or generate sample data
     console.log(`Starting Shopify sync for store ${storeId} (${shopifyDomain})`);
     
-    const [products, orders, inventory] = await Promise.all([
-      fetchShopifyProducts(shopifyDomain, apiKey),
-      fetchShopifyOrders(shopifyDomain, apiKey),
-      fetchShopifyInventory(shopifyDomain, apiKey)
-    ]);
+    // Fetch data with error handling for each endpoint
+    let products = [];
+    let orders = [];
+    let inventory = [];
+    let errors = [];
     
-    // Store data in DynamoDB
-    await Promise.all([
-      storeProducts(userId, storeId, products),
-      storeSalesData(userId, storeId, orders),
-      storeInventoryData(userId, storeId, inventory)
-    ]);
+    // Fetch products (usually accessible)
+    try {
+      products = await fetchShopifyProducts(shopifyDomain, apiKey);
+      console.log(`Fetched ${products.length} products`);
+    } catch (error) {
+      console.log('Could not fetch products:', error.message);
+      errors.push(`Products: ${error.message}`);
+    }
     
-    // Update sync status to 'completed'
+    // Fetch orders (may require protected data access)
+    try {
+      orders = await fetchShopifyOrders(shopifyDomain, apiKey);
+      console.log(`Fetched ${orders.length} orders`);
+      
+      // If we got 0 orders but no error, the store might just be empty
+      if (orders.length === 0) {
+        console.log('Store has no orders. Checking if we should generate sample data...');
+      }
+    } catch (error) {
+      console.log('Could not fetch orders:', error.message);
+      if (error.message.includes('protected customer data')) {
+        console.log('Note: Order access requires app approval for protected customer data');
+        console.log('Attempting to fetch analytics data as alternative...');
+        
+        // Try analytics API as fallback
+        try {
+          const analyticsData = await fetchShopifyAnalytics(shopifyDomain, apiKey);
+          if (analyticsData) {
+            console.log('Successfully retrieved sales analytics data');
+            errors.push('Orders: Using analytics data instead of detailed orders');
+          }
+        } catch (analyticsError) {
+          console.log('Analytics API also failed:', analyticsError.message);
+        }
+      }
+      errors.push(`Orders: ${error.message}`);
+    }
+    
+    // Generate sample orders in development if we have products but no orders
+    const isDevelopment = process.env.ENVIRONMENT === 'local' || process.env.ENVIRONMENT === 'development';
+    if (isDevelopment && products.length > 0 && orders.length === 0) {
+      console.log('DEVELOPMENT MODE: No orders found. Generating sample orders for testing...');
+      orders = generateSampleOrders(products, 90);
+      errors.push('Orders: Using SAMPLE DATA for development (store has no real orders).');
+    } else if (!isDevelopment && orders.length === 0 && products.length > 0) {
+      console.warn('PRODUCTION WARNING: Store has no orders to analyze.');
+      errors.push('Orders: No orders found in store. Create some orders in Shopify first.');
+    }
+    
+    // Fetch inventory (may require location approval)
+    try {
+      inventory = await fetchShopifyInventory(shopifyDomain, apiKey, locationId);
+      console.log(`Fetched ${inventory.length} inventory items`);
+    } catch (error) {
+      console.log('Could not fetch inventory:', error.message);
+      if (error.message.includes('read_locations')) {
+        console.log('Note: Inventory access requires merchant approval for locations');
+      }
+      errors.push(`Inventory: ${error.message}`);
+    }
+    
+    // Store data in DynamoDB (only if we have data)
+    const storePromises = [];
+    if (products.length > 0) {
+      storePromises.push(storeProducts(userId, storeId, products));
+    }
+    if (orders.length > 0) {
+      // Check if orders are sample data
+      const isSampleData = orders.some(order => order.sample_data === true);
+      storePromises.push(storeSalesData(userId, storeId, orders, isSampleData));
+    }
+    if (inventory.length > 0) {
+      storePromises.push(storeInventoryData(userId, storeId, inventory));
+    }
+    
+    if (storePromises.length > 0) {
+      await Promise.all(storePromises);
+    }
+    
+    // Determine sync status based on what was fetched
+    const hasData = products.length > 0 || orders.length > 0 || inventory.length > 0;
+    const syncStatus = hasData ? 'completed' : 'partial';
+    
+    // Update sync status
     const syncMetadata = {
       completedAt: new Date().toISOString(),
       productsCount: products.length,
       ordersCount: orders.length,
-      inventoryCount: inventory.length
+      inventoryCount: inventory.length,
+      errors: errors.length > 0 ? errors : undefined,
+      notes: errors.length > 0 ? 
+        'Some data could not be fetched. This is normal for development stores. Orders require protected customer data approval.' : 
+        undefined
     };
     
-    await updateStoreSyncStatus(userId, storeId, 'completed', syncMetadata);
+    await updateStoreSyncStatus(userId, storeId, syncStatus, syncMetadata);
     
     return {
       statusCode: 200,
@@ -288,13 +593,19 @@ exports.handler = async (event) => {
         'Access-Control-Allow-Origin': '*'
       },
       body: JSON.stringify({
-        message: 'Shopify sync completed successfully',
+        message: hasData ? 
+          'Shopify sync completed successfully' : 
+          'Shopify sync completed with limitations',
         storeId,
         stats: {
           products: products.length,
           orders: orders.length,
           inventory: inventory.length
-        }
+        },
+        warnings: errors.length > 0 ? errors : undefined,
+        note: errors.length > 0 ? 
+          'Some endpoints require additional permissions. This is normal for development stores.' : 
+          undefined
       })
     };
     

@@ -97,6 +97,10 @@ const createStore = async (userId, storeData) => {
 const getStores = async (userId) => {
   const tableName = `${process.env.TABLE_PREFIX || 'ordernimbus-local'}-stores`;
   
+  console.log('Getting stores for user:', userId);
+  console.log('Using table:', tableName);
+  console.log('DynamoDB endpoint:', process.env.DYNAMODB_ENDPOINT);
+  
   const result = await dynamodb.query({
     TableName: tableName,
     KeyConditionExpression: 'userId = :userId',
@@ -150,18 +154,113 @@ const updateStore = async (userId, storeId, updates) => {
   return result.Attributes;
 };
 
-// Delete store
+// Delete store and all associated data
 const deleteStore = async (userId, storeId) => {
-  const tableName = `${process.env.TABLE_PREFIX || 'ordernimbus-local'}-stores`;
+  const tablePrefix = process.env.TABLE_PREFIX || 'ordernimbus-local';
+  const storesTable = `${tablePrefix}-stores`;
+  const productsTable = `${tablePrefix}-products`;
+  const salesTable = `${tablePrefix}-sales`;
+  const inventoryTable = `${tablePrefix}-inventory`;
   
-  await dynamodb.delete({
-    TableName: tableName,
-    Key: { userId, id: storeId }
-  }).promise();
+  console.log(`Deleting store ${storeId} and all associated data for user ${userId}`);
   
-  // TODO: Also delete associated data (products, sales, inventory)
-  
-  return { success: true };
+  try {
+    // Delete products associated with this store
+    console.log('Deleting products...');
+    const productsResult = await dynamodb.scan({
+      TableName: productsTable,
+      FilterExpression: '#storeId = :storeId AND #userId = :userId',
+      ExpressionAttributeNames: {
+        '#storeId': 'storeId',
+        '#userId': 'userId'
+      },
+      ExpressionAttributeValues: {
+        ':storeId': storeId,
+        ':userId': userId
+      }
+    }).promise();
+    
+    if (productsResult.Items && productsResult.Items.length > 0) {
+      for (const product of productsResult.Items) {
+        await dynamodb.delete({
+          TableName: productsTable,
+          Key: { userId: product.userId, id: product.id }
+        }).promise();
+      }
+      console.log(`Deleted ${productsResult.Items.length} products`);
+    }
+    
+    // Delete sales data associated with this store
+    console.log('Deleting sales data...');
+    const salesResult = await dynamodb.scan({
+      TableName: salesTable,
+      FilterExpression: '#storeId = :storeId AND #userId = :userId',
+      ExpressionAttributeNames: {
+        '#storeId': 'storeId',
+        '#userId': 'userId'
+      },
+      ExpressionAttributeValues: {
+        ':storeId': storeId,
+        ':userId': userId
+      }
+    }).promise();
+    
+    if (salesResult.Items && salesResult.Items.length > 0) {
+      for (const sale of salesResult.Items) {
+        await dynamodb.delete({
+          TableName: salesTable,
+          Key: { userId: sale.userId, id: sale.id }
+        }).promise();
+      }
+      console.log(`Deleted ${salesResult.Items.length} sales records`);
+    }
+    
+    // Delete inventory data associated with this store
+    console.log('Deleting inventory data...');
+    const inventoryResult = await dynamodb.scan({
+      TableName: inventoryTable,
+      FilterExpression: '#storeId = :storeId AND #userId = :userId',
+      ExpressionAttributeNames: {
+        '#storeId': 'storeId',
+        '#userId': 'userId'
+      },
+      ExpressionAttributeValues: {
+        ':storeId': storeId,
+        ':userId': userId
+      }
+    }).promise();
+    
+    if (inventoryResult.Items && inventoryResult.Items.length > 0) {
+      for (const inventory of inventoryResult.Items) {
+        await dynamodb.delete({
+          TableName: inventoryTable,
+          Key: { userId: inventory.userId, id: inventory.id }
+        }).promise();
+      }
+      console.log(`Deleted ${inventoryResult.Items.length} inventory records`);
+    }
+    
+    // Finally, delete the store itself
+    console.log('Deleting store record...');
+    await dynamodb.delete({
+      TableName: storesTable,
+      Key: { userId, id: storeId }
+    }).promise();
+    
+    console.log(`Successfully deleted store ${storeId} and all associated data`);
+    return { 
+      success: true, 
+      deletedItems: {
+        products: productsResult.Items?.length || 0,
+        sales: salesResult.Items?.length || 0,
+        inventory: inventoryResult.Items?.length || 0
+      }
+    };
+    
+  } catch (error) {
+    console.error('Error during cascade deletion:', error);
+    throw error;
+  }
 };
 
 // Main handler
@@ -173,7 +272,10 @@ exports.handler = async (event) => {
     const path = event.path;
     
     // Extract userId from event (would normally come from auth)
+    // Headers may come as 'userId' or 'Userid' depending on the gateway
     const userId = event.headers?.userId || 
+                   event.headers?.Userid ||
+                   event.headers?.userid ||
                    event.requestContext?.authorizer?.userId || 
                    (event.body ? JSON.parse(event.body).userId : null) ||
                    'test-user';

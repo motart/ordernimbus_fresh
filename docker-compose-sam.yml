@@ -1,0 +1,109 @@
+version: '3.8'
+
+services:
+  # Existing services
+  dynamodb:
+    image: amazon/dynamodb-local:latest
+    container_name: ordernimbus-dynamodb
+    ports:
+      - "8000:8000"
+    command: "-jar DynamoDBLocal.jar -sharedDb -dbPath /data"
+    volumes:
+      - dynamodb-data:/data
+    networks:
+      - ordernimbus-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000 || exit 1"]
+      interval: 5s
+      timeout: 2s
+      retries: 5
+
+  dynamodb-admin:
+    image: aaronshaf/dynamodb-admin
+    container_name: ordernimbus-dynamodb-admin
+    ports:
+      - "8001:8001"
+    environment:
+      - DYNAMO_ENDPOINT=http://dynamodb:8000
+    depends_on:
+      - dynamodb
+    networks:
+      - ordernimbus-network
+
+  localstack:
+    image: localstack/localstack:latest
+    container_name: ordernimbus-localstack
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=s3,sns,sqs,secretsmanager,ssm
+      - DEBUG=0
+      - DATA_DIR=/tmp/localstack/data
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    volumes:
+      - localstack-data:/tmp/localstack
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - ordernimbus-network
+
+  redis:
+    image: redis:alpine
+    container_name: ordernimbus-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - ordernimbus-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  mailhog:
+    image: mailhog/mailhog
+    container_name: ordernimbus-mailhog
+    ports:
+      - "1025:1025"  # SMTP server
+      - "8025:8025"  # Web UI
+    networks:
+      - ordernimbus-network
+
+  # SAM Local API as a service
+  sam-api:
+    image: public.ecr.aws/sam/build-nodejs18.x:latest
+    container_name: ordernimbus-sam-api
+    working_dir: /app
+    command: |
+      sh -c "
+        echo 'Installing SAM CLI...' &&
+        pip install aws-sam-cli &&
+        echo 'Building SAM application...' &&
+        sam build --cached &&
+        echo 'Starting SAM Local API...' &&
+        sam local start-api --host 0.0.0.0 --port 3001 --docker-network ordernimbus-network --env-vars env.json
+      "
+    volumes:
+      - .:/app:cached
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "3001:3001"
+    environment:
+      - AWS_ACCESS_KEY_ID=local
+      - AWS_SECRET_ACCESS_KEY=local
+      - AWS_DEFAULT_REGION=us-east-1
+      - SAM_CLI_TELEMETRY=0
+    depends_on:
+      - dynamodb
+      - localstack
+      - redis
+    networks:
+      - ordernimbus-network
+
+networks:
+  ordernimbus-network:
+    driver: bridge
+    name: ordernimbus-network
+
+volumes:
+  dynamodb-data:
+  localstack-data:

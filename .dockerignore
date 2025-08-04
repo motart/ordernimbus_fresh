@@ -1,0 +1,9 @@
+node_modules
+.aws-sam
+.git
+*.log
+.DS_Store
+app/frontend/node_modules
+app/frontend/build
+.vscode
+.idea

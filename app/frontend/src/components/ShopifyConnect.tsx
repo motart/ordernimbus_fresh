@@ -13,8 +13,10 @@ interface ShopifyConnectProps {
 const ShopifyConnect: React.FC<ShopifyConnectProps> = ({ userId, onSuccess, onCancel }) => {
   const [step, setStep] = useState<'input' | 'connecting' | 'success' | 'error'>('input');
   const [storeDomain, setStoreDomain] = useState('');
+  const [apiToken, setApiToken] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [useCustomApp, setUseCustomApp] = useState(false);
 
   useEffect(() => {
     // Listen for OAuth callback message
@@ -42,6 +44,11 @@ const ShopifyConnect: React.FC<ShopifyConnectProps> = ({ userId, onSuccess, onCa
       return;
     }
 
+    if (useCustomApp && !apiToken) {
+      toast.error('Please enter your Shopify Custom App token');
+      return;
+    }
+
     // Clean up domain
     let cleanDomain = storeDomain.trim().toLowerCase();
     cleanDomain = cleanDomain.replace(/^https?:\/\//, '').replace(/\/$/, '');
@@ -56,41 +63,96 @@ const ShopifyConnect: React.FC<ShopifyConnectProps> = ({ userId, onSuccess, onCa
 
     try {
       const apiUrl = process.env.REACT_APP_API_URL || 'http://127.0.0.1:3001';
-      const response = await fetch(`${apiUrl}/api/shopify/connect`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          userId,
-          storeDomain: cleanDomain
-        })
-      });
+      
+      if (useCustomApp) {
+        // Custom App mode - directly create store with token
+        const response = await fetch(`${apiUrl}/api/stores`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'userId': userId
+          },
+          body: JSON.stringify({
+            name: cleanDomain.replace('.myshopify.com', ''),
+            displayName: cleanDomain.replace('.myshopify.com', ''),
+            type: 'shopify',
+            shopifyDomain: cleanDomain,
+            apiKey: apiToken,
+            status: 'active'
+          })
+        });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to initiate connection');
-      }
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || 'Failed to create store');
+        }
 
-      const { authUrl } = await response.json();
+        const result = await response.json();
+        
+        // Test the connection by syncing data
+        const syncResponse = await fetch(`${apiUrl}/api/shopify/sync`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'userId': userId
+          },
+          body: JSON.stringify({
+            userId,
+            storeId: result.store.id,
+            shopifyDomain: cleanDomain,
+            apiKey: apiToken,
+            syncType: 'full'
+          })
+        });
 
-      // Open OAuth popup
-      const width = 600;
-      const height = 700;
-      const left = window.screen.width / 2 - width / 2;
-      const top = window.screen.height / 2 - height / 2;
+        if (syncResponse.ok) {
+          setStep('success');
+          toast.success('Shopify store connected successfully!');
+          setTimeout(() => {
+            onSuccess({ storeId: result.store.id, storeName: result.store.name });
+          }, 1500);
+        } else {
+          throw new Error('Failed to sync data - check your token permissions');
+        }
+        
+      } else {
+        // OAuth mode - original flow
+        const response = await fetch(`${apiUrl}/api/shopify/connect`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            userId,
+            storeDomain: cleanDomain
+          })
+        });
 
-      const popup = window.open(
-        authUrl,
-        'shopify-oauth',
-        `width=${width},height=${height},left=${left},top=${top},toolbar=no,menubar=no,scrollbars=yes,resizable=yes`
-      );
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || 'Failed to initiate connection');
+        }
 
-      // Check if popup was blocked
-      if (!popup || popup.closed || typeof popup.closed === 'undefined') {
-        toast.error('Please allow popups for this site to connect to Shopify');
-        setStep('error');
-        setError('Popup was blocked. Please allow popups and try again.');
+        const { authUrl } = await response.json();
+
+        // Open OAuth popup
+        const width = 600;
+        const height = 700;
+        const left = window.screen.width / 2 - width / 2;
+        const top = window.screen.height / 2 - height / 2;
+
+        const popup = window.open(
+          authUrl,
+          'shopify-oauth',
+          `width=${width},height=${height},left=${left},top=${top},toolbar=no,menubar=no,scrollbars=yes,resizable=yes`
+        );
+
+        // Check if popup was blocked
+        if (!popup || popup.closed || typeof popup.closed === 'undefined') {
+          toast.error('Please allow popups for this site to connect to Shopify');
+          setStep('error');
+          setError('Popup was blocked. Please allow popups and try again.');
+        }
       }
 
     } catch (error: any) {
@@ -114,9 +176,30 @@ const ShopifyConnect: React.FC<ShopifyConnectProps> = ({ userId, onSuccess, onCa
         {step === 'input' && (
           <>
             <p className="shopify-connect-description">
-              Enter your Shopify store domain to securely connect your store to OrderNimbus.
-              We'll automatically import your products, orders, and inventory data.
+              Connect your Shopify store to OrderNimbus. Choose between OAuth (recommended for production) 
+              or Custom App token (for development/testing).
             </p>
+
+            <div className="connection-mode-toggle">
+              <label className="toggle-label">
+                <input
+                  type="radio"
+                  name="connectionMode"
+                  checked={!useCustomApp}
+                  onChange={() => setUseCustomApp(false)}
+                />
+                <span>OAuth (Production)</span>
+              </label>
+              <label className="toggle-label">
+                <input
+                  type="radio"
+                  name="connectionMode"
+                  checked={useCustomApp}
+                  onChange={() => setUseCustomApp(true)}
+                />
+                <span>Custom App Token (Development)</span>
+              </label>
+            </div>
 
             <div className="shopify-connect-form">
               <label htmlFor="storeDomain">Store Domain</label>
@@ -126,7 +209,7 @@ const ShopifyConnect: React.FC<ShopifyConnectProps> = ({ userId, onSuccess, onCa
                   id="storeDomain"
                   value={storeDomain}
                   onChange={(e) => setStoreDomain(e.target.value)}
-                  placeholder="mystore"
+                  placeholder={useCustomApp ? "ordernimbus-dev" : "mystore"}
                   disabled={loading}
                   onKeyPress={(e) => e.key === 'Enter' && handleConnect()}
                 />
@@ -135,6 +218,25 @@ const ShopifyConnect: React.FC<ShopifyConnectProps> = ({ userId, onSuccess, onCa
               <small className="input-help">
                 Enter the first part of your Shopify domain (e.g., "mystore" for mystore.myshopify.com)
               </small>
+
+              {useCustomApp && (
+                <>
+                  <label htmlFor="apiToken" style={{ marginTop: '16px' }}>Custom App Admin API Token</label>
+                  <input
+                    type="password"
+                    id="apiToken"
+                    value={apiToken}
+                    onChange={(e) => setApiToken(e.target.value)}
+                    placeholder="shpat_..."
+                    disabled={loading}
+                    onKeyPress={(e) => e.key === 'Enter' && handleConnect()}
+                    style={{ marginTop: '4px' }}
+                  />
+                  <small className="input-help">
+                    Enter your Custom App's Admin API access token (starts with "shpat_")
+                  </small>
+                </>
+              )}
             </div>
 
             <div className="shopify-connect-benefits">
@@ -154,7 +256,7 @@ const ShopifyConnect: React.FC<ShopifyConnectProps> = ({ userId, onSuccess, onCa
               <button 
                 className="btn-connect" 
                 onClick={handleConnect}
-                disabled={loading || !storeDomain}
+                disabled={loading || !storeDomain || (useCustomApp && !apiToken)}
               >
                 {loading ? (
                   <>

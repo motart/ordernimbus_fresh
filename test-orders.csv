@@ -1,0 +1,4 @@
+id,name,email,total_price,financial_status,fulfillment_status,created_at,billing_first_name,billing_last_name,billing_address1,billing_city,billing_province,billing_zip,lineitem_name,lineitem_quantity,lineitem_price
+1001,#1001,john.doe@example.com,29.99,paid,fulfilled,2025-01-15T10:00:00Z,John,Doe,123 Main St,New York,NY,10001,Widget A,2,14.99
+1002,#1002,jane.smith@example.com,45.50,pending,unfulfilled,2025-01-14T15:30:00Z,Jane,Smith,456 Oak Ave,Los Angeles,CA,90210,Widget B,1,45.50
+1003,#1003,mike.johnson@example.com,75.25,paid,partial,2025-01-13T09:15:00Z,Mike,Johnson,789 Pine Rd,Chicago,IL,60601,Widget C,3,25.08

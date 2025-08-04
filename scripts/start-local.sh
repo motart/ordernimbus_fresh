@@ -296,20 +296,46 @@ aws s3 mb s3://ordernimbus-local-user-data --no-cli-pager --endpoint-url http://
 aws s3 mb s3://ordernimbus-local-frontend --no-cli-pager --endpoint-url http://localhost:4566 >/dev/null 2>&1 && echo "  ✓ Frontend bucket created" || echo "  • Frontend bucket already exists"
 echo -e "${GREEN}✅ S3 buckets ready${NC}"
 
-# Build SAM application
-echo -e "${BLUE}🏗️  Building SAM application...${NC}"
-sam build --cached
+# Build SAM application with container to avoid mount issues on macOS
+echo -e "${BLUE}🏗️  Building SAM application (container mode for macOS compatibility)...${NC}"
 
-# Start SAM Local API in background
+# Clean build directory first to avoid stale builds
+rm -rf .aws-sam/build 2>/dev/null || true
+
+# Use container build to avoid mount issues
+sam build --use-container --cached
+
+# Start SAM Local API - retry logic for Docker mount issues
 echo -e "${BLUE}⚡ Starting SAM Local API...${NC}"
+
+# First attempt with standard options
 sam local start-api \
     --env-vars env.json \
     --docker-network ordernimbus-network \
     --port 3001 \
-    --skip-pull-image \
-    --host 127.0.0.1 &
+    --host 0.0.0.0 > sam.log 2>&1 &
 
 SAM_PID=$!
+
+# Wait a bit to see if it starts
+sleep 10
+
+# Check if SAM is running properly
+if ! lsof -i :3001 | grep -q LISTEN; then
+    echo -e "${YELLOW}⚠️  SAM failed to start due to Docker mount issues. Trying alternative approach...${NC}"
+    
+    # Kill the failed attempt
+    kill $SAM_PID 2>/dev/null || true
+    
+    # Try without docker network (uses host networking)
+    sam local start-api \
+        --env-vars env.json \
+        --port 3001 \
+        --host 0.0.0.0 > sam.log 2>&1 &
+    
+    SAM_PID=$!
+fi
+
 echo "SAM Local API PID: $SAM_PID"
 
 # Wait for SAM API to be ready

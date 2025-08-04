@@ -342,10 +342,19 @@
 
 .store-footer {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   font-size: 12px;
   color: #94a3b8;
   margin-top: 16px;
+  gap: 8px;
+}
+
+.store-owner {
+  color: #64748b;
+  font-weight: 500;
+  flex-basis: 100%;
+  margin-bottom: 4px;
 }
 
 /* Forecast Section */
@@ -577,6 +586,72 @@
   gap: 12px;
 }
 
+/* Store Actions Section */
+.store-actions-section {
+  margin-top: auto;
+  padding-top: 16px;
+  border-top: 1px solid #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.btn-csv-upload {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: white;
+  border: none;
+  padding: 12px 16px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  margin-bottom: 8px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.2);
+}
+
+.btn-csv-upload::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  transition: left 0.5s;
+}
+
+.btn-csv-upload:hover::before {
+  left: 100%;
+}
+
+.btn-csv-upload:hover {
+  background: linear-gradient(135deg, #059669, #047857);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(16, 185, 129, 0.35);
+}
+
+.btn-csv-upload:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.2);
+}
+
+.btn-csv-upload svg {
+  font-size: 16px;
+  transition: transform 0.3s ease;
+}
+
+.btn-csv-upload:hover svg {
+  transform: scale(1.1);
+}
+
 /* Sync Status */
 .sync-status {
   margin-top: 12px;
@@ -585,6 +660,10 @@
   font-size: 13px;
   font-weight: 600;
   text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .sync-status.sync-pending {
@@ -603,9 +682,33 @@
   color: #065f46;
 }
 
+.sync-status.sync-partial {
+  background: #fed7aa;
+  color: #9a3412;
+}
+
 .sync-status.sync-failed {
   background: #fee2e2;
   color: #991b1b;
+}
+
+.sync-now-btn {
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid currentColor;
+  color: inherit;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.sync-now-btn:hover {
+  background: rgba(255, 255, 255, 0.9);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 @keyframes pulse {
@@ -848,6 +951,155 @@
   border-top: 1px solid #e2e8f0;
 }
 
+/* Delete Modal Styles */
+.delete-modal {
+  max-width: 500px;
+}
+
+.delete-modal-body {
+  padding: 24px;
+  text-align: center;
+}
+
+.delete-warning-icon {
+  margin-bottom: 20px;
+  color: #ef4444;
+  display: flex;
+  justify-content: center;
+}
+
+.delete-modal-body h3 {
+  font-size: 20px;
+  color: #1e293b;
+  margin: 0 0 24px 0;
+  font-weight: 600;
+}
+
+.store-delete-info {
+  background: #f8fafc;
+  border-radius: 12px;
+  padding: 16px;
+  margin: 20px 0;
+}
+
+.store-delete-details {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  text-align: left;
+}
+
+.store-icon-small {
+  width: 48px;
+  height: 48px;
+  background: white;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  color: #667eea;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.store-name-delete {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1e293b;
+  margin-bottom: 4px;
+}
+
+.store-type-delete {
+  font-size: 13px;
+  color: #64748b;
+  margin-bottom: 2px;
+}
+
+.store-domain-delete,
+.store-location-delete {
+  font-size: 13px;
+  color: #64748b;
+}
+
+.delete-warning-text {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 12px;
+  padding: 16px;
+  margin: 24px 0;
+  text-align: left;
+}
+
+.warning-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #dc2626;
+  margin: 0 0 8px 0;
+}
+
+.delete-warning-text p {
+  font-size: 13px;
+  color: #7f1d1d;
+  margin: 0 0 8px 0;
+}
+
+.delete-warning-text ul {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0 0;
+}
+
+.delete-warning-text li {
+  font-size: 13px;
+  color: #7f1d1d;
+  padding: 4px 0;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 20px 24px;
+  background: #f8fafc;
+  border-top: 1px solid #e2e8f0;
+  border-radius: 0 0 16px 16px;
+}
+
+.btn-danger {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.2);
+}
+
+.btn-danger:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+}
+
+.btn-danger:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-danger .spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
 /* Animations */
 @keyframes fadeIn {
   from {
@@ -867,6 +1119,23 @@
     transform: translateY(0);
     opacity: 1;
   }
+}
+
+/* CSV Upload Badge */
+.btn-csv-upload::after {
+  content: 'CSV';
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #059669;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 6px;
+  border: 1px solid rgba(5, 150, 105, 0.3);
+  text-shadow: none;
+  letter-spacing: 0.5px;
 }
 
 /* Responsive Design */
@@ -952,5 +1221,17 @@
     width: 48px;
     height: 48px;
     font-size: 24px;
+  }
+
+  .btn-csv-upload {
+    padding: 14px 16px;
+    font-size: 13px;
+  }
+
+  .btn-csv-upload::after {
+    top: -4px;
+    right: -4px;
+    font-size: 9px;
+    padding: 1px 4px;
   }
 }

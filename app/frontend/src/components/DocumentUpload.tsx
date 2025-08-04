@@ -1,8 +1,8 @@
 /**
- * Document Upload Component for AI Chatbot Integration
+ * Document Upload Component
  * 
- * Allows users to upload documents that the AI chatbot can reference
- * when answering questions about their business
+ * Allows users to upload documents for data analysis
+ * and forecasting purposes
  */
 
 import React, { useState, useCallback } from 'react';

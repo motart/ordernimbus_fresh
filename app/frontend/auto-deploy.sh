@@ -21,4 +21,4 @@ aws s3 sync build/ s3://ordernimbus-staging-frontend-assets --delete
 # Show the frontend URL
 echo "✅ Deployment complete!"
 echo "Frontend URL: http://ordernimbus-staging-frontend-assets.s3-website-us-east-1.amazonaws.com"
-echo "🎉 Your chatbot fixes are now live!"
+echo "🎉 Your updates are now live!"

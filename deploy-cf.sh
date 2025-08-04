@@ -256,18 +256,6 @@ run_health_checks() {
     if [ -n "$API_ENDPOINT" ]; then
         print_info "Testing API endpoints..."
         
-        # Test chatbot endpoint
-        RESPONSE=$(curl -s -X POST "$API_ENDPOINT/api/chatbot" \
-            -H "Content-Type: application/json" \
-            -d '{"message":"hello"}' \
-            --max-time 10 || echo "failed")
-        
-        if [[ "$RESPONSE" == *"response"* ]]; then
-            print_status "Chatbot API: ✓"
-        else
-            print_warning "Chatbot API: Failed to respond"
-        fi
-        
         # Test forecast endpoint
         RESPONSE=$(curl -s -X GET "$API_ENDPOINT/api/forecast" \
             --max-time 10 || echo "failed")

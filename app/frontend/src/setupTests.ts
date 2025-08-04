@@ -5,7 +5,7 @@
 import '@testing-library/jest-dom';
 
 /**
- * Additional test setup for ChatBot and other components
+ * Additional test setup for components
  */
 
 // Mock Web Crypto API

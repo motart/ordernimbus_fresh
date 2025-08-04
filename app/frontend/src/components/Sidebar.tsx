@@ -3,12 +3,9 @@ import './Sidebar.css';
 import { 
   FiMenu, 
   FiX, 
-  FiHome, 
   FiTrendingUp, 
   FiShoppingCart, 
   FiUsers, 
-  FiPackage, 
-  FiBarChart2,
   FiSettings,
   FiUser,
   FiLogOut,
@@ -16,8 +13,7 @@ import {
   FiHelpCircle,
   FiBell,
   FiFileText,
-  FiUpload,
-  FiCalendar
+  FiUpload
 } from 'react-icons/fi';
 import { 
   MdDashboard, 
@@ -75,15 +71,6 @@ const Sidebar: React.FC<SidebarProps> = ({ userEmail, onLogout, onNavigate, acti
   };
 
   const handleItemClick = (page: string) => {
-    // Handle external links
-    if (page === 'demo') {
-      window.open('https://calendly.com/ordernimbus-info/30min', '_blank');
-      if (isMobile) {
-        setIsOpen(false);
-      }
-      return;
-    }
-    
     onNavigate(page);
     if (isMobile) {
       setIsOpen(false);
@@ -103,7 +90,6 @@ const Sidebar: React.FC<SidebarProps> = ({ userEmail, onLogout, onNavigate, acti
   ];
 
   const bottomItems = [
-    { id: 'demo', label: 'Schedule Demo', icon: FiCalendar, highlight: true },
     { id: 'notifications', label: 'Notifications', icon: FiBell, badge: '3' },
     { id: 'help', label: 'Help & Support', icon: FiHelpCircle },
     { id: 'profile', label: 'Profile', icon: FiUser },
@@ -175,7 +161,7 @@ const Sidebar: React.FC<SidebarProps> = ({ userEmail, onLogout, onNavigate, acti
             {bottomItems.map(item => (
               <button
                 key={item.id}
-                className={`nav-item ${activePage === item.id ? 'active' : ''} ${item.highlight ? 'highlight-demo' : ''}`}
+                className={`nav-item ${activePage === item.id ? 'active' : ''}`}
                 onClick={() => handleItemClick(item.id)}
                 title={isCollapsed ? item.label : ''}
               >
