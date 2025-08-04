@@ -517,7 +517,7 @@ const CSVUploadModal: React.FC<CSVUploadModalProps> = ({
           <h2>Import Business Data</h2>
           <p>Import data for {storeName}</p>
           <button onClick={handleClose} className="close-button">
-            <FiX size={20} />
+            {React.createElement(FiX as any, { size: 20 })}
           </button>
         </div>
         
@@ -544,7 +544,7 @@ const CSVUploadModal: React.FC<CSVUploadModalProps> = ({
                     </div>
                   ) : (
                     <div className="upload-prompt">
-                      <FiUpload size={48} color="#667eea" />
+                      {React.createElement(FiUpload as any, { size: 48, color: "#667eea" })}
                       <h3>Select CSV File</h3>
                       <p>Click to browse or drag and drop</p>
                       <button className="select-file-btn">
@@ -566,7 +566,7 @@ const CSVUploadModal: React.FC<CSVUploadModalProps> = ({
                 <p className="auto-detect-note">✨ We'll automatically detect your data type!</p>
                 
                 <button onClick={downloadSampleCSV} className="sample-btn">
-                  <FiDownload size={16} />
+                  {React.createElement(FiDownload as any, { size: 16 })}
                   Download Sample CSV
                 </button>
               </div>
@@ -588,7 +588,7 @@ const CSVUploadModal: React.FC<CSVUploadModalProps> = ({
               
               {validationErrors.length > 0 && (
                 <div className="validation-errors">
-                  <h4><FiAlertTriangle size={16} /> Validation Errors:</h4>
+                  <h4>{React.createElement(FiAlertTriangle as any, { size: 16 })} Validation Errors:</h4>
                   <ul>
                     {validationErrors.map((error, index) => (
                       <li key={index}>{error}</li>
@@ -604,7 +604,7 @@ const CSVUploadModal: React.FC<CSVUploadModalProps> = ({
                       <strong>{mapping.csvColumn}</strong>
                       {mapping.suggested && (
                         <span className="confidence-badge">
-                          <FiCheck size={12} />
+                          {React.createElement(FiCheck as any, { size: 12 })}
                           {Math.round(mapping.confidence * 100)}%
                         </span>
                       )}
@@ -629,7 +629,7 @@ const CSVUploadModal: React.FC<CSVUploadModalProps> = ({
               </div>
               
               <div className="preview-data">
-                <h4><FiEye size={16} /> Preview (First 3 rows)</h4>
+                <h4>{React.createElement(FiEye as any, { size: 16 })} Preview (First 3 rows)</h4>
                 <div className="preview-table">
                   <table>
                     <thead>
@@ -671,7 +671,7 @@ const CSVUploadModal: React.FC<CSVUploadModalProps> = ({
                     </>
                   ) : (
                     <>
-                      <FiUpload size={16} />
+                      {React.createElement(FiUpload as any, { size: 16 })}
                       Upload {csvData.length} {detectedDataType.charAt(0).toUpperCase() + detectedDataType.slice(1)}
                     </>
                   )}
