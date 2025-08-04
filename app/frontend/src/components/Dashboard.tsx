@@ -3,6 +3,7 @@ import './Dashboard.css';
 import { signOut } from 'aws-amplify/auth';
 import toast from 'react-hot-toast';
 import Sidebar from './Sidebar';
+import TopBar from './TopBar';
 import StoresPage from './StoresPage';
 import ProfilePage from './ProfilePage';
 import ForecastPage from './ForecastPage';
@@ -106,6 +107,12 @@ const Dashboard: React.FC<DashboardProps> = ({ userEmail, onLogout }) => {
         userEmail={userEmail}
         onLogout={handleLogout}
         onNavigate={handleNavigate}
+        activePage={activePage}
+      />
+      <TopBar
+        userEmail={userEmail}
+        onNavigate={handleNavigate}
+        onLogout={handleLogout}
         activePage={activePage}
       />
       <div className="dashboard-main">

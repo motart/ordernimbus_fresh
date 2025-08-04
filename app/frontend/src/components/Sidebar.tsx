@@ -89,16 +89,8 @@ const Sidebar: React.FC<SidebarProps> = ({ userEmail, onLogout, onNavigate, acti
     { id: 'customers', label: 'Customers', icon: FiUsers, section: 'top' },
   ];
 
-  const bottomItems = [
-    { id: 'notifications', label: 'Notifications', icon: FiBell, badge: '3' },
-    { id: 'help', label: 'Help & Support', icon: FiHelpCircle },
-    { id: 'profile', label: 'Profile', icon: FiUser },
-    { id: 'settings', label: 'Settings', icon: FiSettings },
-  ];
-
-  const getUserInitials = () => {
-    return userEmail ? userEmail.substring(0, 2).toUpperCase() : 'UN';
-  };
+  // Bottom items removed - now in TopBar
+  const bottomItems: any[] = [];
 
   return (
     <>
@@ -114,7 +106,6 @@ const Sidebar: React.FC<SidebarProps> = ({ userEmail, onLogout, onNavigate, acti
             {React.createElement(FiMenu as any)}
           </button>
           <div className="mobile-logo">OrderNimbus</div>
-          <div className="mobile-user-avatar">{getUserInitials()}</div>
         </div>
       )}
 
@@ -156,31 +147,7 @@ const Sidebar: React.FC<SidebarProps> = ({ userEmail, onLogout, onNavigate, acti
             </div>
           </nav>
 
-          {/* Bottom Section */}
-          <div className="sidebar-bottom">
-            {bottomItems.map(item => (
-              <button
-                key={item.id}
-                className={`nav-item ${activePage === item.id ? 'active' : ''}`}
-                onClick={() => handleItemClick(item.id)}
-                title={isCollapsed ? item.label : ''}
-              >
-                <span className="nav-icon">
-                  {React.createElement(item.icon as any)}
-                  {item.badge && <span className="badge">{item.badge}</span>}
-                </span>
-                {!isCollapsed && <span className="nav-label">{item.label}</span>}
-              </button>
-            ))}
-            <button
-              className="nav-item logout"
-              onClick={onLogout}
-              title={isCollapsed ? 'Logout' : ''}
-            >
-              <span className="nav-icon">{React.createElement(FiLogOut as any)}</span>
-              {!isCollapsed && <span className="nav-label">Logout</span>}
-            </button>
-          </div>
+          {/* Bottom Section - Removed (items moved to TopBar) */}
         </div>
       </div>
     </>

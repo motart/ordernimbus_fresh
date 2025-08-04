@@ -104,8 +104,9 @@
 
 .dashboard-main {
   margin-left: 260px;
+  margin-top: 64px; /* Height of TopBar */
   transition: margin-left 0.3s ease, width 0.3s ease;
-  min-height: 100vh;
+  min-height: calc(100vh - 64px);
   display: flex;
   flex-direction: column;
   background: #f5f7fa;
@@ -122,7 +123,7 @@
 @media (max-width: 768px) {
   .dashboard-main {
     margin-left: 0;
-    padding-top: 60px; /* Account for mobile header */
+    margin-top: 124px; /* Account for mobile header (60px) + TopBar (64px) */
   }
 }
 
