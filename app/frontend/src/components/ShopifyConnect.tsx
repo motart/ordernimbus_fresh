@@ -3,6 +3,7 @@ import { SiShopify } from 'react-icons/si';
 import { FiCheck, FiLoader, FiAlertCircle } from 'react-icons/fi';
 import toast from 'react-hot-toast';
 import './ShopifyConnect.css';
+import { isDevelopment, isDevStore, getDevToken, DEV_STORES } from '../config/devTokens';
 
 interface ShopifyConnectProps {
   userId: string;
@@ -17,6 +18,7 @@ const ShopifyConnect: React.FC<ShopifyConnectProps> = ({ userId, onSuccess, onCa
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [useCustomApp, setUseCustomApp] = useState(false);
+  const [isDevEnvironment] = useState(isDevelopment());
 
   useEffect(() => {
     // Listen for OAuth callback message
@@ -37,6 +39,18 @@ const ShopifyConnect: React.FC<ShopifyConnectProps> = ({ userId, onSuccess, onCa
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
   }, [onSuccess]);
+
+  // Auto-detect dev stores and set token
+  useEffect(() => {
+    if (isDevEnvironment && storeDomain) {
+      const devToken = getDevToken(storeDomain);
+      if (devToken) {
+        setApiToken(devToken);
+        setUseCustomApp(true);
+        toast.success('Dev store detected - token auto-filled');
+      }
+    }
+  }, [storeDomain, isDevEnvironment]);
 
   const handleConnect = async () => {
     if (!storeDomain) {
@@ -176,11 +190,20 @@ const ShopifyConnect: React.FC<ShopifyConnectProps> = ({ userId, onSuccess, onCa
         {step === 'input' && (
           <>
             <p className="shopify-connect-description">
-              Connect your Shopify store to OrderNimbus. Choose between OAuth (recommended for production) 
-              or Custom App token (for development/testing).
+              {isDevEnvironment ? (
+                <>
+                  <strong>Development Mode:</strong> Enter your store domain. Dev stores will be connected automatically.
+                </>
+              ) : (
+                <>
+                  Connect your Shopify store to OrderNimbus. Choose between OAuth (recommended for production) 
+                  or Custom App token (for development/testing).
+                </>
+              )}
             </p>
 
-            <div className="connection-mode-toggle">
+            {!isDevEnvironment && (
+              <div className="connection-mode-toggle">
               <label className="toggle-label">
                 <input
                   type="radio"
@@ -200,6 +223,7 @@ const ShopifyConnect: React.FC<ShopifyConnectProps> = ({ userId, onSuccess, onCa
                 <span>Custom App Token (Development)</span>
               </label>
             </div>
+            )}
 
             <div className="shopify-connect-form">
               <label htmlFor="storeDomain">Store Domain</label>
@@ -219,7 +243,7 @@ const ShopifyConnect: React.FC<ShopifyConnectProps> = ({ userId, onSuccess, onCa
                 Enter the first part of your Shopify domain (e.g., "mystore" for mystore.myshopify.com)
               </small>
 
-              {useCustomApp && (
+              {useCustomApp && (!isDevEnvironment || !isDevStore(storeDomain)) && (
                 <>
                   <label htmlFor="apiToken" style={{ marginTop: '16px' }}>Custom App Admin API Token</label>
                   <input
@@ -236,6 +260,13 @@ const ShopifyConnect: React.FC<ShopifyConnectProps> = ({ userId, onSuccess, onCa
                     Enter your Custom App's Admin API access token (starts with "shpat_")
                   </small>
                 </>
+              )}
+
+              {isDevEnvironment && isDevStore(storeDomain) && useCustomApp && (
+                <div className="dev-store-notice" style={{ marginTop: '16px', padding: '12px', backgroundColor: '#f0f9ff', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  {React.createElement(FiCheck as any, { size: 16, color: '#10b981' })}
+                  <span style={{ color: '#059669' }}>Dev store detected - using pre-configured token</span>
+                </div>
               )}
             </div>
 
@@ -256,7 +287,7 @@ const ShopifyConnect: React.FC<ShopifyConnectProps> = ({ userId, onSuccess, onCa
               <button 
                 className="btn-connect" 
                 onClick={handleConnect}
-                disabled={loading || !storeDomain || (useCustomApp && !apiToken)}
+                disabled={loading || !storeDomain || (useCustomApp && !apiToken && (!isDevEnvironment || !isDevStore(storeDomain)))}
               >
                 {loading ? (
                   <>
