@@ -1,53 +1,61 @@
-# Sales Forecasting Platform
+# OrderNimbus Platform
 
-Multi-tenant, highly-scalable Sales Forecasting Platform with AWS-native infrastructure, designed for brick-and-mortar retailers and Shopify merchants.
+AI-powered sales forecasting platform for brick-and-mortar retailers and Shopify merchants. Multi-tenant, highly-scalable platform with AWS-native infrastructure.
 
-## Quick Start
+## 🚀 Quick Start
 
 ### Prerequisites
-- AWS CLI configured with appropriate permissions
-- Node.js 18+ and npm 8+
-- k6 for load testing (optional)
+- **Docker Desktop** (for local development)
+- **AWS SAM CLI** (v1.100+) - [Install Guide](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html)
+- **Node.js** (v18+) and npm (v8+)
+- **AWS CLI** configured with appropriate permissions
+- **Python** (3.9+ for SAM CLI)
+- **k6** for load testing (optional)
 
-### Deploy the Platform
+## 🛠️ Development Options
 
-#### Option 1: Safe Deployment with Automatic Rollback ⭐
+### Option 1: Local Development with SAM (Recommended)
 ```bash
-# First, install dependencies
+# 1. Clone the repository
+git clone <your-repo-url>
+cd ordernimbus_fresh
+
+# 2. Install dependencies
 npm install
+cd app/frontend && npm install && cd ../..
 
-# Deploy to staging with rollback protection
-./deploy-with-rollback.sh staging us-east-1
+# 3. Start local development environment
+./scripts/start-local.sh
 
-# Deploy to production with rollback protection
-./deploy-with-rollback.sh production us-east-1
-
-# Deploy to development with rollback protection
-./deploy-with-rollback.sh dev us-east-1 true
+# 4. Access the application
+# Frontend: http://localhost:3000
+# API: http://127.0.0.1:3001
+# DynamoDB Admin: http://localhost:8001
+# Email UI: http://localhost:8025
 ```
 
-#### Option 2: Using npm scripts
+### Option 2: Deploy to AWS
+
+#### Using SAM (Serverless Application Model)
 ```bash
-# Install dependencies
-npm install
+# Build the application
+sam build
 
-# Safe deployments (recommended)
-npm run deploy:safe:staging
-npm run deploy:safe:production
-npm run deploy:safe:dev
+# Deploy to staging
+sam deploy --config-env staging
 
-# Standard deployments
-npm run deploy:staging
-npm run deploy:production
-npm run deploy:dev
+# Deploy to production
+sam deploy --config-env production
 ```
 
-#### Option 3: Manual Deployment
+#### Using CloudFormation
 ```bash
-# Standard deployment (no automatic rollback)
-./deploy.sh staging
-./deploy.sh production
-./deploy.sh dev us-east-1 true
+# Deploy complete stack
+./deploy-cf.sh staging us-east-1
+
+# Tear down infrastructure
+aws cloudformation delete-stack --stack-name ordernimbus-staging --region us-east-1
+```
 ```
 
 ### Validate Deployment
@@ -264,3 +272,34 @@ aws ce get-anomalies --date-interval Start=2024-01-01,End=2024-01-31
 - Review CloudWatch logs for error details
 - Use validation script to diagnose deployment issues
 - Monitor Slack/PagerDuty for real-time alerts
+
+## 📜 Deployment Scripts
+
+### Available Scripts
+- `deploy.sh` - Standard deployment script with CDK
+- `deploy-cf.sh` - CloudFormation single-stack deployment
+- `deploy-enhanced.sh` - Enhanced deployment with all features
+- `deploy-with-rollback.sh` - Deployment with automatic rollback on failure
+- `destroy.sh` - Tear down infrastructure
+- `destroy-complete.sh` - Multi-region complete cleanup
+- `validate-deployment.sh` - Validate deployment health
+- `rollback-verify.sh` - Verify rollback completion
+
+## 📚 Additional Documentation
+
+- [Local Development Guide](docs/LOCAL_DEVELOPMENT.md) - Detailed local setup instructions
+- [Architecture Plan](ARCHITECTURE_PLAN.md) - 85-day implementation roadmap
+- [Capacity Planning](CAPACITY_PLANNING.md) - Scaling formulas and cost analysis
+- [Claude.md](CLAUDE.md) - AI assistant guidelines for development
+
+## 🛡️ License
+
+MIT License - see LICENSE file for details
+
+## 👥 Contributors
+
+OrderNimbus Team
+
+---
+
+Built with ❤️ using AWS, React, and Node.js

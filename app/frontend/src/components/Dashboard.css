@@ -1,16 +1,114 @@
 .dashboard-container {
-  display: flex;
   min-height: 100vh;
   background: #f5f7fa;
+  position: relative;
+}
+
+/* Empty State Styles */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  text-align: center;
+  min-height: 500px;
+}
+
+.empty-state-icon {
+  font-size: 80px;
+  margin-bottom: 20px;
+  opacity: 0.8;
+}
+
+.empty-state h2 {
+  font-size: 32px;
+  color: #333;
+  margin-bottom: 10px;
+  font-weight: 600;
+}
+
+.empty-state > p {
+  font-size: 18px;
+  color: #666;
+  margin-bottom: 40px;
+  max-width: 500px;
+}
+
+.onboarding-steps {
+  display: flex;
+  gap: 30px;
+  margin-top: 40px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.onboarding-step {
+  background: white;
+  border-radius: 12px;
+  padding: 30px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  max-width: 300px;
+  flex: 1;
+  min-width: 250px;
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+}
+
+.step-number {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.step-content {
+  flex: 1;
+  text-align: left;
+}
+
+.step-content h3 {
+  margin: 0 0 10px 0;
+  font-size: 20px;
+  color: #333;
+}
+
+.step-content p {
+  color: #666;
+  margin: 0 0 20px 0;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.step-content .action-button {
+  width: 100%;
+}
+
+.action-button.primary {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.action-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .dashboard-main {
-  flex: 1;
   margin-left: 260px;
-  transition: margin-left 0.3s ease;
+  transition: margin-left 0.3s ease, width 0.3s ease;
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  background: #f5f7fa;
 }
 
 /* When sidebar is collapsed */
@@ -24,7 +122,6 @@
 @media (max-width: 768px) {
   .dashboard-main {
     margin-left: 0;
-    width: 100%;
     padding-top: 60px; /* Account for mobile header */
   }
 }

@@ -51,6 +51,20 @@ const Sidebar: React.FC<SidebarProps> = ({ userEmail, onLogout, onNavigate, acti
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  // Update body class when collapsed state changes
+  useEffect(() => {
+    if (!isMobile) {
+      if (isCollapsed) {
+        document.body.classList.add('sidebar-collapsed');
+      } else {
+        document.body.classList.remove('sidebar-collapsed');
+      }
+    }
+    return () => {
+      document.body.classList.remove('sidebar-collapsed');
+    };
+  }, [isCollapsed, isMobile]);
+
   const toggleSidebar = () => {
     if (isMobile) {
       setIsOpen(!isOpen);

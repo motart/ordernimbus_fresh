@@ -1,0 +1,297 @@
+.shopify-connect-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(15, 23, 42, 0.75);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 3000;
+  animation: fadeIn 0.2s ease;
+  padding: 20px;
+}
+
+.shopify-connect-content {
+  background: white;
+  border-radius: 20px;
+  width: 100%;
+  max-width: 600px;
+  max-height: 90vh;
+  overflow-y: auto;
+  animation: slideUp 0.3s ease;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+}
+
+.shopify-connect-header {
+  padding: 32px 32px 24px;
+  text-align: center;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.shopify-logo {
+  font-size: 48px;
+  color: #95bf47;
+  margin-bottom: 16px;
+}
+
+.shopify-connect-header h2 {
+  font-size: 28px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0;
+}
+
+.shopify-connect-description {
+  padding: 24px 32px 0;
+  font-size: 16px;
+  color: #64748b;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.shopify-connect-form {
+  padding: 32px;
+}
+
+.shopify-connect-form label {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: #334155;
+  margin-bottom: 8px;
+}
+
+.domain-input-wrapper {
+  display: flex;
+  align-items: center;
+  background: #f8fafc;
+  border: 2px solid #e2e8f0;
+  border-radius: 12px;
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
+
+.domain-input-wrapper:focus-within {
+  border-color: #95bf47;
+  background: white;
+}
+
+.domain-input-wrapper input {
+  flex: 1;
+  padding: 14px 16px;
+  font-size: 16px;
+  border: none;
+  background: transparent;
+  outline: none;
+}
+
+.domain-suffix {
+  padding: 14px 16px;
+  background: #f1f5f9;
+  color: #64748b;
+  font-size: 16px;
+  border-left: 1px solid #e2e8f0;
+}
+
+.input-help {
+  display: block;
+  margin-top: 8px;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.shopify-connect-benefits {
+  padding: 0 32px;
+  margin-bottom: 32px;
+}
+
+.shopify-connect-benefits h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: #334155;
+  margin-bottom: 12px;
+}
+
+.shopify-connect-benefits ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.shopify-connect-benefits li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  font-size: 14px;
+  color: #475569;
+}
+
+.shopify-connect-benefits li svg {
+  color: #10b981;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.shopify-connect-actions {
+  display: flex;
+  gap: 12px;
+  padding: 24px 32px 32px;
+  justify-content: flex-end;
+}
+
+.btn-cancel {
+  padding: 12px 24px;
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-cancel:hover {
+  background: #e2e8f0;
+}
+
+.btn-connect {
+  padding: 12px 24px;
+  background: #95bf47;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.2s ease;
+}
+
+.btn-connect:hover:not(:disabled) {
+  background: #7ea93a;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(149, 191, 71, 0.3);
+}
+
+.btn-connect:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.shopify-connect-status {
+  padding: 64px 32px;
+  text-align: center;
+}
+
+.status-icon {
+  font-size: 64px;
+  margin-bottom: 24px;
+}
+
+.status-icon.spinner {
+  color: #95bf47;
+  animation: spin 1s linear infinite;
+}
+
+.status-icon.success {
+  color: #10b981;
+}
+
+.status-icon.error {
+  color: #ef4444;
+}
+
+.shopify-connect-status h3 {
+  font-size: 24px;
+  font-weight: 600;
+  color: #0f172a;
+  margin: 0 0 12px 0;
+}
+
+.shopify-connect-status p {
+  font-size: 16px;
+  color: #64748b;
+  margin: 8px 0;
+}
+
+.status-hint {
+  font-size: 14px;
+  color: #94a3b8;
+  font-style: italic;
+}
+
+.shopify-connect-footer {
+  padding: 24px 32px;
+  background: #f8fafc;
+  border-top: 1px solid #e2e8f0;
+  border-radius: 0 0 20px 20px;
+}
+
+.shopify-connect-footer p {
+  font-size: 14px;
+  color: #64748b;
+  margin: 0 0 12px 0;
+}
+
+.shopify-connect-footer ul {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 16px 0;
+}
+
+.shopify-connect-footer li {
+  font-size: 13px;
+  color: #64748b;
+  padding: 4px 0;
+  padding-left: 20px;
+  position: relative;
+}
+
+.shopify-connect-footer li:before {
+  content: '•';
+  position: absolute;
+  left: 8px;
+}
+
+.footer-note {
+  font-size: 13px;
+  color: #94a3b8;
+  margin-top: 16px;
+}
+
+.footer-note a {
+  color: #95bf47;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.footer-note a:hover {
+  text-decoration: underline;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

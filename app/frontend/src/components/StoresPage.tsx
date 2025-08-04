@@ -15,6 +15,7 @@ import {
 import { SiShopify } from 'react-icons/si';
 import { MdStorefront } from 'react-icons/md';
 import useSecureData from '../hooks/useSecureData';
+import ShopifyConnect from './ShopifyConnect';
 
 interface Store {
   id: string;
@@ -31,6 +32,13 @@ interface Store {
   status: 'active' | 'inactive';
   createdAt: string;
   lastSync?: string;
+  syncStatus?: 'pending' | 'syncing' | 'completed' | 'failed';
+  syncMetadata?: {
+    productsCount?: number;
+    ordersCount?: number;
+    inventoryCount?: number;
+    error?: string;
+  };
   totalProducts?: number;
   totalOrders?: number;
   lastForecast?: string;
@@ -49,6 +57,7 @@ interface Forecast {
 const StoresPage: React.FC = () => {
   const [stores, setStores] = useState<Store[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showShopifyConnect, setShowShopifyConnect] = useState(false);
   const [editingStore, setEditingStore] = useState<Store | null>(null);
   const [showForecastModal, setShowForecastModal] = useState(false);
   const [selectedStoreForForecast, setSelectedStoreForForecast] = useState<Store | null>(null);
@@ -89,37 +98,8 @@ const StoresPage: React.FC = () => {
         if (savedStores && savedStores.length > 0) {
           setStores(savedStores);
         } else {
-          // Set demo stores if none exist for this user
-          const demoStores: Store[] = [
-            {
-              id: `${userContext?.userId}_1`,
-              name: 'Downtown Flagship Store',
-              type: 'brick-and-mortar',
-              address: '123 Main Street',
-              city: 'San Francisco',
-              state: 'CA',
-              zipCode: '94105',
-              country: 'United States',
-              status: 'active',
-              createdAt: '2024-01-15',
-              totalProducts: 1250,
-              totalOrders: 3420
-            },
-            {
-              id: `${userContext?.userId}_2`,
-              name: 'Online Boutique',
-              type: 'shopify',
-              shopifyDomain: 'my-boutique.myshopify.com',
-              website: 'https://www.myboutique.com',
-              status: 'active',
-              createdAt: '2024-02-01',
-              lastSync: '2024-03-15',
-              totalProducts: 850,
-              totalOrders: 2100
-            }
-          ];
-          setStores(demoStores);
-          await setData('stores', demoStores);
+          // No demo stores - start with empty array for new users
+          setStores([]);
         }
       } catch (error) {
         console.error('Failed to load stores:', error);
@@ -176,14 +156,17 @@ const StoresPage: React.FC = () => {
       return;
     }
 
-    if (formData.type === 'shopify' && !formData.shopifyDomain) {
-      toast.error('Please enter your Shopify domain');
+    // Shopify stores are connected via OAuth, not through this form
+    if (formData.type === 'shopify') {
+      toast.error('Please use the "Connect to Shopify" button to add a Shopify store');
       return;
     }
 
     try {
-      const newStore: Store = {
-        id: editingStore ? editingStore.id : `${userContext?.userId}_${Date.now()}`,
+      const apiUrl = process.env.REACT_APP_API_URL || 'http://127.0.0.1:3001';
+      
+      const storePayload = {
+        userId: userContext?.userId || 'test-user',
         name: formData.name,
         type: formData.type,
         address: formData.address,
@@ -193,32 +176,119 @@ const StoresPage: React.FC = () => {
         country: formData.country,
         website: formData.website,
         shopifyDomain: formData.shopifyDomain,
-        apiKey: formData.apiKey,
-        status: formData.status,
-        createdAt: editingStore ? editingStore.createdAt : new Date().toISOString().split('T')[0],
-        totalProducts: editingStore ? editingStore.totalProducts : 0,
-        totalOrders: editingStore ? editingStore.totalOrders : 0
+        apiKey: formData.apiKey || 'development-mode', // Use 'development-mode' for sample data
+        status: formData.status
       };
 
+      // Call API to create/update store
+      const method = editingStore ? 'PUT' : 'POST';
+      const endpoint = editingStore 
+        ? `${apiUrl}/api/stores/${editingStore.id}`
+        : `${apiUrl}/api/stores`;
+      
+      const response = await fetch(endpoint, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          'userId': userContext?.userId || 'test-user'
+        },
+        body: JSON.stringify(storePayload)
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to save store');
+      }
+
+      const result = await response.json();
+      const savedStore = result.store;
+      
+      // Update local state
       let updatedStores;
       if (editingStore) {
         updatedStores = stores.map(store => 
-          store.id === editingStore.id ? newStore : store
+          store.id === editingStore.id ? savedStore : store
         );
         toast.success('Store updated successfully');
       } else {
-        updatedStores = [...stores, newStore];
+        updatedStores = [...stores, savedStore];
         toast.success('Store added successfully');
+        
+        // For Shopify stores, show sync status
+        if (savedStore.type === 'shopify') {
+          toast('🔄 Syncing Shopify data...', { duration: 5000 });
+          
+          // Poll for sync status
+          setTimeout(() => pollSyncStatus(savedStore.id), 3000);
+        }
       }
-
+      
       setStores(updatedStores);
       await setData('stores', updatedStores);
       setShowAddModal(false);
       resetForm();
     } catch (error) {
       console.error('Failed to save store:', error);
-      toast.error('Failed to save store securely');
+      toast.error('Failed to save store');
     }
+  };
+
+  // Poll for Shopify sync status
+  const handleShopifyConnectSuccess = async (storeData: any) => {
+    // Store has been created via OAuth, just update local state
+    const newStore = {
+      ...storeData,
+      syncStatus: 'syncing' as const
+    };
+    
+    setStores(prev => [...prev, newStore]);
+    await setData('stores', [...stores, newStore]);
+    setShowShopifyConnect(false);
+    
+    toast.success('Shopify store connected! Syncing data...');
+    
+    // Start polling for sync status
+    setTimeout(() => pollSyncStatus(storeData.storeId), 3000);
+  };
+
+  const pollSyncStatus = async (storeId: string) => {
+    const apiUrl = process.env.REACT_APP_API_URL || 'http://127.0.0.1:3001';
+    let attempts = 0;
+    const maxAttempts = 20;
+    
+    const checkStatus = async () => {
+      try {
+        const response = await fetch(`${apiUrl}/api/stores`, {
+          headers: {
+            'userId': userContext?.userId || 'test-user'
+          }
+        });
+        
+        if (response.ok) {
+          const result = await response.json();
+          const store = result.stores.find((s: Store) => s.id === storeId);
+          
+          if (store) {
+            // Update store in state
+            setStores(prev => prev.map(s => s.id === storeId ? store : s));
+            
+            if (store.syncStatus === 'completed') {
+              toast.success(`✅ Shopify sync complete! Imported ${store.syncMetadata?.productsCount || 0} products`);
+              return;
+            } else if (store.syncStatus === 'failed') {
+              toast.error('❌ Shopify sync failed. Please check your credentials.');
+              return;
+            } else if (store.syncStatus === 'syncing' && attempts < maxAttempts) {
+              attempts++;
+              setTimeout(checkStatus, 2000);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error checking sync status:', error);
+      }
+    };
+    
+    checkStatus();
   };
 
   const handleEdit = (store: Store) => {
@@ -263,50 +333,36 @@ const StoresPage: React.FC = () => {
     setIsGeneratingForecast(true);
     setShowForecastModal(true);
     
-    // Simulate ML forecast generation
-    toast('🤖 Generating AI forecast...', { duration: 3000 });
+    // Check if store has actual data
+    const userEmail = localStorage.getItem('userEmail') || '';
+    const salesData = localStorage.getItem(`sales_data_${userEmail}`);
+    
+    if (!salesData) {
+      toast.error('No sales data available. Please upload historical data first.');
+      setIsGeneratingForecast(false);
+      setShowForecastModal(false);
+      return;
+    }
+    
+    toast('🤖 Generating AI forecast from your data...', { duration: 3000 });
     
     setTimeout(async () => {
-      // Generate mock forecast data
-      const forecast: Forecast[] = [];
-      const baseValue = 5000 + Math.random() * 10000;
-      
-      for (let i = 0; i < 30; i++) {
-        const date = new Date();
-        date.setDate(date.getDate() + i);
-        
-        // Add weekly pattern
-        const dayOfWeek = date.getDay();
-        const weekendBoost = (dayOfWeek === 0 || dayOfWeek === 6) ? 1.3 : 1.0;
-        
-        // Add some randomness
-        const variation = 0.8 + Math.random() * 0.4;
-        
-        // Trend direction
-        const trend = i < 10 ? 'increasing' : i < 20 ? 'stable' : 'decreasing';
-        const trendMultiplier = trend === 'increasing' ? 1 + (i * 0.01) : 
-                               trend === 'decreasing' ? 1 - ((i - 20) * 0.01) : 1;
-        
-        forecast.push({
-          date: date.toISOString().split('T')[0],
-          predictedSales: Math.round(baseValue * weekendBoost * variation * trendMultiplier),
-          confidence: Math.max(50, 95 - i * 2),
-          trend: trend as 'increasing' | 'decreasing' | 'stable'
-        });
-      }
-      
-      setForecastData(forecast);
+      // In a real app, this would call an API to generate forecasts
+      // For now, show message that real data is needed
+      setForecastData([]);
       setIsGeneratingForecast(false);
       
-      // Update store with forecast info
+      toast('📊 Forecast generation requires integration with ML backend. Upload more data to improve accuracy.');
+      
+      // Update store with forecast request info
       const updatedStores = stores.map(s => 
         s.id === store.id 
           ? { 
               ...s, 
               lastForecast: new Date().toISOString(),
-              forecastAccuracy: 85 + Math.random() * 10,
-              nextForecast: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-              forecastStatus: 'ready' as const
+              forecastAccuracy: 0, // No accuracy until real forecast
+              nextForecast: undefined,
+              forecastStatus: 'pending' as const
             }
           : s
       );
@@ -314,10 +370,8 @@ const StoresPage: React.FC = () => {
       
       try {
         await setData('stores', updatedStores);
-        toast.success('✨ Forecast generated successfully!');
       } catch (error) {
-        console.error('Failed to save forecast data:', error);
-        toast.error('Forecast generated but failed to save securely');
+        console.error('Failed to save forecast request:', error);
       }
     }, 3000);
   };
@@ -383,10 +437,16 @@ const StoresPage: React.FC = () => {
           <h1>Stores</h1>
           <h2 className="page-title">Manage your retail locations and online stores</h2>
         </div>
-        <button className="btn-primary add-store-btn" onClick={() => setShowAddModal(true)}>
-          {React.createElement(FiPlus as any)}
-          <span>Add Store</span>
-        </button>
+        <div className="header-actions">
+          <button className="btn-shopify" onClick={() => setShowShopifyConnect(true)}>
+            {React.createElement(SiShopify as any)}
+            <span>Connect Shopify</span>
+          </button>
+          <button className="btn-primary add-store-btn" onClick={() => setShowAddModal(true)}>
+            {React.createElement(FiPlus as any)}
+            <span>Add Store</span>
+          </button>
+        </div>
       </div>
 
       <div className="stores-stats">
@@ -467,17 +527,27 @@ const StoresPage: React.FC = () => {
             <div className="store-stats">
               {store.totalProducts !== undefined && (
                 <div className="stat">
-                  <span className="stat-value">{store.totalProducts.toLocaleString()}</span>
+                  <span className="stat-value">{store.syncMetadata?.productsCount || store.totalProducts || 0}</span>
                   <span className="stat-label">Products</span>
                 </div>
               )}
               {store.totalOrders !== undefined && (
                 <div className="stat">
-                  <span className="stat-value">{store.totalOrders.toLocaleString()}</span>
+                  <span className="stat-value">{store.syncMetadata?.ordersCount || store.totalOrders || 0}</span>
                   <span className="stat-label">Orders</span>
                 </div>
               )}
             </div>
+            
+            {/* Sync Status Indicator */}
+            {store.type === 'shopify' && store.syncStatus && (
+              <div className={`sync-status sync-${store.syncStatus}`}>
+                {store.syncStatus === 'pending' && '⏳ Sync Pending'}
+                {store.syncStatus === 'syncing' && '🔄 Syncing...'}
+                {store.syncStatus === 'completed' && '✅ Synced'}
+                {store.syncStatus === 'failed' && '❌ Sync Failed'}
+              </div>
+            )}
 
             <div className="store-footer">
               <span className="created-date">Added {store.createdAt}</span>
@@ -522,9 +592,9 @@ const StoresPage: React.FC = () => {
 
       {stores.length === 0 && (
         <div className="empty-state">
-          {React.createElement(MdStorefront as any)}
-          <h3>No stores added yet</h3>
-          <p>Add your first store to get started</p>
+          <div className="empty-state-icon">🏪</div>
+          <h2>No Stores Added Yet</h2>
+          <p>To start managing your inventory and generating forecasts, you need to add your first store.</p>
           <button className="btn-primary" onClick={() => setShowAddModal(true)}>
             {React.createElement(FiPlus as any)}
             Add Your First Store
@@ -632,29 +702,35 @@ const StoresPage: React.FC = () => {
 
               {formData.type === 'shopify' && (
                 <>
-                  <div className="form-group">
-                    <label htmlFor="shopifyDomain">Shopify Domain *</label>
-                    <input
-                      type="text"
-                      id="shopifyDomain"
-                      name="shopifyDomain"
-                      value={formData.shopifyDomain}
-                      onChange={handleInputChange}
-                      placeholder="your-store.myshopify.com"
-                      required
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label htmlFor="apiKey">API Key (Optional)</label>
-                    <input
-                      type="password"
-                      id="apiKey"
-                      name="apiKey"
-                      value={formData.apiKey}
-                      onChange={handleInputChange}
-                      placeholder="Enter your Shopify API key"
-                    />
+                  <div className="shopify-connect-section">
+                    <div className="shopify-connect-info">
+                      {React.createElement(SiShopify as any, { className: "shopify-icon-large" })}
+                      <h3>Connect Your Shopify Store</h3>
+                      <p>Click the button below to securely connect your Shopify store through OAuth. No API keys needed!</p>
+                      
+                      <button
+                        type="button"
+                        className="btn-shopify-connect"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setShowAddModal(false);
+                          setShowShopifyConnect(true);
+                        }}
+                      >
+                        {React.createElement(SiShopify as any)}
+                        Connect to Shopify
+                      </button>
+                      
+                      <div className="connect-benefits">
+                        <h4>What happens next:</h4>
+                        <ul>
+                          <li>✓ Secure OAuth authentication</li>
+                          <li>✓ Automatic data import</li>
+                          <li>✓ No manual API keys required</li>
+                          <li>✓ Works with all Shopify stores</li>
+                        </ul>
+                      </div>
+                    </div>
                   </div>
                 </>
               )}
@@ -684,19 +760,31 @@ const StoresPage: React.FC = () => {
                 </select>
               </div>
 
-              <div className="form-actions">
-                <button 
-                  type="button" 
-                  className="btn-secondary"
-                  onClick={() => {setShowAddModal(false); resetForm();}}
-                >
-                  Cancel
-                </button>
-                <button type="submit" className="btn-primary">
-                  {React.createElement(FiCheck as any)}
-                  {editingStore ? 'Update Store' : 'Add Store'}
-                </button>
-              </div>
+              {formData.type !== 'shopify' ? (
+                <div className="form-actions">
+                  <button 
+                    type="button" 
+                    className="btn-secondary"
+                    onClick={() => {setShowAddModal(false); resetForm();}}
+                  >
+                    Cancel
+                  </button>
+                  <button type="submit" className="btn-primary">
+                    {React.createElement(FiCheck as any)}
+                    {editingStore ? 'Update Store' : 'Add Store'}
+                  </button>
+                </div>
+              ) : (
+                <div className="form-actions">
+                  <button 
+                    type="button" 
+                    className="btn-secondary"
+                    onClick={() => {setShowAddModal(false); resetForm();}}
+                  >
+                    Close
+                  </button>
+                </div>
+              )}
             </form>
           </div>
         </div>
@@ -785,6 +873,15 @@ const StoresPage: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Shopify Connect Modal */}
+      {showShopifyConnect && (
+        <ShopifyConnect
+          userId={userContext?.userId || 'test-user'}
+          onSuccess={handleShopifyConnectSuccess}
+          onCancel={() => setShowShopifyConnect(false)}
+        />
       )}
     </div>
   );

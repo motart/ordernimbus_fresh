@@ -1,0 +1,11 @@
+date,storeId,sku,productName,quantity,unitPrice,revenue,cost,category,customer
+2024-01-15,store_001,WIDGET-001,Premium Widget,5,99.99,499.95,250.00,Electronics,CUST-1001
+2024-01-15,store_001,KIT-002,Deluxe Kit,3,149.99,449.97,200.00,Accessories,CUST-1002
+2024-01-15,store_002,ITEM-003,Standard Item,10,49.99,499.90,300.00,Hardware,CUST-1003
+2024-01-16,store_001,WIDGET-001,Premium Widget,2,99.99,199.98,100.00,Electronics,CUST-1004
+2024-01-16,store_002,SPECIAL-004,Seasonal Special,7,29.99,209.93,105.00,Seasonal,CUST-1005
+2024-01-17,store_001,KIT-002,Deluxe Kit,4,149.99,599.96,280.00,Accessories,CUST-1006
+2024-01-17,store_002,WIDGET-001,Premium Widget,8,99.99,799.92,400.00,Electronics,CUST-1007
+2024-01-18,store_001,ITEM-003,Standard Item,15,49.99,749.85,450.00,Hardware,CUST-1008
+2024-01-18,store_002,SPECIAL-004,Seasonal Special,5,29.99,149.95,75.00,Seasonal,CUST-1009
+2024-01-19,store_001,WIDGET-001,Premium Widget,3,99.99,299.97,150.00,Electronics,CUST-1010

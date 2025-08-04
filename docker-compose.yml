@@ -1,0 +1,91 @@
+services:
+  # DynamoDB Local for database
+  dynamodb-local:
+    image: amazon/dynamodb-local:latest
+    container_name: ordernimbus-dynamodb
+    ports:
+      - "8000:8000"
+    command: "-jar DynamoDBLocal.jar -sharedDb -inMemory"
+    networks:
+      - ordernimbus-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000 || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # DynamoDB Admin UI (optional but helpful)
+  dynamodb-admin:
+    image: aaronshaf/dynamodb-admin
+    container_name: ordernimbus-dynamodb-admin
+    ports:
+      - "8001:8001"
+    environment:
+      DYNAMO_ENDPOINT: "http://dynamodb-local:8000"
+      AWS_REGION: "us-east-1"
+      AWS_ACCESS_KEY_ID: "local"
+      AWS_SECRET_ACCESS_KEY: "local"
+    depends_on:
+      - dynamodb-local
+    networks:
+      - ordernimbus-network
+
+  # LocalStack for S3, SES, and other AWS services
+  localstack:
+    image: localstack/localstack:latest
+    container_name: ordernimbus-localstack
+    ports:
+      - "4566:4566"  # LocalStack gateway
+      - "4510-4559:4510-4559"  # External services port range
+    environment:
+      - SERVICES=s3,ses,cognito-idp,secretsmanager,ssm
+      - DEBUG=0
+      - DATA_DIR=/tmp/localstack/data
+      - LAMBDA_EXECUTOR=docker-reuse
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_DEFAULT_REGION=us-east-1
+    volumes:
+      - "${TMPDIR:-/tmp}/localstack:/tmp/localstack"
+      - "/var/run/docker.sock:/var/run/docker.sock"
+    networks:
+      - ordernimbus-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for caching (optional)
+  redis:
+    image: redis:alpine
+    container_name: ordernimbus-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - ordernimbus-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # MailHog for email testing (replaces SES locally)
+  mailhog:
+    image: mailhog/mailhog
+    container_name: ordernimbus-mailhog
+    ports:
+      - "1025:1025"  # SMTP server
+      - "8025:8025"  # Web UI
+    networks:
+      - ordernimbus-network
+
+networks:
+  ordernimbus-network:
+    external: true
+    name: ordernimbus-network
+
+volumes:
+  dynamodb-data:
+  localstack-data:

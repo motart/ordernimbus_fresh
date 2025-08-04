@@ -1,0 +1,11 @@
+{
+  "name": "ordernimbus-lambda-functions",
+  "version": "1.0.0",
+  "description": "Lambda functions for OrderNimbus platform",
+  "dependencies": {
+    "aws-sdk": "^2.1404.0",
+    "axios": "^1.4.0",
+    "jsonwebtoken": "^9.0.0",
+    "uuid": "^9.0.0"
+  }
+}

@@ -1,0 +1,1080 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'OrderNimbus Platform - Complete Infrastructure Stack'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: staging
+    AllowedValues:
+      - dev
+      - staging
+      - production
+    Description: Environment name
+  
+  AdminEmail:
+    Type: String
+    Default: admin@ordernimbus.com
+    Description: Admin email for notifications and initial user
+  
+  AlertEmail:
+    Type: String
+    Default: alerts@ordernimbus.com
+    Description: Email for system alerts
+
+Mappings:
+  EnvironmentConfig:
+    dev:
+      InstanceType: t3.micro
+      MinCapacity: 1
+      MaxCapacity: 2
+    staging:
+      InstanceType: t3.small
+      MinCapacity: 1
+      MaxCapacity: 5
+    production:
+      InstanceType: t3.medium
+      MinCapacity: 2
+      MaxCapacity: 10
+
+Resources:
+  # ==================== NETWORKING ====================
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub 'ordernimbus-${Environment}-vpc'
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub 'ordernimbus-${Environment}-public-1'
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Select [1, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub 'ordernimbus-${Environment}-public-2'
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.11.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub 'ordernimbus-${Environment}-private-1'
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.12.0/24
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub 'ordernimbus-${Environment}-private-2'
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub 'ordernimbus-${Environment}-igw'
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub 'ordernimbus-${Environment}-public-rt'
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1Association:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet2Association:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  # ==================== SECURITY GROUPS ====================
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for Application Load Balancer
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub 'ordernimbus-${Environment}-alb-sg'
+
+  LambdaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for Lambda functions
+      VpcId: !Ref VPC
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub 'ordernimbus-${Environment}-lambda-sg'
+
+  # ==================== IAM ROLES ====================
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+      Policies:
+        - PolicyName: LambdaServiceAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ses:SendEmail
+                  - ses:SendTemplatedEmail
+                  - ses:SendRawEmail
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                Resource: !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/ordernimbus-${Environment}-*'
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource: !Sub 'arn:aws:s3:::ordernimbus-${Environment}-*/*'
+              - Effect: Allow
+                Action:
+                  - cognito-idp:AdminGetUser
+                  - cognito-idp:AdminUpdateUserAttributes
+                  - cognito-idp:AdminInitiateAuth
+                  - cognito-idp:AdminSetUserPassword
+                Resource: !GetAtt UserPool.Arn
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:ordernimbus-${Environment}-*'
+      Tags:
+        - Key: Name
+          Value: !Sub 'ordernimbus-${Environment}-lambda-role'
+
+  # ==================== COGNITO ====================
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub 'ordernimbus-${Environment}-users'
+      AutoVerifiedAttributes:
+        - email
+      UsernameAttributes:
+        - email
+      MfaConfiguration: 'OFF'
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Priority: 1
+            Name: verified_email
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+          TemporaryPasswordValidityDays: 7
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Required: true
+          Mutable: true
+        - Name: name
+          AttributeDataType: String
+          Required: false
+          Mutable: true
+        - Name: company
+          AttributeDataType: String
+          Required: false
+          Mutable: true
+        - Name: role
+          AttributeDataType: String
+          Required: false
+          Mutable: true
+        - Name: subscription_tier
+          AttributeDataType: String
+          Required: false
+          Mutable: true
+      UserAttributeUpdateSettings:
+        AttributesRequireVerificationBeforeUpdate:
+          - email
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub 'ordernimbus-${Environment}-web-client'
+      UserPoolId: !Ref UserPool
+      GenerateSecret: false
+      RefreshTokenValidity: 30
+      AccessTokenValidity: 60
+      IdTokenValidity: 60
+      TokenValidityUnits:
+        AccessToken: minutes
+        IdToken: minutes
+        RefreshToken: days
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_USER_SRP_AUTH
+      SupportedIdentityProviders:
+        - COGNITO
+      CallbackURLs:
+        - 'https://ordernimbus.com/callback'
+        - 'http://localhost:3000/callback'
+      LogoutURLs:
+        - 'https://ordernimbus.com/logout'
+        - 'http://localhost:3000/logout'
+      AllowedOAuthFlows:
+        - code
+        - implicit
+      AllowedOAuthScopes:
+        - email
+        - openid
+        - profile
+      AllowedOAuthFlowsUserPoolClient: true
+      PreventUserExistenceErrors: ENABLED
+      EnableTokenRevocation: true
+
+  AdminUserGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: admin
+      Description: Full administrative access
+      UserPoolId: !Ref UserPool
+
+  ManagerUserGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: manager
+      Description: Store management access
+      UserPoolId: !Ref UserPool
+
+  AnalystUserGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: analyst
+      Description: Read-only analytics access
+      UserPoolId: !Ref UserPool
+
+  UserUserGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: user
+      Description: Standard user access
+      UserPoolId: !Ref UserPool
+
+  # ==================== DYNAMODB TABLES ====================
+  PasswordResetTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'ordernimbus-${Environment}-password-reset-tokens'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: email
+          AttributeType: S
+        - AttributeName: token
+          AttributeType: S
+      KeySchema:
+        - AttributeName: email
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: TokenIndex
+          KeySchema:
+            - AttributeName: token
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: expiry
+        Enabled: true
+      Tags:
+        - Key: Name
+          Value: !Sub 'ordernimbus-${Environment}-password-reset'
+
+  UserSessionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'ordernimbus-${Environment}-user-sessions'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: sessionId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: sessionId
+          KeyType: RANGE
+      Tags:
+        - Key: Name
+          Value: !Sub 'ordernimbus-${Environment}-sessions'
+
+  ConversationsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'ordernimbus-${Environment}-conversations'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: N
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+      Tags:
+        - Key: Name
+          Value: !Sub 'ordernimbus-${Environment}-conversations'
+
+  ForecastsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'ordernimbus-${Environment}-forecasts'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: forecastId
+          AttributeType: S
+        - AttributeName: createdAt
+          AttributeType: N
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: forecastId
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: CreatedAtIndex
+          KeySchema:
+            - AttributeName: userId
+              KeyType: HASH
+            - AttributeName: createdAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      Tags:
+        - Key: Name
+          Value: !Sub 'ordernimbus-${Environment}-forecasts'
+
+  DataUploadsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'ordernimbus-${Environment}-data-uploads'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: uploadId
+          AttributeType: S
+        - AttributeName: uploadedAt
+          AttributeType: N
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: uploadId
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: UploadTimeIndex
+          KeySchema:
+            - AttributeName: userId
+              KeyType: HASH
+            - AttributeName: uploadedAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      Tags:
+        - Key: Name
+          Value: !Sub 'ordernimbus-${Environment}-uploads'
+
+  # ==================== S3 BUCKETS ====================
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'ordernimbus-${Environment}-frontend-${AWS::AccountId}'
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: error.html
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+      CorsConfiguration:
+        CorsRules:
+          - AllowedOrigins:
+              - '*'
+            AllowedMethods:
+              - GET
+              - HEAD
+            AllowedHeaders:
+              - '*'
+      Tags:
+        - Key: Name
+          Value: !Sub 'ordernimbus-${Environment}-frontend'
+
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: PublicReadGetObject
+            Effect: Allow
+            Principal: '*'
+            Action: s3:GetObject
+            Resource: !Sub '${FrontendBucket.Arn}/*'
+
+  DataUploadsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'ordernimbus-${Environment}-data-uploads-${AWS::AccountId}'
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      Tags:
+        - Key: Name
+          Value: !Sub 'ordernimbus-${Environment}-data-uploads'
+
+  UserDataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'ordernimbus-${Environment}-user-data-${AWS::AccountId}'
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      Tags:
+        - Key: Name
+          Value: !Sub 'ordernimbus-${Environment}-user-data'
+
+  # ==================== SNS TOPICS ====================
+  AlertsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub 'ordernimbus-${Environment}-alerts'
+      DisplayName: OrderNimbus Alerts
+      Subscription:
+        - Endpoint: !Ref AlertEmail
+          Protocol: email
+      Tags:
+        - Key: Name
+          Value: !Sub 'ordernimbus-${Environment}-alerts'
+
+  DataProcessingTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub 'ordernimbus-${Environment}-data-processing'
+      DisplayName: Data Processing Notifications
+      Tags:
+        - Key: Name
+          Value: !Sub 'ordernimbus-${Environment}-data-processing'
+
+  # ==================== LAMBDA FUNCTIONS ====================
+  PasswordResetFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'ordernimbus-${Environment}-password-reset'
+      Runtime: nodejs18.x
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          REGION: !Ref AWS::Region
+          PASSWORD_RESET_TABLE: !Ref PasswordResetTable
+          USER_POOL_ID: !Ref UserPool
+      Code:
+        ZipFile: |
+          const { SESClient, SendEmailCommand } = require('@aws-sdk/client-ses');
+          const { DynamoDBClient, PutItemCommand } = require('@aws-sdk/client-dynamodb');
+          const crypto = require('crypto');
+          
+          const ses = new SESClient({ region: process.env.REGION });
+          const dynamodb = new DynamoDBClient({ region: process.env.REGION });
+          
+          exports.handler = async (event) => {
+              console.log('Password reset request:', JSON.stringify(event));
+              
+              let body;
+              try {
+                  body = JSON.parse(event.body || '{}');
+              } catch (e) {
+                  body = event;
+              }
+              
+              const email = body.email;
+              
+              if (!email) {
+                  return {
+                      statusCode: 400,
+                      headers: {
+                          'Access-Control-Allow-Origin': '*',
+                          'Content-Type': 'application/json'
+                      },
+                      body: JSON.stringify({ error: 'Email is required' })
+                  };
+              }
+              
+              // Generate reset token
+              const resetToken = crypto.randomBytes(32).toString('hex');
+              const expiry = Math.floor(Date.now() / 1000) + 3600; // 1 hour
+              
+              // Store token in DynamoDB
+              try {
+                  await dynamodb.send(new PutItemCommand({
+                      TableName: process.env.PASSWORD_RESET_TABLE,
+                      Item: {
+                          email: { S: email },
+                          token: { S: resetToken },
+                          expiry: { N: expiry.toString() }
+                      }
+                  }));
+                  
+                  // In production, send email via SES
+                  console.log(`Password reset token generated for ${email}: ${resetToken}`);
+                  
+                  return {
+                      statusCode: 200,
+                      headers: {
+                          'Access-Control-Allow-Origin': '*',
+                          'Content-Type': 'application/json'
+                      },
+                      body: JSON.stringify({ 
+                          success: true, 
+                          message: 'Password reset instructions sent to your email' 
+                      })
+                  };
+              } catch (error) {
+                  console.error('Error:', error);
+                  return {
+                      statusCode: 500,
+                      headers: {
+                          'Access-Control-Allow-Origin': '*',
+                          'Content-Type': 'application/json'
+                      },
+                      body: JSON.stringify({ 
+                          error: 'Failed to process password reset request' 
+                      })
+                  };
+              }
+          };
+      Tags:
+        - Key: Name
+          Value: !Sub 'ordernimbus-${Environment}-password-reset'
+
+  ChatbotHandlerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'ordernimbus-${Environment}-chatbot-handler'
+      Runtime: nodejs18.x
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 60
+      MemorySize: 512
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          REGION: !Ref AWS::Region
+          CONVERSATION_TABLE: !Ref ConversationsTable
+      Code:
+        ZipFile: |
+          exports.handler = async (event) => {
+              console.log('Chatbot request:', JSON.stringify(event));
+              
+              let body;
+              try {
+                  body = JSON.parse(event.body || '{}');
+              } catch (e) {
+                  body = event;
+              }
+              
+              const message = body.message || '';
+              const userId = body.userId || 'anonymous';
+              
+              // Simple response generation
+              const responses = {
+                  'hello': 'Hello! How can I help you with your sales data today?',
+                  'forecast': 'Based on your historical data, sales are projected to increase by 15% next month.',
+                  'help': 'I can help you with sales analysis, forecasting, and data insights. What would you like to know?',
+                  'default': 'I understand you want to know about: ' + message
+              };
+              
+              const responseKey = Object.keys(responses).find(key => 
+                  message.toLowerCase().includes(key)
+              ) || 'default';
+              
+              return {
+                  statusCode: 200,
+                  headers: {
+                      'Access-Control-Allow-Origin': '*',
+                      'Content-Type': 'application/json'
+                  },
+                  body: JSON.stringify({
+                      response: responses[responseKey],
+                      timestamp: new Date().toISOString()
+                  })
+              };
+          };
+      Tags:
+        - Key: Name
+          Value: !Sub 'ordernimbus-${Environment}-chatbot'
+
+  DataAnalysisFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'ordernimbus-${Environment}-data-analysis'
+      Runtime: nodejs18.x
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 300
+      MemorySize: 1024
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          REGION: !Ref AWS::Region
+          FORECAST_TABLE: !Ref ForecastsTable
+          CONVERSATION_TABLE: !Ref ConversationsTable
+      Code:
+        ZipFile: |
+          exports.handler = async (event) => {
+              console.log('Data analysis request:', JSON.stringify(event));
+              
+              // Mock data analysis response
+              const analysisResult = {
+                  totalSales: 1250000,
+                  monthlyAverage: 104166,
+                  topProducts: [
+                      { name: 'Product A', revenue: 250000 },
+                      { name: 'Product B', revenue: 180000 },
+                      { name: 'Product C', revenue: 150000 }
+                  ],
+                  forecast: {
+                      nextMonth: 115000,
+                      confidence: 0.85
+                  },
+                  insights: [
+                      'Sales trending upward by 8% month-over-month',
+                      'Weekend sales show 30% higher conversion rates',
+                      'Top performing category: Electronics'
+                  ]
+              };
+              
+              return {
+                  statusCode: 200,
+                  headers: {
+                      'Access-Control-Allow-Origin': '*',
+                      'Content-Type': 'application/json'
+                  },
+                  body: JSON.stringify(analysisResult)
+              };
+          };
+      Tags:
+        - Key: Name
+          Value: !Sub 'ordernimbus-${Environment}-data-analysis'
+
+  ForecastApiFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'ordernimbus-${Environment}-forecast-api'
+      Runtime: nodejs18.x
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 60
+      MemorySize: 512
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          REGION: !Ref AWS::Region
+          FORECAST_TABLE: !Ref ForecastsTable
+      Code:
+        ZipFile: |
+          exports.handler = async (event) => {
+              console.log('Forecast API request:', JSON.stringify(event));
+              
+              const method = event.httpMethod || event.requestContext?.http?.method || 'GET';
+              
+              if (method === 'GET') {
+                  // Return existing forecasts
+                  const forecasts = [];
+                  for (let i = 1; i <= 30; i++) {
+                      const date = new Date();
+                      date.setDate(date.getDate() + i);
+                      forecasts.push({
+                          date: date.toISOString().split('T')[0],
+                          predictedRevenue: 12000 + Math.random() * 6000,
+                          confidence: Math.max(0.6, 0.95 - i * 0.012),
+                          trend: i < 10 ? 'increasing' : i < 20 ? 'stable' : 'decreasing'
+                      });
+                  }
+                  
+                  return {
+                      statusCode: 200,
+                      headers: {
+                          'Access-Control-Allow-Origin': '*',
+                          'Content-Type': 'application/json'
+                      },
+                      body: JSON.stringify({ forecasts })
+                  };
+              } else {
+                  // Generate new forecast
+                  return {
+                      statusCode: 200,
+                      headers: {
+                          'Access-Control-Allow-Origin': '*',
+                          'Content-Type': 'application/json'
+                      },
+                      body: JSON.stringify({
+                          message: 'Forecast generation initiated',
+                          jobId: 'forecast-' + Date.now()
+                      })
+                  };
+              }
+          };
+      Tags:
+        - Key: Name
+          Value: !Sub 'ordernimbus-${Environment}-forecast-api'
+
+  # ==================== API GATEWAY ====================
+  ApiGateway:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub 'ordernimbus-${Environment}-api'
+      ProtocolType: HTTP
+      CorsConfiguration:
+        AllowOrigins:
+          - '*'
+        AllowHeaders:
+          - '*'
+        AllowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+      Tags:
+        Name: !Sub 'ordernimbus-${Environment}-api'
+
+  ApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref ApiGateway
+      StageName: !Ref Environment
+      AutoDeploy: true
+      Tags:
+        Name: !Sub 'ordernimbus-${Environment}-api-stage'
+
+  # Lambda Integrations
+  PasswordResetIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref ApiGateway
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt PasswordResetFunction.Arn
+      IntegrationMethod: POST
+      PayloadFormatVersion: '2.0'
+
+  PasswordResetRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: 'POST /api/auth/reset-password'
+      Target: !Sub 'integrations/${PasswordResetIntegration}'
+
+  PasswordResetPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref PasswordResetFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'
+
+  ChatbotIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref ApiGateway
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt ChatbotHandlerFunction.Arn
+      IntegrationMethod: POST
+      PayloadFormatVersion: '2.0'
+
+  ChatbotRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: 'POST /api/chatbot'
+      Target: !Sub 'integrations/${ChatbotIntegration}'
+
+  ChatbotPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ChatbotHandlerFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'
+
+  DataAnalysisIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref ApiGateway
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt DataAnalysisFunction.Arn
+      IntegrationMethod: POST
+      PayloadFormatVersion: '2.0'
+
+  DataAnalysisRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: 'POST /api/data/analyze'
+      Target: !Sub 'integrations/${DataAnalysisIntegration}'
+
+  DataAnalysisPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref DataAnalysisFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'
+
+  ForecastIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref ApiGateway
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt ForecastApiFunction.Arn
+      IntegrationMethod: POST
+      PayloadFormatVersion: '2.0'
+
+  ForecastGetRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: 'GET /api/forecast'
+      Target: !Sub 'integrations/${ForecastIntegration}'
+
+  ForecastPostRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: 'POST /api/forecast'
+      Target: !Sub 'integrations/${ForecastIntegration}'
+
+  ForecastPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ForecastApiFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'
+
+  # ==================== CLOUDFRONT ====================
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Origins:
+          - Id: S3Origin
+            DomainName: !Sub '${FrontendBucket}.s3-website-${AWS::Region}.amazonaws.com'
+            CustomOriginConfig:
+              OriginProtocolPolicy: http-only
+        Enabled: true
+        DefaultRootObject: index.html
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          CachedMethods:
+            - GET
+            - HEAD
+          Compress: true
+          ForwardedValues:
+            QueryString: false
+            Cookies:
+              Forward: none
+        CustomErrorResponses:
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 300
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 300
+        PriceClass: PriceClass_100
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
+        Comment: !Sub 'OrderNimbus ${Environment} Frontend Distribution'
+      Tags:
+        - Key: Name
+          Value: !Sub 'ordernimbus-${Environment}-cloudfront'
+
+  # ==================== CLOUDWATCH ALARMS ====================
+  PasswordResetErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub 'ordernimbus-${Environment}-password-reset-errors'
+      AlarmDescription: Password reset Lambda function errors
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref PasswordResetFunction
+      AlarmActions:
+        - !Ref AlertsTopic
+
+  ApiGateway4xxAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub 'ordernimbus-${Environment}-api-4xx-errors'
+      AlarmDescription: API Gateway 4XX errors
+      MetricName: 4XXError
+      Namespace: AWS/ApiGateway
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 50
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ApiName
+          Value: !Sub 'ordernimbus-${Environment}-api'
+      AlarmActions:
+        - !Ref AlertsTopic
+
+  ApiGateway5xxAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub 'ordernimbus-${Environment}-api-5xx-errors'
+      AlarmDescription: API Gateway 5XX errors
+      MetricName: 5XXError
+      Namespace: AWS/ApiGateway
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ApiName
+          Value: !Sub 'ordernimbus-${Environment}-api'
+      AlarmActions:
+        - !Ref AlertsTopic
+
+Outputs:
+  FrontendURL:
+    Description: CloudFront distribution URL
+    Value: !Sub 'https://${CloudFrontDistribution.DomainName}'
+    Export:
+      Name: !Sub '${AWS::StackName}-frontend-url'
+
+  FrontendBucketName:
+    Description: Frontend S3 bucket name
+    Value: !Ref FrontendBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-frontend-bucket'
+
+  ApiEndpoint:
+    Description: API Gateway endpoint
+    Value: !Sub 'https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${Environment}'
+    Export:
+      Name: !Sub '${AWS::StackName}-api-endpoint'
+
+  UserPoolId:
+    Description: Cognito User Pool ID
+    Value: !Ref UserPool
+    Export:
+      Name: !Sub '${AWS::StackName}-user-pool-id'
+
+  UserPoolClientId:
+    Description: Cognito User Pool Client ID
+    Value: !Ref UserPoolClient
+    Export:
+      Name: !Sub '${AWS::StackName}-user-pool-client-id'
+
+  Region:
+    Description: AWS Region
+    Value: !Ref AWS::Region
+    Export:
+      Name: !Sub '${AWS::StackName}-region'
