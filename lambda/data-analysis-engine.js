@@ -44,48 +44,27 @@ class DataAnalysisEngine {
         }
     }
 
-    // Get user stores with enhanced data
+    // Get user stores from database
     async getStores() {
         try {
-            // For now, generate realistic store data based on user patterns
-            // In production, this would query the actual stores table
-            const stores = [
-                {
-                    id: `${this.userId}_1`,
-                    name: 'Downtown Flagship Store',
-                    type: 'brick-and-mortar',
-                    location: 'San Francisco, CA',
-                    totalProducts: 1250,
-                    totalOrders: 3420,
-                    monthlyRevenue: 275000,
-                    averageOrderValue: 80.41,
-                    conversionRate: 3.2,
-                    status: 'active',
-                    performanceRating: 'excellent'
-                },
-                {
-                    id: `${this.userId}_2`,
-                    name: 'Online Boutique',
-                    type: 'shopify',
-                    domain: 'myboutique.myshopify.com',
-                    totalProducts: 850,
-                    totalOrders: 2100,
-                    monthlyRevenue: 168000,
-                    averageOrderValue: 80.00,
-                    conversionRate: 2.8,
-                    status: 'active',
-                    performanceRating: 'good'
+            const params = {
+                TableName: process.env.STORES_TABLE || 'ordernimbus-stores',
+                FilterExpression: 'userId = :userId',
+                ExpressionAttributeValues: {
+                    ':userId': this.userId
                 }
-            ];
+            };
 
-            return stores;
+            const result = await dynamodb.scan(params).promise();
+            // Return actual stores from database, no mock data
+            return result.Items || [];
         } catch (error) {
             console.error('Error getting stores:', error);
             return [];
         }
     }
 
-    // Get forecast data with analysis
+    // Get forecast data from database
     async getForecasts() {
         try {
             const params = {
@@ -100,65 +79,242 @@ class DataAnalysisEngine {
             return result.Items || [];
         } catch (error) {
             console.error('Error getting forecasts:', error);
-            // Return mock forecast data for demo
-            return this.generateMockForecasts();
+            return [];
         }
     }
 
-    // Generate comprehensive sales data analysis
+    // Get actual sales data from database
     async getSalesData() {
-        const salesData = this.generateRealisticSalesData();
+        try {
+            const params = {
+                TableName: process.env.SALES_TABLE || 'ordernimbus-sales',
+                FilterExpression: 'userId = :userId',
+                ExpressionAttributeValues: {
+                    ':userId': this.userId
+                }
+            };
+
+            const result = await dynamodb.scan(params).promise();
+            const salesRecords = result.Items || [];
+            
+            // Process and aggregate sales data
+            return this.processSalesData(salesRecords);
+        } catch (error) {
+            console.error('Error getting sales data:', error);
+            return {
+                daily: [],
+                weekly: [],
+                monthly: [],
+                trends: {}
+            };
+        }
+    }
+
+    // Process raw sales records into aggregated format
+    processSalesData(records) {
+        if (!records || records.length === 0) {
+            return {
+                daily: [],
+                weekly: [],
+                monthly: [],
+                trends: {}
+            };
+        }
+
+        // Group by date
+        const dailyMap = {};
+        records.forEach(record => {
+            const date = record.date || new Date().toISOString().split('T')[0];
+            if (!dailyMap[date]) {
+                dailyMap[date] = {
+                    date,
+                    revenue: 0,
+                    orders: 0,
+                    units: 0
+                };
+            }
+            dailyMap[date].revenue += parseFloat(record.revenue || 0);
+            dailyMap[date].orders += 1;
+            dailyMap[date].units += parseInt(record.quantity || 0);
+        });
+
+        const daily = Object.values(dailyMap).sort((a, b) => new Date(b.date) - new Date(a.date));
+        
         return {
-            daily: salesData.daily,
-            weekly: salesData.weekly,
-            monthly: salesData.monthly,
-            yearly: salesData.yearly,
-            trends: salesData.trends
+            daily: daily.slice(0, 30), // Last 30 days
+            weekly: this.aggregateWeekly(daily),
+            monthly: this.aggregateMonthly(daily),
+            trends: this.calculateTrends(daily)
+        };
+    }
+
+    // Aggregate daily data to weekly
+    aggregateWeekly(dailyData) {
+        // Implementation for weekly aggregation
+        return [];
+    }
+
+    // Aggregate daily data to monthly
+    aggregateMonthly(dailyData) {
+        // Implementation for monthly aggregation
+        return [];
+    }
+
+    // Calculate trends from historical data
+    calculateTrends(dailyData) {
+        if (dailyData.length < 2) return {};
+        
+        const recent = dailyData.slice(0, 7).reduce((sum, d) => sum + d.revenue, 0);
+        const previous = dailyData.slice(7, 14).reduce((sum, d) => sum + d.revenue, 0);
+        
+        return {
+            weekOverWeek: previous ? ((recent - previous) / previous * 100).toFixed(1) : 0,
+            direction: recent > previous ? 'up' : 'down'
         };
     }
 
     // Generate order data analysis
     async getOrderData() {
-        return {
-            totalOrders: 5520,
-            avgOrderValue: 80.21,
-            ordersByStore: {
-                [`${this.userId}_1`]: 3420,
-                [`${this.userId}_2`]: 2100
-            },
-            orderTrends: {
-                thisMonth: 486,
-                lastMonth: 432,
-                growth: 12.5
-            },
-            topProducts: [
-                { name: 'Premium Widget', orders: 245, revenue: 19600 },
-                { name: 'Deluxe Kit', orders: 189, revenue: 15120 },
-                { name: 'Standard Item', orders: 156, revenue: 7800 }
-            ]
-        };
+        try {
+            // Query actual orders from sales table
+            const params = {
+                TableName: process.env.SALES_TABLE || 'ordernimbus-sales',
+                FilterExpression: 'userId = :userId',
+                ExpressionAttributeValues: {
+                    ':userId': this.userId
+                }
+            };
+
+            const result = await dynamodb.scan(params).promise();
+            const orders = result.Items || [];
+            
+            if (orders.length === 0) {
+                return {
+                    totalOrders: 0,
+                    avgOrderValue: 0,
+                    ordersByStore: {},
+                    orderTrends: {
+                        thisMonth: 0,
+                        lastMonth: 0,
+                        growth: 0
+                    },
+                    topProducts: []
+                };
+            }
+            
+            // Calculate real metrics from actual data
+            const totalOrders = orders.length;
+            const totalRevenue = orders.reduce((sum, order) => sum + (order.revenue || 0), 0);
+            const avgOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
+            
+            // Group by store
+            const ordersByStore = {};
+            orders.forEach(order => {
+                const storeId = order.storeId || 'unknown';
+                ordersByStore[storeId] = (ordersByStore[storeId] || 0) + 1;
+            });
+            
+            // Calculate trends (simplified)
+            const now = new Date();
+            const thisMonthOrders = orders.filter(order => {
+                const orderDate = new Date(order.date);
+                return orderDate.getMonth() === now.getMonth() && orderDate.getFullYear() === now.getFullYear();
+            }).length;
+            
+            return {
+                totalOrders,
+                avgOrderValue: Math.round(avgOrderValue * 100) / 100,
+                ordersByStore,
+                orderTrends: {
+                    thisMonth: thisMonthOrders,
+                    lastMonth: 0, // Would need historical data
+                    growth: 0
+                },
+                topProducts: [] // Would need product aggregation
+            };
+        } catch (error) {
+            console.error('Error getting order data:', error);
+            return {
+                totalOrders: 0,
+                avgOrderValue: 0,
+                ordersByStore: {},
+                orderTrends: {
+                    thisMonth: 0,
+                    lastMonth: 0,
+                    growth: 0
+                },
+                topProducts: []
+            };
+        }
     }
 
     // Generate product data analysis
     async getProductData() {
-        return {
-            totalProducts: 2100,
-            activeProducts: 1956,
-            topPerformers: [
-                { name: 'Premium Widget', revenue: 45000, margin: 35 },
-                { name: 'Deluxe Kit', revenue: 38000, margin: 28 },
-                { name: 'Standard Item', revenue: 25000, margin: 22 }
-            ],
-            lowStock: [
-                { name: 'Premium Widget', stock: 12, reorderPoint: 50 },
-                { name: 'Seasonal Special', stock: 8, reorderPoint: 25 }
-            ],
-            categoryPerformance: {
-                'Electronics': { revenue: 125000, growth: 15.2 },
-                'Accessories': { revenue: 89000, growth: 8.7 },
-                'Seasonal': { revenue: 67000, growth: -3.2 }
+        try {
+            // Query actual products from database
+            const params = {
+                TableName: process.env.PRODUCTS_TABLE || 'ordernimbus-products',
+                FilterExpression: 'userId = :userId',
+                ExpressionAttributeValues: {
+                    ':userId': this.userId
+                }
+            };
+
+            const result = await dynamodb.scan(params).promise();
+            const products = result.Items || [];
+            
+            if (products.length === 0) {
+                return {
+                    totalProducts: 0,
+                    activeProducts: 0,
+                    topPerformers: [],
+                    lowStock: [],
+                    categoryPerformance: {}
+                };
             }
-        };
+            
+            // Calculate real metrics
+            const totalProducts = products.length;
+            const activeProducts = products.filter(p => p.isActive !== false).length;
+            
+            // Get inventory data for stock levels
+            const inventoryParams = {
+                TableName: process.env.INVENTORY_TABLE || 'ordernimbus-inventory',
+                FilterExpression: 'userId = :userId',
+                ExpressionAttributeValues: {
+                    ':userId': this.userId
+                }
+            };
+            
+            const inventoryResult = await dynamodb.scan(inventoryParams).promise();
+            const inventory = inventoryResult.Items || [];
+            
+            // Find low stock items
+            const lowStock = inventory
+                .filter(item => item.quantity < item.reorderPoint)
+                .map(item => ({
+                    name: item.productName || item.sku,
+                    stock: item.quantity,
+                    reorderPoint: item.reorderPoint
+                }));
+            
+            return {
+                totalProducts,
+                activeProducts,
+                topPerformers: [], // Would need sales data aggregation
+                lowStock: lowStock.slice(0, 5), // Top 5 low stock items
+                categoryPerformance: {}
+            };
+        } catch (error) {
+            console.error('Error getting product data:', error);
+            return {
+                totalProducts: 0,
+                activeProducts: 0,
+                topPerformers: [],
+                lowStock: [],
+                categoryPerformance: {}
+            };
+        }
     }
 
     // Get conversation history for context
@@ -199,34 +355,55 @@ class DataAnalysisEngine {
 
     // Calculate total revenue across all sources
     calculateTotalRevenue(data) {
-        const storeRevenue = data.stores.reduce((sum, store) => sum + (store.monthlyRevenue || 0), 0);
-        const annualRevenue = storeRevenue * 12;
+        // Calculate from actual sales data instead of store.monthlyRevenue
+        if (!data.salesData || !data.salesData.daily || data.salesData.daily.length === 0) {
+            return {
+                monthly: 0,
+                annual: 0,
+                daily: 0,
+                byStore: []
+            };
+        }
+        
+        // Sum up actual revenue from sales records
+        const monthlyRevenue = data.salesData.daily.reduce((sum, day) => sum + day.revenue, 0);
+        const dailyAvg = data.salesData.daily.length > 0 ? monthlyRevenue / data.salesData.daily.length : 0;
         
         return {
-            monthly: storeRevenue,
-            annual: annualRevenue,
-            daily: Math.round(storeRevenue / 30),
+            monthly: Math.round(monthlyRevenue),
+            annual: Math.round(monthlyRevenue * 12),
+            daily: Math.round(dailyAvg),
             byStore: data.stores.map(store => ({
                 name: store.name,
-                monthly: store.monthlyRevenue || 0,
-                percentage: ((store.monthlyRevenue || 0) / storeRevenue * 100).toFixed(1)
+                monthly: 0, // Would need to aggregate by store
+                percentage: '0'
             }))
         };
     }
 
     // Calculate daily average sales
     calculateDailyAverage(data) {
-        const totalMonthlyRevenue = data.stores.reduce((sum, store) => sum + (store.monthlyRevenue || 0), 0);
-        const dailyAverage = Math.round(totalMonthlyRevenue / 30);
+        if (!data.salesData || !data.salesData.daily || data.salesData.daily.length === 0) {
+            return {
+                revenue: 0,
+                orders: 0,
+                averageOrderValue: 0,
+                breakdown: []
+            };
+        }
+        
+        const totalRevenue = data.salesData.daily.reduce((sum, day) => sum + day.revenue, 0);
+        const totalOrders = data.salesData.daily.reduce((sum, day) => sum + day.orders, 0);
+        const days = data.salesData.daily.length || 1;
         
         return {
-            revenue: dailyAverage,
-            orders: Math.round(data.orderData.totalOrders / 30),
-            averageOrderValue: data.orderData.avgOrderValue,
+            revenue: Math.round(totalRevenue / days),
+            orders: Math.round(totalOrders / days),
+            averageOrderValue: data.orderData.avgOrderValue || 0,
             breakdown: data.stores.map(store => ({
                 name: store.name,
-                dailyRevenue: Math.round((store.monthlyRevenue || 0) / 30),
-                dailyOrders: Math.round((store.totalOrders || 0) / 30)
+                dailyRevenue: 0, // Would need store-specific aggregation
+                dailyOrders: 0
             }))
         };
     }
@@ -294,38 +471,42 @@ class DataAnalysisEngine {
         const totalRevenue = this.calculateTotalRevenue(data);
         const growth = this.calculateGrowthMetrics(data);
         
+        // Only generate insights if we have data
+        if (data.stores.length === 0) {
+            insights.push({
+                type: 'info',
+                category: 'getting-started',
+                message: 'Add your first store to start tracking performance'
+            });
+            return insights;
+        }
+        
+        if (!data.salesData || data.salesData.daily.length === 0) {
+            insights.push({
+                type: 'info',
+                category: 'data-needed',
+                message: 'Upload sales data to unlock AI-powered insights'
+            });
+            return insights;
+        }
+        
         // Revenue insights
-        if (totalRevenue.daily > 14000) {
+        if (totalRevenue.daily > 0) {
             insights.push({
                 type: 'positive',
                 category: 'revenue',
-                message: `Strong daily performance with $${totalRevenue.daily.toLocaleString()} average daily revenue`
+                message: `Daily average revenue: $${totalRevenue.daily.toLocaleString()}`
             });
         }
         
-        // Growth insights
-        if (growth.monthOverMonth > 5) {
+        // Growth insights (only if we have enough data)
+        if (data.salesData.daily.length > 7 && growth.monthOverMonth !== 0) {
             insights.push({
-                type: 'positive',
+                type: growth.monthOverMonth > 0 ? 'positive' : 'warning',
                 category: 'growth',
-                message: `Excellent growth momentum with ${growth.monthOverMonth}% month-over-month increase`
+                message: `${Math.abs(growth.monthOverMonth)}% ${growth.monthOverMonth > 0 ? 'growth' : 'decline'} trend detected`
             });
         }
-        
-        // Store performance insights
-        const topStore = data.stores.sort((a, b) => (b.monthlyRevenue || 0) - (a.monthlyRevenue || 0))[0];
-        insights.push({
-            type: 'info',
-            category: 'performance',
-            message: `${topStore.name} is your top performer, generating ${((topStore.monthlyRevenue / totalRevenue.monthly) * 100).toFixed(1)}% of total revenue`
-        });
-        
-        // Opportunity insights
-        insights.push({
-            type: 'opportunity',
-            category: 'optimization',
-            message: 'Consider expanding your top-performing product categories based on current trends'
-        });
         
         return insights;
     }

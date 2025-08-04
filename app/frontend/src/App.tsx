@@ -11,6 +11,7 @@ import { awsConfig } from './aws-config';
 import { getCurrentUser } from 'aws-amplify/auth';
 import { Toaster } from 'react-hot-toast';
 import { ClipLoader } from 'react-spinners';
+import { clearAllAppData, hasLegacyData } from './utils/clearAppData';
 
 type PageType = 'login' | 'signup' | 'forgot' | 'dashboard';
 
@@ -21,6 +22,13 @@ function App() {
 
   useEffect(() => {
     Amplify.configure(awsConfig);
+    
+    // Clear all legacy demo data on app load
+    if (hasLegacyData()) {
+      clearAllAppData();
+      console.log('Cleared legacy demo data for fresh start');
+    }
+    
     checkCurrentUser();
   }, []);
 

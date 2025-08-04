@@ -63,44 +63,63 @@ const ForecastPage: React.FC = () => {
   useEffect(() => {
     loadStores();
     loadSKUs();
-    generateForecastData();
+    // Only generate forecast if we have stores
+    const userEmail = localStorage.getItem('userEmail') || '';
+    const savedStores = localStorage.getItem(`stores_${userEmail}`);
+    if (savedStores) {
+      const parsedStores = JSON.parse(savedStores);
+      if (parsedStores.length > 0) {
+        generateForecastData();
+      }
+    }
   }, [selectedStore, selectedTimeline, selectedSKU]);
 
   const loadStores = () => {
-    const savedStores = JSON.parse(localStorage.getItem('ordernimbus_stores') || '[]');
-    const storeList: Store[] = savedStores.map((store: any) => ({
-      id: store.id,
-      name: store.name,
-      type: store.type
-    }));
+    const userEmail = localStorage.getItem('userEmail') || '';
+    const savedStores = localStorage.getItem(`stores_${userEmail}`);
     
-    // Add demo stores if none exist
-    if (storeList.length === 0) {
-      const demoStores: Store[] = [
-        { id: '1', name: 'Downtown Flagship Store', type: 'brick-and-mortar' },
-        { id: '2', name: 'Online Boutique', type: 'shopify' },
-        { id: '3', name: 'Mall Location', type: 'brick-and-mortar' }
-      ];
-      setStores(demoStores);
-    } else {
+    if (savedStores) {
+      const parsedStores = JSON.parse(savedStores);
+      const storeList: Store[] = parsedStores.map((store: any) => ({
+        id: store.id,
+        name: store.name,
+        type: store.type
+      }));
       setStores(storeList);
+    } else {
+      // No demo stores - start empty
+      setStores([]);
     }
   };
 
   const loadSKUs = () => {
-    // Demo SKU data
-    const demoSKUs: SKU[] = [
-      { id: 'SKU001', name: 'Premium Coffee Blend', category: 'Beverages', price: 24.99 },
-      { id: 'SKU002', name: 'Organic Tea Collection', category: 'Beverages', price: 18.99 },
-      { id: 'SKU003', name: 'Artisan Pastries', category: 'Food', price: 12.99 },
-      { id: 'SKU004', name: 'Seasonal Merchandise', category: 'Retail', price: 35.99 },
-      { id: 'SKU005', name: 'Gift Cards', category: 'Services', price: 50.00 },
-      { id: 'SKU006', name: 'Espresso Machine', category: 'Equipment', price: 299.99 }
-    ];
-    setSKUs(demoSKUs);
+    // Load SKUs from products data if available
+    const userEmail = localStorage.getItem('userEmail') || '';
+    const savedProducts = localStorage.getItem(`products_${userEmail}`);
+    
+    if (savedProducts) {
+      const products = JSON.parse(savedProducts);
+      const skuList: SKU[] = products.map((product: any) => ({
+        id: product.sku || product.id,
+        name: product.name,
+        category: product.category || 'General',
+        price: product.price || 0
+      }));
+      setSKUs(skuList);
+    } else {
+      // No products yet
+      setSKUs([]);
+    }
   };
 
   const generateForecastData = () => {
+    // Only generate if we have data
+    if (stores.length === 0) {
+      setForecastData([]);
+      setSummary(null);
+      return;
+    }
+    
     const days = parseInt(selectedTimeline);
     const data: ForecastData[] = [];
     
@@ -213,14 +232,14 @@ const ForecastPage: React.FC = () => {
           <h2 className="subtitle">AI-powered predictions and analytics for your business</h2>
         </div>
         <div className="header-actions">
-          <button className="btn-secondary" onClick={handleExportForecast}>
+          <button className="btn-secondary" onClick={handleExportForecast} disabled={stores.length === 0}>
             {React.createElement(FiDownload as any)}
             Export
           </button>
           <button 
             className="btn-primary" 
             onClick={handleGenerateNewForecast}
-            disabled={isGenerating}
+            disabled={isGenerating || stores.length === 0}
           >
             {isGenerating ? (
               React.createElement(FiClock as any)
@@ -231,6 +250,38 @@ const ForecastPage: React.FC = () => {
           </button>
         </div>
       </div>
+      
+      {stores.length === 0 ? (
+        <div className="empty-state">
+          <div className="empty-state-icon">📊</div>
+          <h2>No Forecast Data Available</h2>
+          <p>To generate sales forecasts, you need to:</p>
+          <ol style={{ textAlign: 'left', maxWidth: '400px', margin: '20px auto' }}>
+            <li>Add at least one store</li>
+            <li>Upload historical sales data</li>
+            <li>Wait for AI model to process your data</li>
+          </ol>
+          <button 
+            className="btn-primary"
+            onClick={() => window.location.href = '#/stores'}
+          >
+            Add Your First Store
+          </button>
+        </div>
+      ) : forecastData.length === 0 ? (
+        <div className="empty-state">
+          <div className="empty-state-icon">📈</div>
+          <h2>Upload Sales Data</h2>
+          <p>Upload your historical sales data to generate accurate forecasts</p>
+          <button 
+            className="btn-primary"
+            onClick={() => window.location.href = '#/upload'}
+          >
+            Upload Data
+          </button>
+        </div>
+      ) : (
+        <>
 
       {/* Filters */}
       <div className="forecast-filters">
@@ -484,6 +535,8 @@ const ForecastPage: React.FC = () => {
           </div>
         </div>
       </div>
+      </>
+      )}
     </div>
   );
 };

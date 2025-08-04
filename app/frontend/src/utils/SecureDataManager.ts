@@ -295,33 +295,21 @@ class SecureDataManager {
       throw new Error('SecureDataManager not initialized');
     }
 
-    // Migrate stores data
+    // Skip migration - we want a clean start, no demo data
     const legacyStores = localStorage.getItem('ordernimbus_stores');
     if (legacyStores) {
-      try {
-        const stores = JSON.parse(legacyStores);
-        await this.setSecureData('stores', stores);
-        localStorage.removeItem('ordernimbus_stores');
-        console.log('Migrated legacy stores data to secure storage');
-      } catch (error) {
-        console.error('Failed to migrate legacy stores data:', error);
-      }
+      // Just remove old data, don't migrate
+      localStorage.removeItem('ordernimbus_stores');
+      console.log('Removed legacy stores data for clean start');
     }
 
-    // Migrate other legacy data as needed
-    const legacyKeys = ['ordernimbus_forecasts', 'ordernimbus_settings', 'ordernimbus_preferences'];
+    // Remove other legacy data - don't migrate
+    const legacyKeys = ['ordernimbus_forecasts', 'ordernimbus_settings', 'ordernimbus_preferences', 'forecast_history'];
     for (const legacyKey of legacyKeys) {
       const legacyData = localStorage.getItem(legacyKey);
       if (legacyData) {
-        try {
-          const data = JSON.parse(legacyData);
-          const secureKey = legacyKey.replace('ordernimbus_', '');
-          await this.setSecureData(secureKey, data);
-          localStorage.removeItem(legacyKey);
-          console.log(`Migrated legacy ${secureKey} data to secure storage`);
-        } catch (error) {
-          console.error(`Failed to migrate legacy ${legacyKey} data:`, error);
-        }
+        localStorage.removeItem(legacyKey);
+        console.log(`Removed legacy ${legacyKey} data for clean start`);
       }
     }
   }

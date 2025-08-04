@@ -1,0 +1,68 @@
+# SAM CLI Configuration File
+# Used for both local development and deployment
+
+version = 0.1
+
+# Default environment configuration
+[default]
+[default.global.parameters]
+stack_name = "ordernimbus-local"
+s3_prefix = "ordernimbus-local"
+region = "us-east-1"
+confirm_changeset = false
+capabilities = "CAPABILITY_IAM"
+
+[default.build.parameters]
+cached = true
+parallel = true
+
+[default.local_start_api.parameters]
+port = 3001
+host = "127.0.0.1"
+warm_containers = "EAGER"
+debug_port = 5858
+docker_network = "ordernimbus-network"
+skip_pull_image = true
+parameter_overrides = "Environment=local"
+
+[default.local_start_lambda.parameters]
+port = 3002
+host = "127.0.0.1"
+warm_containers = "EAGER"
+debug_port = 5859
+docker_network = "ordernimbus-network"
+skip_pull_image = true
+parameter_overrides = "Environment=local"
+
+# Development environment
+[dev]
+[dev.deploy.parameters]
+stack_name = "ordernimbus-dev"
+s3_bucket = "ordernimbus-sam-deployments"
+s3_prefix = "ordernimbus-dev"
+region = "us-east-1"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM"
+parameter_overrides = "Environment=dev"
+
+# Staging environment
+[staging]
+[staging.deploy.parameters]
+stack_name = "ordernimbus-staging"
+s3_bucket = "ordernimbus-sam-deployments"
+s3_prefix = "ordernimbus-staging"
+region = "us-east-1"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM"
+parameter_overrides = "Environment=staging"
+
+# Production environment
+[production]
+[production.deploy.parameters]
+stack_name = "ordernimbus-production"
+s3_bucket = "ordernimbus-sam-deployments"
+s3_prefix = "ordernimbus-production"
+region = "us-east-1"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM"
+parameter_overrides = "Environment=production"

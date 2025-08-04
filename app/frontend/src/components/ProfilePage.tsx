@@ -124,7 +124,7 @@ const ProfilePage: React.FC = () => {
       setProfile({
         email: user.signInDetails?.loginId || '',
         username: user.username || '',
-        createdAt: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString(), // Demo: 90 days ago
+        createdAt: new Date().toISOString(), // Real signup date
         lastLogin: new Date().toISOString(),
         company: localStorage.getItem('user_company') || '',
         phone: localStorage.getItem('user_phone') || '',
@@ -138,17 +138,18 @@ const ProfilePage: React.FC = () => {
   };
 
   const loadUsageStats = () => {
-    // Load from localStorage
-    const stores = JSON.parse(localStorage.getItem('ordernimbus_stores') || '[]');
-    const forecasts = JSON.parse(localStorage.getItem('forecast_history') || '[]');
+    // Load from secure storage - no demo data
+    const userEmail = localStorage.getItem('userEmail') || '';
+    const stores = JSON.parse(localStorage.getItem(`stores_${userEmail}`) || '[]');
+    const forecasts = JSON.parse(localStorage.getItem(`forecasts_${userEmail}`) || '[]');
     
     setUsageStats({
       totalStores: stores.length,
-      totalForecasts: forecasts.length || 42, // Demo data
-      apiCallsThisMonth: 1247, // Demo data
-      storageUsed: '124 MB',
-      lastForecast: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(), // 2 hours ago
-      accuracy: 87.5
+      totalForecasts: forecasts.length, // Real data only
+      apiCallsThisMonth: 0, // Real count
+      storageUsed: '0 MB',
+      lastForecast: forecasts.length > 0 ? forecasts[0].createdAt : undefined,
+      accuracy: 0
     });
   };
 

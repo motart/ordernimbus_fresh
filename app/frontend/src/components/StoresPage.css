@@ -47,6 +47,12 @@
   margin: 0;
 }
 
+.header-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
 .add-store-btn {
   display: flex;
   align-items: center;
@@ -54,7 +60,33 @@
   white-space: nowrap;
   padding: 12px 24px;
   height: fit-content;
-  margin-top: 4px;
+}
+
+.btn-shopify {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  padding: 12px 24px;
+  height: fit-content;
+  background: #95bf47;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.btn-shopify:hover {
+  background: #7ea93a;
+  transform: translateY(-2px);
+  box-shadow: 0 10px 20px rgba(149, 191, 71, 0.3);
+}
+
+.btn-shopify svg {
+  font-size: 18px;
 }
 
 .add-store-btn span {
@@ -545,28 +577,77 @@
   gap: 12px;
 }
 
+/* Sync Status */
+.sync-status {
+  margin-top: 12px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.sync-status.sync-pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.sync-status.sync-syncing {
+  background: #dbeafe;
+  color: #1e40af;
+  animation: pulse 2s infinite;
+}
+
+.sync-status.sync-completed {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.sync-status.sync-failed {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
 /* Empty State */
 .empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
   text-align: center;
-  padding: 80px 20px;
-  color: #64748b;
+  min-height: 500px;
 }
 
-.empty-state svg {
-  font-size: 64px;
+.empty-state-icon {
+  font-size: 80px;
   margin-bottom: 20px;
-  color: #cbd5e1;
+  opacity: 0.8;
 }
 
-.empty-state h3 {
-  font-size: 20px;
+.empty-state h2 {
+  font-size: 32px;
+  color: #333;
+  margin-bottom: 10px;
   font-weight: 600;
-  color: #334155;
-  margin: 0 0 8px 0;
 }
 
-.empty-state p {
-  margin: 0 0 24px 0;
+.empty-state > p {
+  font-size: 18px;
+  color: #666;
+  margin-bottom: 40px;
+  max-width: 500px;
+}
+
+.empty-state .btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 /* Modal */
@@ -627,6 +708,113 @@
   font-size: 14px;
   font-weight: 600;
   color: #334155;
+}
+
+.form-help {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+.form-help strong {
+  color: #475569;
+}
+
+.form-help a {
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.form-help a:hover {
+  text-decoration: underline;
+}
+
+/* Shopify Connect Section in Modal */
+.shopify-connect-section {
+  padding: 20px;
+  background: linear-gradient(135deg, #f8fafc, #f1f5f9);
+  border-radius: 12px;
+  margin: 20px 0;
+}
+
+.shopify-connect-info {
+  text-align: center;
+}
+
+.shopify-icon-large {
+  font-size: 48px;
+  color: #95bf47;
+  margin-bottom: 16px;
+}
+
+.shopify-connect-info h3 {
+  font-size: 20px;
+  font-weight: 600;
+  color: #0f172a;
+  margin: 0 0 12px 0;
+}
+
+.shopify-connect-info p {
+  font-size: 14px;
+  color: #64748b;
+  margin: 0 0 24px 0;
+  line-height: 1.6;
+}
+
+.btn-shopify-connect {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 28px;
+  background: #95bf47;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  margin-bottom: 24px;
+}
+
+.btn-shopify-connect:hover {
+  background: #7ea93a;
+  transform: translateY(-2px);
+  box-shadow: 0 10px 20px rgba(149, 191, 71, 0.3);
+}
+
+.btn-shopify-connect svg {
+  font-size: 20px;
+}
+
+.connect-benefits {
+  text-align: left;
+  max-width: 300px;
+  margin: 0 auto;
+}
+
+.connect-benefits h4 {
+  font-size: 14px;
+  font-weight: 600;
+  color: #334155;
+  margin: 0 0 12px 0;
+}
+
+.connect-benefits ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.connect-benefits li {
+  font-size: 13px;
+  color: #475569;
+  padding: 6px 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .form-group input,

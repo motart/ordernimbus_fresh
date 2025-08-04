@@ -1,0 +1,712 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: 'OrderNimbus Platform - SAM Template for Local Development'
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 512
+    Runtime: nodejs18.x
+    Environment:
+      Variables:
+        ENVIRONMENT: !Ref Environment
+        REGION: !Ref AWS::Region
+        CORS_ORIGIN: !If 
+          - IsLocal
+          - 'http://localhost:3000'
+          - !Sub 'https://${CloudFrontDistribution.DomainName}'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: local
+    AllowedValues:
+      - local
+      - dev
+      - staging
+      - production
+    Description: Environment name
+
+Conditions:
+  IsLocal: !Equals [!Ref Environment, local]
+  IsNotLocal: !Not [!Equals [!Ref Environment, local]]
+
+Resources:
+  # ==================== API ====================
+  ApiGateway:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub 'ordernimbus-${Environment}-api'
+      StageName: !Ref Environment
+      Cors:
+        AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
+        AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,userId'"
+        AllowOrigin: "'*'"
+        AllowCredentials: false
+      Auth:
+        DefaultAuthorizer: NONE
+        AddDefaultAuthorizerToCorsPreflight: false
+
+  # ==================== LAMBDA FUNCTIONS ====================
+  DataIngestionFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'ordernimbus-${Environment}-data-ingestion'
+      CodeUri: lambda/
+      Handler: data-ingestion.handler
+      Timeout: 60
+      MemorySize: 512
+      Environment:
+        Variables:
+          SALES_TABLE: !Sub 'ordernimbus-${Environment}-sales'
+          INVENTORY_TABLE: !Sub 'ordernimbus-${Environment}-inventory'
+          STORES_TABLE: !Sub 'ordernimbus-${Environment}-stores'
+          PRODUCTS_TABLE: !Sub 'ordernimbus-${Environment}-products'
+          AGGREGATES_TABLE: !Sub 'ordernimbus-${Environment}-aggregates'
+          DATA_BUCKET: !Sub 'ordernimbus-${Environment}-data-uploads'
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /api/data/ingest
+            Method: POST
+        S3Event:
+          Type: S3
+          Properties:
+            Bucket: !Ref DataUploadsBucket
+            Events: s3:ObjectCreated:*
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: uploads/
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Sub 'ordernimbus-${Environment}-*'
+        - S3ReadPolicy:
+            BucketName: !Sub 'ordernimbus-${Environment}-data-uploads'
+
+  # ==================== LAMBDA FUNCTIONS ====================
+  PasswordResetFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'ordernimbus-${Environment}-password-reset'
+      CodeUri: lambda/
+      Handler: password-reset.handler
+      Environment:
+        Variables:
+          PASSWORD_RESET_TABLE: !Ref PasswordResetTable
+          USER_POOL_ID: !If [IsNotLocal, !Ref UserPool, 'local-user-pool']
+          SES_REGION: !Ref AWS::Region
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /api/auth/reset-password
+            Method: POST
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PasswordResetTable
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - ses:SendEmail
+                - ses:SendTemplatedEmail
+              Resource: '*'
+
+  ChatbotHandlerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'ordernimbus-${Environment}-chatbot-handler'
+      CodeUri: lambda/
+      Handler: chatbot-handler.handler
+      Environment:
+        Variables:
+          CONVERSATION_TABLE: !Ref ConversationsTable
+          DATA_ANALYSIS_FUNCTION: !Ref DataAnalysisFunction
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /api/chatbot
+            Method: POST
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ConversationsTable
+        - LambdaInvokePolicy:
+            FunctionName: !Ref DataAnalysisFunction
+
+  DataAnalysisFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'ordernimbus-${Environment}-data-analysis'
+      CodeUri: lambda/
+      Handler: data-analysis-engine.handler
+      Timeout: 300
+      MemorySize: 1024
+      Environment:
+        Variables:
+          FORECAST_TABLE: !Ref ForecastsTable
+          CONVERSATION_TABLE: !Ref ConversationsTable
+          DATA_UPLOADS_TABLE: !Ref DataUploadsTable
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /api/data/analyze
+            Method: POST
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ForecastsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ConversationsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DataUploadsTable
+
+  ForecastApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'ordernimbus-${Environment}-forecast-api'
+      CodeUri: lambda/
+      Handler: forecast-api.handler
+      Environment:
+        Variables:
+          FORECAST_TABLE: !Ref ForecastsTable
+      Events:
+        GetForecast:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /api/forecast
+            Method: GET
+        PostForecast:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /api/forecast
+            Method: POST
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ForecastsTable
+
+  ShopifyIntegrationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'ordernimbus-${Environment}-shopify-integration'
+      CodeUri: lambda/
+      Handler: shopify-integration.handler
+      Timeout: 120
+      Environment:
+        Variables:
+          TABLE_PREFIX: !Sub 'ordernimbus-${Environment}'
+          DYNAMODB_ENDPOINT: !If
+            - IsLocal
+            - 'http://host.docker.internal:8000'
+            - !Ref AWS::NoValue
+      Events:
+        SyncShopify:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /api/shopify/sync
+            Method: POST
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref StoresTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ProductsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SalesTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref InventoryTable
+
+  StoreManagementFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'ordernimbus-${Environment}-store-management'
+      CodeUri: lambda/
+      Handler: store-management.handler
+      Environment:
+        Variables:
+          TABLE_PREFIX: !Sub 'ordernimbus-${Environment}'
+          SHOPIFY_SYNC_FUNCTION: !Ref ShopifyIntegrationFunction
+          DYNAMODB_ENDPOINT: !If
+            - IsLocal
+            - 'http://host.docker.internal:8000'
+            - !Ref AWS::NoValue
+      Events:
+        GetStores:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /api/stores
+            Method: GET
+        CreateStore:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /api/stores
+            Method: POST
+        UpdateStore:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /api/stores/{storeId}
+            Method: PUT
+        DeleteStore:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /api/stores/{storeId}
+            Method: DELETE
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref StoresTable
+        - LambdaInvokePolicy:
+            FunctionName: !Ref ShopifyIntegrationFunction
+
+  ShopifyOAuthFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'ordernimbus-${Environment}-shopify-oauth'
+      CodeUri: lambda/
+      Handler: shopify-oauth.handler
+      Timeout: 30
+      Environment:
+        Variables:
+          TABLE_PREFIX: !Sub 'ordernimbus-${Environment}'
+          SHOPIFY_SYNC_FUNCTION: !Ref ShopifyIntegrationFunction
+          SHOPIFY_API_KEY: !If
+            - IsLocal
+            - 'test-api-key'
+            - !Sub '{{resolve:secretsmanager:ordernimbus-${Environment}-shopify:SecretString:apiKey}}'
+          SHOPIFY_API_SECRET: !If
+            - IsLocal
+            - 'test-api-secret'
+            - !Sub '{{resolve:secretsmanager:ordernimbus-${Environment}-shopify:SecretString:apiSecret}}'
+          SHOPIFY_REDIRECT_URI: !If
+            - IsLocal
+            - 'http://localhost:3001/api/shopify/callback'
+            - 'https://api.ordernimbus.com/shopify/callback'
+          APP_URL: !If
+            - IsLocal
+            - 'http://localhost:3000'
+            - 'https://app.ordernimbus.com'
+          DYNAMODB_ENDPOINT: !If
+            - IsLocal
+            - 'http://host.docker.internal:8000'
+            - !Ref AWS::NoValue
+      Events:
+        InitiateOAuth:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /api/shopify/connect
+            Method: POST
+        OAuthCallback:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /api/shopify/callback
+            Method: GET
+        EmbeddedApp:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /api/shopify/embedded
+            Method: GET
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref StoresTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref OAuthStatesTable
+        - LambdaInvokePolicy:
+            FunctionName: !Ref ShopifyIntegrationFunction
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:ordernimbus-${Environment}-shopify*'
+
+  # ==================== DYNAMODB TABLES ====================
+  SalesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'ordernimbus-${Environment}-sales'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: date
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: id
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: DateIndex
+          KeySchema:
+            - AttributeName: userId
+              KeyType: HASH
+            - AttributeName: date
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+  InventoryTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'ordernimbus-${Environment}-inventory'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: id
+          KeyType: RANGE
+
+  StoresTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'ordernimbus-${Environment}-stores'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: id
+          KeyType: RANGE
+
+  ProductsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'ordernimbus-${Environment}-products'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: id
+          KeyType: RANGE
+
+  AggregatesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'ordernimbus-${Environment}-aggregates'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: id
+          KeyType: RANGE
+
+  # ==================== DYNAMODB TABLES ====================
+  PasswordResetTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'ordernimbus-${Environment}-password-reset-tokens'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: email
+          AttributeType: S
+        - AttributeName: token
+          AttributeType: S
+      KeySchema:
+        - AttributeName: email
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: TokenIndex
+          KeySchema:
+            - AttributeName: token
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: expiry
+        Enabled: true
+
+  UserSessionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'ordernimbus-${Environment}-user-sessions'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: sessionId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: sessionId
+          KeyType: RANGE
+
+  ConversationsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'ordernimbus-${Environment}-conversations'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: N
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+
+  ForecastsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'ordernimbus-${Environment}-forecasts'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: forecastId
+          AttributeType: S
+        - AttributeName: createdAt
+          AttributeType: N
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: forecastId
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: CreatedAtIndex
+          KeySchema:
+            - AttributeName: userId
+              KeyType: HASH
+            - AttributeName: createdAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+  DataUploadsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'ordernimbus-${Environment}-data-uploads'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: uploadId
+          AttributeType: S
+        - AttributeName: uploadedAt
+          AttributeType: N
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: uploadId
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: UploadTimeIndex
+          KeySchema:
+            - AttributeName: userId
+              KeyType: HASH
+            - AttributeName: uploadedAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+  OAuthStatesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'ordernimbus-${Environment}-oauth-states'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: state
+          AttributeType: S
+      KeySchema:
+        - AttributeName: state
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  # ==================== S3 BUCKETS (Only for non-local) ====================
+  DataUploadsBucket:
+    Type: AWS::S3::Bucket
+    Condition: IsNotLocal
+    Properties:
+      BucketName: !Sub 'ordernimbus-${Environment}-data-uploads-${AWS::AccountId}'
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  UserDataBucket:
+    Type: AWS::S3::Bucket
+    Condition: IsNotLocal
+    Properties:
+      BucketName: !Sub 'ordernimbus-${Environment}-user-data-${AWS::AccountId}'
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  # ==================== COGNITO (Only for non-local) ====================
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Condition: IsNotLocal
+    Properties:
+      UserPoolName: !Sub 'ordernimbus-${Environment}-users'
+      AutoVerifiedAttributes:
+        - email
+      UsernameAttributes:
+        - email
+      MfaConfiguration: 'OFF'
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Priority: 1
+            Name: verified_email
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Required: true
+          Mutable: true
+        - Name: name
+          AttributeDataType: String
+          Required: false
+          Mutable: true
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Condition: IsNotLocal
+    Properties:
+      ClientName: !Sub 'ordernimbus-${Environment}-web-client'
+      UserPoolId: !Ref UserPool
+      GenerateSecret: false
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_USER_SRP_AUTH
+
+  # ==================== CLOUDFRONT (Only for non-local) ====================
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Condition: IsNotLocal
+    Properties:
+      BucketName: !Sub 'ordernimbus-${Environment}-frontend-${AWS::AccountId}'
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: error.html
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Condition: IsNotLocal
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: PublicReadGetObject
+            Effect: Allow
+            Principal: '*'
+            Action: s3:GetObject
+            Resource: !Sub '${FrontendBucket.Arn}/*'
+
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Condition: IsNotLocal
+    Properties:
+      DistributionConfig:
+        Origins:
+          - Id: S3Origin
+            DomainName: !Sub '${FrontendBucket}.s3-website-${AWS::Region}.amazonaws.com'
+            CustomOriginConfig:
+              OriginProtocolPolicy: http-only
+        Enabled: true
+        DefaultRootObject: index.html
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          CachedMethods:
+            - GET
+            - HEAD
+          Compress: true
+          ForwardedValues:
+            QueryString: false
+            Cookies:
+              Forward: none
+
+Outputs:
+  ApiEndpoint:
+    Description: API Gateway endpoint URL
+    Value: !Sub 'https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${Environment}'
+    Export:
+      Name: !Sub '${AWS::StackName}-api-endpoint'
+
+  LocalApiEndpoint:
+    Description: Local API endpoint for SAM local
+    Value: 'http://127.0.0.1:3001'
+    Condition: IsLocal
+
+  UserPoolId:
+    Description: Cognito User Pool ID
+    Value: !If [IsNotLocal, !Ref UserPool, 'local-user-pool']
+    Export:
+      Name: !Sub '${AWS::StackName}-user-pool-id'
+
+  UserPoolClientId:
+    Description: Cognito User Pool Client ID
+    Value: !If [IsNotLocal, !Ref UserPoolClient, 'local-client-id']
+    Export:
+      Name: !Sub '${AWS::StackName}-user-pool-client-id'
+
+  FrontendUrl:
+    Description: Frontend URL
+    Value: !If 
+      - IsNotLocal
+      - !Sub 'https://${CloudFrontDistribution.DomainName}'
+      - 'http://localhost:3000'
+    Export:
+      Name: !Sub '${AWS::StackName}-frontend-url'

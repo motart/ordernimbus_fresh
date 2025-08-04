@@ -16,7 +16,8 @@ import {
   FiHelpCircle,
   FiBell,
   FiFileText,
-  FiUpload
+  FiUpload,
+  FiCalendar
 } from 'react-icons/fi';
 import { 
   MdDashboard, 
@@ -51,6 +52,20 @@ const Sidebar: React.FC<SidebarProps> = ({ userEmail, onLogout, onNavigate, acti
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  // Update body class when collapsed state changes
+  useEffect(() => {
+    if (!isMobile) {
+      if (isCollapsed) {
+        document.body.classList.add('sidebar-collapsed');
+      } else {
+        document.body.classList.remove('sidebar-collapsed');
+      }
+    }
+    return () => {
+      document.body.classList.remove('sidebar-collapsed');
+    };
+  }, [isCollapsed, isMobile]);
+
   const toggleSidebar = () => {
     if (isMobile) {
       setIsOpen(!isOpen);
@@ -60,6 +75,15 @@ const Sidebar: React.FC<SidebarProps> = ({ userEmail, onLogout, onNavigate, acti
   };
 
   const handleItemClick = (page: string) => {
+    // Handle external links
+    if (page === 'demo') {
+      window.open('https://calendly.com/ordernimbus-info/30min', '_blank');
+      if (isMobile) {
+        setIsOpen(false);
+      }
+      return;
+    }
+    
     onNavigate(page);
     if (isMobile) {
       setIsOpen(false);
@@ -79,6 +103,7 @@ const Sidebar: React.FC<SidebarProps> = ({ userEmail, onLogout, onNavigate, acti
   ];
 
   const bottomItems = [
+    { id: 'demo', label: 'Schedule Demo', icon: FiCalendar, highlight: true },
     { id: 'notifications', label: 'Notifications', icon: FiBell, badge: '3' },
     { id: 'help', label: 'Help & Support', icon: FiHelpCircle },
     { id: 'profile', label: 'Profile', icon: FiUser },
@@ -150,7 +175,7 @@ const Sidebar: React.FC<SidebarProps> = ({ userEmail, onLogout, onNavigate, acti
             {bottomItems.map(item => (
               <button
                 key={item.id}
-                className={`nav-item ${activePage === item.id ? 'active' : ''}`}
+                className={`nav-item ${activePage === item.id ? 'active' : ''} ${item.highlight ? 'highlight-demo' : ''}`}
                 onClick={() => handleItemClick(item.id)}
                 title={isCollapsed ? item.label : ''}
               >
