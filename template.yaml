@@ -291,12 +291,17 @@ Resources:
             - !Sub '{{resolve:secretsmanager:ordernimbus-${Environment}-shopify:SecretString:apiSecret}}'
           SHOPIFY_REDIRECT_URI: !If
             - IsLocal
+<<<<<<< HEAD
             - 'http://localhost:3001/api/shopify/callback'
             - 'https://api.ordernimbus.com/shopify/callback'
           APP_URL: !If
             - IsLocal
             - 'http://localhost:3000'
             - 'https://app.ordernimbus.com'
+=======
+            - 'http://localhost:3000/shopify/callback'
+            - !Sub 'https://${CloudFrontDistribution.DomainName}/shopify/callback'
+>>>>>>> 94a179d821a4bee978a6c4f9bc6df19b856e13ec
           DYNAMODB_ENDPOINT: !If
             - IsLocal
             - 'http://host.docker.internal:8000'

@@ -18,6 +18,7 @@ const secretsManager = new AWS.SecretsManager({
   region: process.env.AWS_REGION || 'us-east-1'
 });
 
+<<<<<<< HEAD
 // Determine environment and set URLs accordingly
 const getEnvironmentUrls = () => {
   const env = process.env.ENVIRONMENT || 'local';
@@ -47,14 +48,21 @@ const getEnvironmentUrls = () => {
 
 const envUrls = getEnvironmentUrls();
 
+=======
+>>>>>>> 94a179d821a4bee978a6c4f9bc6df19b856e13ec
 // OrderNimbus Shopify App Configuration
 // These credentials are for the SINGLE OrderNimbus app that ALL users connect through
 const SHOPIFY_APP_CONFIG = {
   apiKey: process.env.SHOPIFY_API_KEY || 'your-app-api-key',
   apiSecret: process.env.SHOPIFY_API_SECRET || 'your-app-secret',
   scopes: 'read_products,read_orders,read_inventory,read_customers,read_analytics',
+<<<<<<< HEAD
   redirectUri: envUrls.redirectUri,
   appUrl: envUrls.appUrl
+=======
+  // Note: Using API endpoint for callback to handle properly
+  redirectUri: process.env.SHOPIFY_REDIRECT_URI || 'http://localhost:3001/api/shopify/callback'
+>>>>>>> 94a179d821a4bee978a6c4f9bc6df19b856e13ec
 };
 
 // Check if platform owner has configured the app
@@ -285,6 +293,7 @@ exports.handler = async (event) => {
       
       // Check if platform owner has configured the app
       if (!isAppConfigured()) {
+<<<<<<< HEAD
         console.error('Shopify Public App not configured!');
         return {
           statusCode: 400,
@@ -299,6 +308,10 @@ exports.handler = async (event) => {
             setupRequired: true
           })
         };
+=======
+        console.log('Platform owner needs to configure Shopify app. See PLATFORM_OWNER_SETUP.md');
+        // For now, we'll continue with test flow to show how it works
+>>>>>>> 94a179d821a4bee978a6c4f9bc6df19b856e13ec
       }
       
       const oauthData = await initiateOAuth(userId, storeDomain);
@@ -427,7 +440,11 @@ exports.handler = async (event) => {
                   } else {
                     // Redirect to stores page
                     setTimeout(() => {
+<<<<<<< HEAD
                       window.location.href = '${envUrls.appUrl}/#/stores';
+=======
+                      window.location.href = 'http://localhost:3000/#/stores';
+>>>>>>> 94a179d821a4bee978a6c4f9bc6df19b856e13ec
                     }, 3000);
                   }
                 </script>
