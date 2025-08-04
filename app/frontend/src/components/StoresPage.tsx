@@ -620,8 +620,10 @@ const StoresPage: React.FC = () => {
       <div className="stores-page">
         <div className="page-header">
           <div className="header-content">
-            <h1>Stores</h1>
-            <h2 className="page-title">Manage your retail locations and online stores</h2>
+            <h1>
+              Stores
+              <span className="page-subtitle">Manage your retail locations and online stores</span>
+            </h1>
           </div>
         </div>
         <div style={{
@@ -650,8 +652,10 @@ const StoresPage: React.FC = () => {
     <div className="stores-page">
       <div className="page-header">
         <div className="header-content">
-          <h1>Stores</h1>
-          <h2 className="page-title">Manage your retail locations and online stores</h2>
+          <h1>
+            Stores
+            <span className="page-subtitle">Manage your retail locations and online stores</span>
+          </h1>
         </div>
         <div className="header-actions">
           <button className="btn-shopify" onClick={() => setShowShopifyConnect(true)}>

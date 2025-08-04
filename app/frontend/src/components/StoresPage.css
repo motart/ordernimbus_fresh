@@ -31,15 +31,19 @@
   color: #0f172a;
   margin: 0 0 8px 0;
   letter-spacing: -0.5px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.page-title {
+.page-subtitle {
   color: #64748b;
   font-size: 18px;
   font-weight: 400;
-  margin: 8px 0 0 0;
   line-height: 1.4;
+  letter-spacing: normal;
 }
+
 
 .subtitle {
   color: #64748b;
