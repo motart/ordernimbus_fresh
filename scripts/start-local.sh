@@ -160,7 +160,7 @@ aws dynamodb create-table --no-cli-pager \
         "IndexName=DateIndex,Keys=[{AttributeName=userId,KeyType=HASH},{AttributeName=date,KeyType=RANGE}],Projection={ProjectionType=ALL},BillingMode=PAY_PER_REQUEST" \
     --billing-mode PAY_PER_REQUEST \
     --endpoint-url http://localhost:8000 \
-    2>/dev/null || echo "Sales table already exists"
+    >/dev/null 2>&1 && echo "  ✓ Sales table created" || echo "  • Sales table already exists"
 
 aws dynamodb create-table --no-cli-pager \
     --table-name ordernimbus-local-inventory \
@@ -172,7 +172,7 @@ aws dynamodb create-table --no-cli-pager \
         AttributeName=id,KeyType=RANGE \
     --billing-mode PAY_PER_REQUEST \
     --endpoint-url http://localhost:8000 \
-    2>/dev/null || echo "Inventory table already exists"
+    >/dev/null 2>&1 && echo "  ✓ Inventory table created" || echo "  • Inventory table already exists"
 
 aws dynamodb create-table --no-cli-pager \
     --table-name ordernimbus-local-stores \
@@ -184,7 +184,7 @@ aws dynamodb create-table --no-cli-pager \
         AttributeName=id,KeyType=RANGE \
     --billing-mode PAY_PER_REQUEST \
     --endpoint-url http://localhost:8000 \
-    2>/dev/null || echo "Stores table already exists"
+    >/dev/null 2>&1 && echo "  ✓ Stores table created" || echo "  • Stores table already exists"
 
 aws dynamodb create-table --no-cli-pager \
     --table-name ordernimbus-local-products \
@@ -196,7 +196,7 @@ aws dynamodb create-table --no-cli-pager \
         AttributeName=id,KeyType=RANGE \
     --billing-mode PAY_PER_REQUEST \
     --endpoint-url http://localhost:8000 \
-    2>/dev/null || echo "Products table already exists"
+    >/dev/null 2>&1 && echo "  ✓ Products table created" || echo "  • Products table already exists"
 
 aws dynamodb create-table --no-cli-pager \
     --table-name ordernimbus-local-aggregates \
@@ -208,7 +208,7 @@ aws dynamodb create-table --no-cli-pager \
         AttributeName=id,KeyType=RANGE \
     --billing-mode PAY_PER_REQUEST \
     --endpoint-url http://localhost:8000 \
-    2>/dev/null || echo "Aggregates table already exists"
+    >/dev/null 2>&1 && echo "  ✓ Aggregates table created" || echo "  • Aggregates table already exists"
 
 # Original tables
 aws dynamodb create-table --no-cli-pager \
@@ -221,7 +221,7 @@ aws dynamodb create-table --no-cli-pager \
         "IndexName=TokenIndex,Keys=[{AttributeName=token,KeyType=HASH}],Projection={ProjectionType=ALL},BillingMode=PAY_PER_REQUEST" \
     --billing-mode PAY_PER_REQUEST \
     --endpoint-url http://localhost:8000 \
-    2>/dev/null || echo "Password reset table already exists"
+    >/dev/null 2>&1 && echo "  ✓ Password reset table created" || echo "  • Password reset table already exists"
 
 aws dynamodb create-table --no-cli-pager \
     --table-name ordernimbus-local-user-sessions \
@@ -233,7 +233,7 @@ aws dynamodb create-table --no-cli-pager \
         AttributeName=sessionId,KeyType=RANGE \
     --billing-mode PAY_PER_REQUEST \
     --endpoint-url http://localhost:8000 \
-    2>/dev/null || echo "User sessions table already exists"
+    >/dev/null 2>&1 && echo "  ✓ User sessions table created" || echo "  • User sessions table already exists"
 
 aws dynamodb create-table --no-cli-pager \
     --table-name ordernimbus-local-conversations \
@@ -245,7 +245,7 @@ aws dynamodb create-table --no-cli-pager \
         AttributeName=timestamp,KeyType=RANGE \
     --billing-mode PAY_PER_REQUEST \
     --endpoint-url http://localhost:8000 \
-    2>/dev/null || echo "Conversations table already exists"
+    >/dev/null 2>&1 && echo "  ✓ Conversations table created" || echo "  • Conversations table already exists"
 
 aws dynamodb create-table --no-cli-pager \
     --table-name ordernimbus-local-forecasts \
@@ -260,7 +260,7 @@ aws dynamodb create-table --no-cli-pager \
         "IndexName=CreatedAtIndex,Keys=[{AttributeName=userId,KeyType=HASH},{AttributeName=createdAt,KeyType=RANGE}],Projection={ProjectionType=ALL},BillingMode=PAY_PER_REQUEST" \
     --billing-mode PAY_PER_REQUEST \
     --endpoint-url http://localhost:8000 \
-    2>/dev/null || echo "Forecasts table already exists"
+    >/dev/null 2>&1 && echo "  ✓ Forecasts table created" || echo "  • Forecasts table already exists"
 
 aws dynamodb create-table --no-cli-pager \
     --table-name ordernimbus-local-data-uploads \
@@ -275,7 +275,7 @@ aws dynamodb create-table --no-cli-pager \
         "IndexName=UploadTimeIndex,Keys=[{AttributeName=userId,KeyType=HASH},{AttributeName=uploadedAt,KeyType=RANGE}],Projection={ProjectionType=ALL},BillingMode=PAY_PER_REQUEST" \
     --billing-mode PAY_PER_REQUEST \
     --endpoint-url http://localhost:8000 \
-    2>/dev/null || echo "Data uploads table already exists"
+    >/dev/null 2>&1 && echo "  ✓ Data uploads table created" || echo "  • Data uploads table already exists"
 
 aws dynamodb create-table --no-cli-pager \
     --table-name ordernimbus-local-oauth-states \
@@ -285,15 +285,16 @@ aws dynamodb create-table --no-cli-pager \
         AttributeName=state,KeyType=HASH \
     --billing-mode PAY_PER_REQUEST \
     --endpoint-url http://localhost:8000 \
-    2>/dev/null || echo "OAuth states table already exists"
+    >/dev/null 2>&1 && echo "  ✓ OAuth states table created" || echo "  • OAuth states table already exists"
 
 echo -e "${GREEN}✅ DynamoDB tables created${NC}"
 
 # Create S3 buckets in LocalStack
 echo -e "${BLUE}🪣 Creating S3 buckets in LocalStack...${NC}"
-aws s3 mb s3://ordernimbus-local-data-uploads --no-cli-pager --endpoint-url http://localhost:4566 2>/dev/null || true
-aws s3 mb s3://ordernimbus-local-user-data --no-cli-pager --endpoint-url http://localhost:4566 2>/dev/null || true
-aws s3 mb s3://ordernimbus-local-frontend --no-cli-pager --endpoint-url http://localhost:4566 2>/dev/null || true
+aws s3 mb s3://ordernimbus-local-data-uploads --no-cli-pager --endpoint-url http://localhost:4566 >/dev/null 2>&1 && echo "  ✓ Data uploads bucket created" || echo "  • Data uploads bucket already exists"
+aws s3 mb s3://ordernimbus-local-user-data --no-cli-pager --endpoint-url http://localhost:4566 >/dev/null 2>&1 && echo "  ✓ User data bucket created" || echo "  • User data bucket already exists"
+aws s3 mb s3://ordernimbus-local-frontend --no-cli-pager --endpoint-url http://localhost:4566 >/dev/null 2>&1 && echo "  ✓ Frontend bucket created" || echo "  • Frontend bucket already exists"
+echo -e "${GREEN}✅ S3 buckets ready${NC}"
 
 # Build SAM application
 echo -e "${BLUE}🏗️  Building SAM application...${NC}"
