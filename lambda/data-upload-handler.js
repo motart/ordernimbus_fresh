@@ -52,7 +52,7 @@ const processProductUpload = async (userId, storeId, csvData, columnMappings) =>
   // Ensure table exists
   await ensureTableExists(productsTable, [
     { AttributeName: 'userId', KeyType: 'HASH' },
-    { AttributeName: 'productId', KeyType: 'RANGE' }
+    { AttributeName: 'id', KeyType: 'RANGE' }
   ]);
   
   for (let i = 0; i < csvData.length; i++) {
@@ -66,7 +66,7 @@ const processProductUpload = async (userId, storeId, csvData, columnMappings) =>
         TableName: productsTable,
         Item: {
           userId,
-          productId: product.id,
+          id: product.id,  // Changed from productId to id
           storeId,
           ...product,
           uploadedAt: timestamp,
@@ -98,54 +98,146 @@ const processProductUpload = async (userId, storeId, csvData, columnMappings) =>
 // Process inventory uploads
 const processInventoryUpload = async (userId, storeId, csvData, columnMappings) => {
   const inventoryTable = `${process.env.TABLE_PREFIX || 'ordernimbus-local'}-inventory`;
+  const productsTable = `${process.env.TABLE_PREFIX || 'ordernimbus-local'}-products`;
   const timestamp = Date.now();
   
   const processedInventory = [];
+  const processedProducts = [];
   const errors = [];
   
-  // Ensure table exists
+  // Ensure tables exist
   await ensureTableExists(inventoryTable, [
     { AttributeName: 'userId', KeyType: 'HASH' },
     { AttributeName: 'inventoryId', KeyType: 'RANGE' }
   ]);
   
+  await ensureTableExists(productsTable, [
+    { AttributeName: 'userId', KeyType: 'HASH' },
+    { AttributeName: 'id', KeyType: 'RANGE' }
+  ]);
+  
+  // Group inventory by SKU to create products
+  const skuGroups = {};
   for (let i = 0; i < csvData.length; i++) {
     const row = csvData[i];
+    const sku = getValue(row, columnMappings, 'sku') || `SKU_${i + 1}`;
+    
+    if (!skuGroups[sku]) {
+      skuGroups[sku] = [];
+    }
+    skuGroups[sku].push({ row, index: i });
+  }
+  
+  // Create products for each unique SKU
+  for (const [sku, items] of Object.entries(skuGroups)) {
+    const productId = `${storeId}_product_${sku}_${timestamp}`;
+    const inventoryItemId = `${storeId}_inv_item_${sku}_${timestamp}`;
+    
+    // Create product record
+    const product = {
+      userId,
+      id: productId,  // Changed from productId to id
+      storeId,
+      title: sku, // Use SKU as title for inventory uploads
+      vendor: 'Inventory Import',
+      productType: 'General',
+      price: '0.00',
+      sku: sku,
+      inventory_quantity: 0, // Will be updated from inventory records
+      variants: [{
+        id: `${productId}_var_1`,
+        title: 'Default',
+        price: '0.00',
+        sku: sku,
+        inventory_item_id: inventoryItemId
+      }],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      csv_upload: true
+    };
     
     try {
-      const inventory = mapCSVRowToInventory(row, columnMappings, storeId, i + 1);
+      // Debug: log what we're trying to store
+      console.log(`Storing product with userId: ${product.userId}, id: ${product.id}`);
+      console.log('Product object:', JSON.stringify(product, null, 2));
       
-      // Store the inventory
+      // Store the product
       await dynamodb.put({
-        TableName: inventoryTable,
-        Item: {
+        TableName: productsTable,
+        Item: product
+      }).promise();
+      
+      processedProducts.push(product);
+      
+      // Process inventory records for this SKU
+      let totalQuantity = 0;
+      for (const item of items) {
+        const { row, index } = item;
+        
+        try {
+          const inventory = mapCSVRowToInventory(row, columnMappings, storeId, index + 1);
+          
+          // Update inventory to link with product
+          inventory.inventoryItemId = inventoryItemId;
+          
+          // Store the inventory
+          await dynamodb.put({
+            TableName: inventoryTable,
+            Item: {
+              userId,
+              inventoryId: inventory.id,
+              storeId,
+              ...inventory,
+              inventoryItemId: inventoryItemId, // Link to product variant
+              uploadedAt: timestamp,
+              updatedAt: new Date().toISOString()
+            }
+          }).promise();
+          
+          processedInventory.push(inventory);
+          totalQuantity += inventory.available;
+          
+        } catch (error) {
+          console.error(`Error processing inventory row ${index + 1}:`, error);
+          errors.push({
+            row: index + 1,
+            error: error.message,
+            data: row
+          });
+        }
+      }
+      
+      // Update product with total inventory quantity
+      product.inventory_quantity = totalQuantity;
+      await dynamodb.update({
+        TableName: productsTable,
+        Key: {
           userId,
-          inventoryId: inventory.id,
-          storeId,
-          ...inventory,
-          uploadedAt: timestamp,
-          updatedAt: new Date().toISOString()
+          id: productId  // Changed from productId to id
+        },
+        UpdateExpression: 'SET inventory_quantity = :qty',
+        ExpressionAttributeValues: {
+          ':qty': totalQuantity
         }
       }).promise();
       
-      processedInventory.push(inventory);
-      
     } catch (error) {
-      console.error(`Error processing inventory row ${i + 1}:`, error);
+      console.error(`Error creating product for SKU ${sku}:`, error);
       errors.push({
-        row: i + 1,
-        error: error.message,
-        data: row
+        sku,
+        error: error.message
       });
     }
   }
   
-  console.log(`Successfully processed ${processedInventory.length} inventory items, ${errors.length} errors`);
+  console.log(`Successfully processed ${processedInventory.length} inventory items and ${processedProducts.length} products, ${errors.length} errors`);
   
   return {
     inventoryCreated: processedInventory.length,
+    productsCreated: processedProducts.length,
     errors: errors,
-    inventory: processedInventory
+    inventory: processedInventory,
+    products: processedProducts
   };
 };
 

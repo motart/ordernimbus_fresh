@@ -7,9 +7,10 @@ import TopBar from './TopBar';
 import StoresPage from './StoresPage';
 import ProfilePage from './ProfilePage';
 import ForecastPage from './ForecastPage';
-import DataUpload from './DataUpload';
 import InventoryPage from './InventoryPage';
 import OrderPage from './OrderPage';
+import ProductsPage from './ProductsPage';
+import CustomersPage from './CustomersPage';
 import SecureDataManager from '../utils/SecureDataManager';
 
 interface DashboardProps {
@@ -96,8 +97,27 @@ const Dashboard: React.FC<DashboardProps> = ({ userEmail, onLogout }) => {
   const handleNavigate = (page: string) => {
     setActivePage(page);
     // Add navigation logic here for different pages
-    if (page !== 'dashboard' && page !== 'stores' && page !== 'profile' && page !== 'forecasts' && page !== 'upload' && page !== 'inventory') {
+    if (page !== 'dashboard' && page !== 'stores' && page !== 'profile' && page !== 'forecasts' && page !== 'upload' && page !== 'inventory' && page !== 'orders' && page !== 'products' && page !== 'customers') {
       toast(`${page.charAt(0).toUpperCase() + page.slice(1)} page coming soon!`, { icon: '🚀' });
+    }
+  };
+
+  const getPageTitle = () => {
+    switch (activePage) {
+      case 'dashboard': return 'Sales Dashboard';
+      case 'stores': return 'Stores';
+      case 'profile': return 'Profile';
+      case 'forecasts': return 'Sales Forecast';
+      case 'inventory': return 'Inventory';
+      case 'orders': return 'Orders';
+      case 'products': return 'Products';
+      case 'customers': return 'Customers';
+      case 'analytics': return 'Analytics';
+      case 'reports': return 'Reports';
+      case 'notifications': return 'Notifications';
+      case 'help': return 'Help & Support';
+      case 'settings': return 'Settings';
+      default: return activePage.charAt(0).toUpperCase() + activePage.slice(1);
     }
   };
 
@@ -114,6 +134,22 @@ const Dashboard: React.FC<DashboardProps> = ({ userEmail, onLogout }) => {
         onNavigate={handleNavigate}
         onLogout={handleLogout}
         activePage={activePage}
+        pageTitle={getPageTitle()}
+        leftContent={
+          activePage === 'dashboard' && stores.length > 0 ? (
+            <select 
+              value={selectedStore} 
+              onChange={(e) => setSelectedStore(e.target.value)}
+              className="store-selector"
+            >
+              {stores.map(store => (
+                <option key={store.id} value={store.id}>
+                  {store.name}
+                </option>
+              ))}
+            </select>
+          ) : null
+        }
       />
       <div className="dashboard-main">
         {activePage === 'stores' ? (
@@ -126,32 +162,12 @@ const Dashboard: React.FC<DashboardProps> = ({ userEmail, onLogout }) => {
           <InventoryPage />
         ) : activePage === 'orders' ? (
           <OrderPage />
-        ) : activePage === 'upload' ? (
-          <DataUpload onDataUploaded={(data, type) => {
-            toast.success(`Successfully uploaded ${data.length} ${type} records`);
-          }} />
+        ) : activePage === 'products' ? (
+          <ProductsPage />
+        ) : activePage === 'customers' ? (
+          <CustomersPage />
         ) : (
-          <>
-            <header className="dashboard-header">
-              <div className="header-content">
-                <h1>{activePage === 'dashboard' ? 'Sales Dashboard' : activePage.charAt(0).toUpperCase() + activePage.slice(1)}</h1>
-                {activePage === 'dashboard' && stores.length > 0 && (
-                  <select 
-                    value={selectedStore} 
-                    onChange={(e) => setSelectedStore(e.target.value)}
-                    className="store-selector"
-                  >
-                    {stores.map(store => (
-                      <option key={store.id} value={store.id}>
-                        {store.name}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
-            </header>
-
-            <div className="dashboard-content">
+          <div className="dashboard-content">
               {!hasData && activePage === 'dashboard' ? (
                 <div className="empty-state">
                   <div className="empty-state-icon">📊</div>
@@ -293,7 +309,6 @@ const Dashboard: React.FC<DashboardProps> = ({ userEmail, onLogout }) => {
                 </>
               )}
             </div>
-          </>
         )}
       </div>
     </div>

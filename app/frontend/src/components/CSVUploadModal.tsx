@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { FiUpload, FiX, FiCheck, FiAlertTriangle, FiDownload, FiEye, FiFile, FiDatabase, FiPackage, FiUsers, FiShoppingCart } from 'react-icons/fi';
+import { FiUpload, FiX, FiCheck, FiAlertTriangle, FiDownload, FiEye, FiFile, FiDatabase, FiPackage, FiUsers, FiShoppingCart, FiTrash2, FiLock } from 'react-icons/fi';
 import toast from 'react-hot-toast';
 import { ClipLoader } from 'react-spinners';
 
@@ -40,6 +40,14 @@ const DATA_TYPE_PATTERNS = {
     optional: ['phone', 'address', 'city', 'country'],
     confidence_threshold: 2
   }
+};
+
+// Required fields for each data type
+const REQUIRED_FIELDS = {
+  orders: ['id', 'email', 'total_price'],
+  products: ['sku', 'title', 'price'],
+  inventory: ['sku', 'quantity', 'location'],
+  customers: ['email', 'first_name', 'last_name']
 };
 
 // Schema mapping patterns for different data types
@@ -452,6 +460,53 @@ const CSVUploadModal: React.FC<CSVUploadModalProps> = ({
     setValidationErrors(errors);
   };
 
+  const removeColumn = (csvColumn: string) => {
+    // Remove from column mappings
+    setColumnMappings(prevMappings => 
+      prevMappings.filter(mapping => mapping.csvColumn !== csvColumn)
+    );
+    
+    // Remove from CSV headers
+    setCsvHeaders(prevHeaders => prevHeaders.filter(header => header !== csvColumn));
+    
+    // Remove from CSV data
+    setCsvData(prevData => 
+      prevData.map(row => {
+        const newRow = { ...row };
+        delete newRow[csvColumn];
+        return newRow;
+      })
+    );
+    
+    // Re-validate after removing column
+    const errors = validateCSV(
+      csvHeaders.filter(h => h !== csvColumn), 
+      csvData.map(row => {
+        const newRow = { ...row };
+        delete newRow[csvColumn];
+        return newRow;
+      }), 
+      detectedDataType
+    );
+    setValidationErrors(errors);
+    
+    toast.success(`Removed column: ${csvColumn}`);
+  };
+
+  const isFieldRequired = (mappedField: string, dataType: string): boolean => {
+    const requiredFields = REQUIRED_FIELDS[dataType as keyof typeof REQUIRED_FIELDS];
+    return requiredFields ? requiredFields.includes(mappedField) : false;
+  };
+
+  const canRemoveColumn = (mapping: ColumnMapping): boolean => {
+    // Can't remove if it's mapped to a required field
+    if (mapping.mappedTo !== 'unmapped' && isFieldRequired(mapping.mappedTo, detectedDataType)) {
+      return false;
+    }
+    // Can always remove unmapped columns
+    return true;
+  };
+
   const handleUpload = async () => {
     if (validationErrors.length > 0) {
       toast.error('Please fix validation errors before uploading');
@@ -598,34 +653,74 @@ const CSVUploadModal: React.FC<CSVUploadModalProps> = ({
               )}
               
               <div className="column-mappings">
-                {columnMappings.map((mapping, index) => (
-                  <div key={index} className="mapping-row">
-                    <div className="csv-column">
-                      <strong>{mapping.csvColumn}</strong>
-                      {mapping.suggested && (
-                        <span className="confidence-badge">
-                          {React.createElement(FiCheck as any, { size: 12 })}
-                          {Math.round(mapping.confidence * 100)}%
-                        </span>
-                      )}
-                    </div>
-                    <div className="mapping-arrow">→</div>
-                    <div className="mapped-column">
-                      <select 
-                        value={mapping.mappedTo}
-                        onChange={(e) => updateColumnMapping(mapping.csvColumn, e.target.value)}
-                        className="mapping-select"
-                      >
-                        <option value="unmapped">-- Not Mapped --</option>
-                        {availableFields.map(field => (
-                          <option key={field} value={field}>
-                            {field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                <div className="mappings-header">
+                  <h4>Column Mappings</h4>
+                  <div className="mappings-legend">
+                    <span className="legend-item">
+                      {React.createElement(FiLock as any, { size: 14 })}
+                      Required field
+                    </span>
+                    <span className="legend-item">
+                      {React.createElement(FiTrash2 as any, { size: 14 })}
+                      Click to remove optional columns
+                    </span>
                   </div>
-                ))}
+                </div>
+                {columnMappings.map((mapping, index) => {
+                  const isRequired = mapping.mappedTo !== 'unmapped' && isFieldRequired(mapping.mappedTo, detectedDataType);
+                  const canRemove = canRemoveColumn(mapping);
+                  
+                  return (
+                    <div key={index} className={`mapping-row ${isRequired ? 'required' : ''}`}>
+                      <div className="csv-column">
+                        <strong>{mapping.csvColumn}</strong>
+                        {mapping.suggested && (
+                          <span className="confidence-badge">
+                            {React.createElement(FiCheck as any, { size: 12 })}
+                            {Math.round(mapping.confidence * 100)}%
+                          </span>
+                        )}
+                      </div>
+                      <div className="mapping-arrow">→</div>
+                      <div className="mapped-column">
+                        <select 
+                          value={mapping.mappedTo}
+                          onChange={(e) => updateColumnMapping(mapping.csvColumn, e.target.value)}
+                          className="mapping-select"
+                        >
+                          <option value="unmapped">-- Not Mapped --</option>
+                          {availableFields.map(field => (
+                            <option key={field} value={field}>
+                              {field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                              {isFieldRequired(field, detectedDataType) && ' *'}
+                            </option>
+                          ))}
+                        </select>
+                        {isRequired && (
+                          <span className="required-badge" title="This field is required">
+                            {React.createElement(FiLock as any, { size: 14 })}
+                          </span>
+                        )}
+                      </div>
+                      <div className="column-actions">
+                        {canRemove ? (
+                          <button
+                            type="button"
+                            className="remove-column-btn"
+                            onClick={() => removeColumn(mapping.csvColumn)}
+                            title="Remove this column"
+                          >
+                            {React.createElement(FiTrash2 as any, { size: 16 })}
+                          </button>
+                        ) : (
+                          <div className="remove-disabled" title="Required field cannot be removed">
+                            {React.createElement(FiLock as any, { size: 16 })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
               
               <div className="preview-data">

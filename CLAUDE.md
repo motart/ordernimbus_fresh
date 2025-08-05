@@ -24,14 +24,14 @@ Multi-tenant, highly-scalable Sales Forecasting Platform with AWS-native infrast
 
 ```bash
 # Complete platform deployment
-./deploy.sh staging              # Deploy to staging
-./deploy.sh production          # Deploy to production
-./deploy.sh dev us-east-1 true  # Deploy to dev (skip tests)
+./scripts/deployment/deploy.sh staging              # Deploy to staging
+./scripts/deployment/deploy.sh production          # Deploy to production
+./scripts/deployment/deploy.sh dev us-east-1 true  # Deploy to dev (skip tests)
 
 # Infrastructure destruction (CAREFUL!)
-./destroy.sh staging            # Destroy staging environment
-./destroy.sh production        # Destroy production environment
-./destroy.sh staging us-east-1 true  # Destroy without confirmation
+./scripts/infrastructure/destroy.sh staging            # Destroy staging environment
+./scripts/infrastructure/destroy.sh production        # Destroy production environment
+./scripts/infrastructure/destroy.sh staging us-east-1 true  # Destroy without confirmation
 
 # Alternative npm commands
 npm run deploy:staging          # Deploy to staging
@@ -39,7 +39,7 @@ npm run deploy:production       # Deploy to production
 npm run deploy:dev             # Deploy to development
 
 # Validation and testing
-./validate-deployment.sh staging  # Validate deployment health
+./scripts/utilities/validate-deployment.sh staging  # Validate deployment health
 npm run test:load                 # Run k6 load tests
 npm run test:load:staging        # Test against staging
 
@@ -60,14 +60,14 @@ cd app/frontend && ./auto-deploy.sh  # Auto-build and deploy frontend to AWS S3
 
 ## Infrastructure Management
 
-### Deployment Script (`deploy.sh`)
+### Deployment Script (`scripts/deployment/deploy.sh`)
 - **Fixed Issues**: 
   - S3 public access block handling for website buckets
   - SNS topic creation before stack deployment
   - Frontend deployment path corrected to `app/frontend`
   - Proper error handling for missing CloudFront distributions
   
-### Destruction Script (`destroy.sh`)
+### Destruction Script (`scripts/infrastructure/destroy.sh`)
 - **Comprehensive cleanup** of all AWS resources
 - **Safety features**: Requires explicit confirmation
 - **Resource handling**:
@@ -82,13 +82,13 @@ cd app/frontend && ./auto-deploy.sh  # Auto-build and deploy frontend to AWS S3
 ### Usage Examples
 ```bash
 # Deploy with all fixes
-./deploy.sh staging us-east-1
+./scripts/deployment/deploy.sh staging us-east-1
 
 # Destroy everything (with confirmation)
-./destroy.sh staging us-east-1
+./scripts/infrastructure/destroy.sh staging us-east-1
 
 # Destroy without prompts (DANGEROUS!)
-./destroy.sh staging us-east-1 true
+./scripts/infrastructure/destroy.sh staging us-east-1 true
 ```
 
 ## Current Deployment Status
@@ -117,5 +117,5 @@ Run nightly load tests with GitHub Actions:
 
 - `ARCHITECTURE_PLAN.md` - Detailed 85-day implementation plan
 - `CAPACITY_PLANNING.md` - Scaling formulas and cost ceilings  
-- `load-tests/k6-suite.js` - Comprehensive load test scenarios
+- `tests/load/k6-suite.js` - Comprehensive load test scenarios
 - `.github/workflows/nightly-load-test.yml` - Automated performance regression testing

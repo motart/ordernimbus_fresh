@@ -1,12 +1,8 @@
-import React, { useState } from 'react';
+import React from 'react';
 import './TopBar.css';
 import { 
   FiBell,
-  FiHelpCircle,
-  FiUser,
-  FiSettings,
-  FiLogOut,
-  FiChevronDown
+  FiHelpCircle
 } from 'react-icons/fi';
 
 interface TopBarProps {
@@ -14,10 +10,11 @@ interface TopBarProps {
   onNavigate: (page: string) => void;
   onLogout: () => void;
   activePage: string;
+  pageTitle?: string;
+  leftContent?: React.ReactNode;
 }
 
-const TopBar: React.FC<TopBarProps> = ({ userEmail, onNavigate, onLogout, activePage }) => {
-  const [showProfileMenu, setShowProfileMenu] = useState(false);
+const TopBar: React.FC<TopBarProps> = ({ userEmail, onNavigate, onLogout, activePage, pageTitle, leftContent }) => {
 
   const getUserInitials = () => {
     return userEmail ? userEmail.substring(0, 2).toUpperCase() : 'UN';
@@ -29,15 +26,15 @@ const TopBar: React.FC<TopBarProps> = ({ userEmail, onNavigate, onLogout, active
 
   const handleItemClick = (page: string) => {
     onNavigate(page);
-    setShowProfileMenu(false);
   };
 
   return (
     <div className="topbar">
       <div className="topbar-content">
-        {/* Left side - can be used for breadcrumbs or page title */}
+        {/* Left side - page title and custom content */}
         <div className="topbar-left">
-          {/* Optional: Add breadcrumbs or page context here */}
+          {pageTitle && <h1 className="topbar-title">{pageTitle}</h1>}
+          {leftContent}
         </div>
 
         {/* Right side - menu items */}
@@ -61,71 +58,17 @@ const TopBar: React.FC<TopBarProps> = ({ userEmail, onNavigate, onLogout, active
             {React.createElement(FiHelpCircle as any, { size: 20 })}
           </button>
 
-          {/* Settings */}
+          {/* Profile Button */}
           <button
-            className={`topbar-item ${activePage === 'settings' ? 'active' : ''}`}
-            onClick={() => handleItemClick('settings')}
-            title="Settings"
+            className={`profile-button ${activePage === 'profile' ? 'active' : ''}`}
+            onClick={() => handleItemClick('profile')}
+            title="My Profile"
           >
-            {React.createElement(FiSettings as any, { size: 20 })}
+            <div className="user-avatar">
+              {getUserInitials()}
+            </div>
+            <span className="user-name">{getUserName()}</span>
           </button>
-
-          {/* Profile Dropdown */}
-          <div className="profile-dropdown">
-            <button
-              className={`profile-button ${showProfileMenu ? 'active' : ''}`}
-              onClick={() => setShowProfileMenu(!showProfileMenu)}
-            >
-              <div className="user-avatar">
-                {getUserInitials()}
-              </div>
-              <span className="user-name">{getUserName()}</span>
-              {React.createElement(FiChevronDown as any, { 
-                size: 16, 
-                className: `chevron ${showProfileMenu ? 'rotated' : ''}` 
-              })}
-            </button>
-
-            {showProfileMenu && (
-              <>
-                <div className="dropdown-overlay" onClick={() => setShowProfileMenu(false)} />
-                <div className="profile-menu">
-                  <div className="profile-menu-header">
-                    <div className="user-avatar-large">
-                      {getUserInitials()}
-                    </div>
-                    <div className="user-info">
-                      <div className="user-name-full">{getUserName()}</div>
-                      <div className="user-email">{userEmail}</div>
-                    </div>
-                  </div>
-                  <div className="profile-menu-divider" />
-                  <button
-                    className="profile-menu-item"
-                    onClick={() => handleItemClick('profile')}
-                  >
-                    {React.createElement(FiUser as any, { size: 18 })}
-                    <span>My Profile</span>
-                  </button>
-                  <button
-                    className="profile-menu-item"
-                    onClick={() => handleItemClick('settings')}
-                  >
-                    {React.createElement(FiSettings as any, { size: 18 })}
-                    <span>Settings</span>
-                  </button>
-                  <div className="profile-menu-divider" />
-                  <button
-                    className="profile-menu-item logout"
-                    onClick={onLogout}
-                  >
-                    {React.createElement(FiLogOut as any, { size: 18 })}
-                    <span>Logout</span>
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
         </div>
       </div>
     </div>

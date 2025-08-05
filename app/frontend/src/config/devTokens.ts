@@ -7,10 +7,13 @@ export interface DevStoreConfig {
   displayName: string;
 }
 
+// Default dev token for all stores in development
+export const DEFAULT_DEV_TOKEN = process.env.REACT_APP_DEV_SHOPIFY_TOKEN || '';
+
 export const DEV_STORES: Record<string, DevStoreConfig> = {
   'ordernimbus-dev': {
     domain: 'ordernimbus-dev.myshopify.com',
-    token: process.env.REACT_APP_DEV_SHOPIFY_TOKEN || '', // Set via environment variable for security
+    token: DEFAULT_DEV_TOKEN,
     displayName: 'OrderNimbus Dev Store'
   },
   // Add more dev stores here as needed

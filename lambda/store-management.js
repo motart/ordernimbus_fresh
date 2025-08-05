@@ -96,6 +96,8 @@ const createStore = async (userId, storeData) => {
 // Get stores for user
 const getStores = async (userId) => {
   const tableName = `${process.env.TABLE_PREFIX || 'ordernimbus-local'}-stores`;
+  const productsTable = `${process.env.TABLE_PREFIX || 'ordernimbus-local'}-products`;
+  const ordersTable = `${process.env.TABLE_PREFIX || 'ordernimbus-local'}-orders`;
   
   console.log('Getting stores for user:', userId);
   console.log('Using table:', tableName);
@@ -109,7 +111,49 @@ const getStores = async (userId) => {
     }
   }).promise();
   
-  return result.Items || [];
+  const stores = result.Items || [];
+  
+  // Enrich each store with product and order counts
+  for (const store of stores) {
+    try {
+      // Get product count
+      const productsResult = await dynamodb.scan({
+        TableName: productsTable,
+        FilterExpression: '#storeId = :storeId',
+        ExpressionAttributeNames: {
+          '#storeId': 'storeId'
+        },
+        ExpressionAttributeValues: {
+          ':storeId': store.id
+        },
+        Select: 'COUNT'
+      }).promise();
+      
+      store.productsCount = productsResult.Count || 0;
+      
+      // Get order count
+      const ordersResult = await dynamodb.scan({
+        TableName: ordersTable,
+        FilterExpression: '#storeId = :storeId',
+        ExpressionAttributeNames: {
+          '#storeId': 'storeId'
+        },
+        ExpressionAttributeValues: {
+          ':storeId': store.id
+        },
+        Select: 'COUNT'
+      }).promise();
+      
+      store.ordersCount = ordersResult.Count || 0;
+      
+    } catch (error) {
+      console.error(`Error getting counts for store ${store.id}:`, error);
+      store.productsCount = 0;
+      store.ordersCount = 0;
+    }
+  }
+  
+  return stores;
 };
 
 // Update store
@@ -164,80 +208,101 @@ const deleteStore = async (userId, storeId) => {
   
   console.log(`Deleting store ${storeId} and all associated data for user ${userId}`);
   
+  const deletedCounts = {
+    products: 0,
+    sales: 0,
+    inventory: 0
+  };
+  
   try {
     // Delete products associated with this store
     console.log('Deleting products...');
-    const productsResult = await dynamodb.scan({
-      TableName: productsTable,
-      FilterExpression: '#storeId = :storeId AND #userId = :userId',
-      ExpressionAttributeNames: {
-        '#storeId': 'storeId',
-        '#userId': 'userId'
-      },
-      ExpressionAttributeValues: {
-        ':storeId': storeId,
-        ':userId': userId
+    try {
+      const productsResult = await dynamodb.scan({
+        TableName: productsTable,
+        FilterExpression: '#storeId = :storeId AND #userId = :userId',
+        ExpressionAttributeNames: {
+          '#storeId': 'storeId',
+          '#userId': 'userId'
+        },
+        ExpressionAttributeValues: {
+          ':storeId': storeId,
+          ':userId': userId
+        }
+      }).promise();
+      
+      if (productsResult.Items && productsResult.Items.length > 0) {
+        for (const product of productsResult.Items) {
+          await dynamodb.delete({
+            TableName: productsTable,
+            Key: { userId: product.userId, id: product.id }
+          }).promise();
+        }
+        deletedCounts.products = productsResult.Items.length;
+        console.log(`Deleted ${productsResult.Items.length} products`);
       }
-    }).promise();
-    
-    if (productsResult.Items && productsResult.Items.length > 0) {
-      for (const product of productsResult.Items) {
-        await dynamodb.delete({
-          TableName: productsTable,
-          Key: { userId: product.userId, id: product.id }
-        }).promise();
-      }
-      console.log(`Deleted ${productsResult.Items.length} products`);
+    } catch (error) {
+      console.log('Products table not found or error accessing it:', error.message);
     }
     
     // Delete sales data associated with this store
     console.log('Deleting sales data...');
-    const salesResult = await dynamodb.scan({
-      TableName: salesTable,
-      FilterExpression: '#storeId = :storeId AND #userId = :userId',
-      ExpressionAttributeNames: {
-        '#storeId': 'storeId',
-        '#userId': 'userId'
-      },
-      ExpressionAttributeValues: {
-        ':storeId': storeId,
-        ':userId': userId
+    try {
+      const salesResult = await dynamodb.scan({
+        TableName: salesTable,
+        FilterExpression: '#storeId = :storeId AND #userId = :userId',
+        ExpressionAttributeNames: {
+          '#storeId': 'storeId',
+          '#userId': 'userId'
+        },
+        ExpressionAttributeValues: {
+          ':storeId': storeId,
+          ':userId': userId
+        }
+      }).promise();
+      
+      if (salesResult.Items && salesResult.Items.length > 0) {
+        for (const sale of salesResult.Items) {
+          await dynamodb.delete({
+            TableName: salesTable,
+            Key: { userId: sale.userId, id: sale.id }
+          }).promise();
+        }
+        deletedCounts.sales = salesResult.Items.length;
+        console.log(`Deleted ${salesResult.Items.length} sales records`);
       }
-    }).promise();
-    
-    if (salesResult.Items && salesResult.Items.length > 0) {
-      for (const sale of salesResult.Items) {
-        await dynamodb.delete({
-          TableName: salesTable,
-          Key: { userId: sale.userId, id: sale.id }
-        }).promise();
-      }
-      console.log(`Deleted ${salesResult.Items.length} sales records`);
+    } catch (error) {
+      console.log('Sales table not found or error accessing it:', error.message);
     }
     
     // Delete inventory data associated with this store
     console.log('Deleting inventory data...');
-    const inventoryResult = await dynamodb.scan({
-      TableName: inventoryTable,
-      FilterExpression: '#storeId = :storeId AND #userId = :userId',
-      ExpressionAttributeNames: {
-        '#storeId': 'storeId',
-        '#userId': 'userId'
-      },
-      ExpressionAttributeValues: {
-        ':storeId': storeId,
-        ':userId': userId
+    try {
+      const inventoryResult = await dynamodb.scan({
+        TableName: inventoryTable,
+        FilterExpression: '#storeId = :storeId AND #userId = :userId',
+        ExpressionAttributeNames: {
+          '#storeId': 'storeId',
+          '#userId': 'userId'
+        },
+        ExpressionAttributeValues: {
+          ':storeId': storeId,
+          ':userId': userId
+        }
+      }).promise();
+      
+      if (inventoryResult.Items && inventoryResult.Items.length > 0) {
+        for (const inventory of inventoryResult.Items) {
+          await dynamodb.delete({
+            TableName: inventoryTable,
+            Key: { userId: inventory.userId, id: inventory.id }
+          }).promise();
+        }
+        deletedCounts.inventory = inventoryResult.Items.length;
+        console.log(`Deleted ${inventoryResult.Items.length} inventory records`);
       }
-    }).promise();
-    
-    if (inventoryResult.Items && inventoryResult.Items.length > 0) {
-      for (const inventory of inventoryResult.Items) {
-        await dynamodb.delete({
-          TableName: inventoryTable,
-          Key: { userId: inventory.userId, id: inventory.id }
-        }).promise();
-      }
-      console.log(`Deleted ${inventoryResult.Items.length} inventory records`);
+    } catch (error) {
+      console.log('Inventory table not found or error accessing it:', error.message);
     }
     
     // Finally, delete the store itself
@@ -250,11 +315,7 @@ const deleteStore = async (userId, storeId) => {
     console.log(`Successfully deleted store ${storeId} and all associated data`);
     return { 
       success: true, 
-      deletedItems: {
-        products: productsResult.Items?.length || 0,
-        sales: salesResult.Items?.length || 0,
-        inventory: inventoryResult.Items?.length || 0
-      }
+      deletedItems: deletedCounts
     };
     
   } catch (error) {

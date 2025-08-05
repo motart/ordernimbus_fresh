@@ -6,14 +6,10 @@ import {
   FiTrendingUp, 
   FiShoppingCart, 
   FiUsers, 
-  FiSettings,
-  FiUser,
   FiLogOut,
   FiChevronLeft,
-  FiHelpCircle,
-  FiBell,
   FiFileText,
-  FiUpload
+  FiPackage
 } from 'react-icons/fi';
 import { 
   MdDashboard, 
@@ -81,16 +77,14 @@ const Sidebar: React.FC<SidebarProps> = ({ userEmail, onLogout, onNavigate, acti
     { id: 'dashboard', label: 'Dashboard', icon: MdDashboard, section: 'top' },
     { id: 'forecasts', label: 'Sales Forecast', icon: FiTrendingUp, section: 'top' },
     { id: 'stores', label: 'Stores', icon: MdStore, section: 'top' },
-    { id: 'upload', label: 'Data Upload', icon: FiUpload, section: 'top' },
     { id: 'inventory', label: 'Inventory', icon: MdInventory2, section: 'top' },
+    { id: 'products', label: 'Products', icon: FiPackage, section: 'top' },
     { id: 'orders', label: 'Orders', icon: FiShoppingCart, section: 'top' },
+    { id: 'customers', label: 'Customers', icon: FiUsers, section: 'top' },
     { id: 'analytics', label: 'Analytics', icon: MdAnalytics, section: 'top' },
     { id: 'reports', label: 'Reports', icon: FiFileText, section: 'top' },
-    { id: 'customers', label: 'Customers', icon: FiUsers, section: 'top' },
   ];
 
-  // Bottom items removed - now in TopBar
-  const bottomItems: any[] = [];
 
   return (
     <>
@@ -147,7 +141,17 @@ const Sidebar: React.FC<SidebarProps> = ({ userEmail, onLogout, onNavigate, acti
             </div>
           </nav>
 
-          {/* Bottom Section - Removed (items moved to TopBar) */}
+          {/* Bottom Section - Logout */}
+          <div className="sidebar-bottom">
+            <button
+              className="nav-item logout-btn"
+              onClick={onLogout}
+              title={isCollapsed ? 'Logout' : ''}
+            >
+              <span className="nav-icon">{React.createElement(FiLogOut as any)}</span>
+              {!isCollapsed && <span className="nav-label">Logout</span>}
+            </button>
+          </div>
         </div>
       </div>
     </>

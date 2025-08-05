@@ -117,14 +117,16 @@ function App() {
   return (
     <div className="App">
       <Toaster 
-        position="top-right"
+        position="bottom-left"
         toastOptions={{
           duration: 4000,
           style: {
-            background: '#333',
+            background: 'rgba(51, 51, 51, 0.85)',
             color: '#fff',
             borderRadius: '8px',
             padding: '12px 16px',
+            backdropFilter: 'blur(8px)',
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
           },
           success: {
             iconTheme: {

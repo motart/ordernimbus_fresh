@@ -49,6 +49,8 @@ interface Store {
   };
   totalProducts?: number;
   totalOrders?: number;
+  productsCount?: number;
+  ordersCount?: number;
   lastForecast?: string;
   forecastAccuracy?: number;
   nextForecast?: string;
@@ -105,38 +107,29 @@ const StoresPage: React.FC = () => {
     userContext 
   } = useSecureData();
 
-  // Load stores securely when initialized
-  useEffect(() => {
-    const loadStores = async () => {
-      if (!isInitialized || !userContext) return;
+  // Load stores function - moved outside useEffect to be reusable
+  const loadStores = async () => {
+    if (!isInitialized || !userContext) return;
+    
+    setIsLoadingStores(true);
+    try {
+      // First, try to load from API to get the latest data
+      const apiUrl = process.env.REACT_APP_API_URL || 'http://127.0.0.1:3001';
+      const response = await fetch(`${apiUrl}/api/stores?t=${Date.now()}`, {
+        headers: {
+          'userId': userContext.userId,
+          'Cache-Control': 'no-cache'
+        }
+      });
       
-      setIsLoadingStores(true);
-      try {
-        // First, try to load from API to get the latest data
-        const apiUrl = process.env.REACT_APP_API_URL || 'http://127.0.0.1:3001';
-        const response = await fetch(`${apiUrl}/api/stores`, {
-          headers: {
-            'userId': userContext.userId
-          }
-        });
-        
-        if (response.ok) {
-          const result = await response.json();
-          if (result.stores && result.stores.length > 0) {
-            setStores(result.stores);
-            // Save to local storage for offline access
-            await setData('stores', result.stores);
-          } else {
-            // No stores in API, check local storage
-            const savedStores = await getData<Store[]>('stores');
-            if (savedStores && savedStores.length > 0) {
-              setStores(savedStores);
-            } else {
-              setStores([]);
-            }
-          }
+      if (response.ok) {
+        const result = await response.json();
+        if (result.stores && result.stores.length > 0) {
+          setStores(result.stores);
+          // Save to local storage for offline access
+          await setData('stores', result.stores);
         } else {
-          // API failed, fall back to local storage
+          // No stores in API, check local storage
           const savedStores = await getData<Store[]>('stores');
           if (savedStores && savedStores.length > 0) {
             setStores(savedStores);
@@ -144,26 +137,37 @@ const StoresPage: React.FC = () => {
             setStores([]);
           }
         }
-      } catch (error) {
-        console.error('Failed to load stores:', error);
-        // Try local storage as fallback
-        try {
-          const savedStores = await getData<Store[]>('stores');
-          if (savedStores && savedStores.length > 0) {
-            setStores(savedStores);
-          } else {
-            setStores([]);
-          }
-        } catch (localError) {
-          console.error('Failed to load stores from local storage:', localError);
-          toast.error('Failed to load stores');
+      } else {
+        // API failed, fall back to local storage
+        const savedStores = await getData<Store[]>('stores');
+        if (savedStores && savedStores.length > 0) {
+          setStores(savedStores);
+        } else {
           setStores([]);
         }
-      } finally {
-        setIsLoadingStores(false);
       }
-    };
+    } catch (error) {
+      console.error('Failed to load stores:', error);
+      // Try local storage as fallback
+      try {
+        const savedStores = await getData<Store[]>('stores');
+        if (savedStores && savedStores.length > 0) {
+          setStores(savedStores);
+        } else {
+          setStores([]);
+        }
+      } catch (localError) {
+        console.error('Failed to load stores from local storage:', localError);
+        toast.error('Failed to load stores');
+        setStores([]);
+      }
+    } finally {
+      setIsLoadingStores(false);
+    }
+  };
 
+  // Load stores securely when initialized
+  useEffect(() => {
     loadStores();
   }, [isInitialized, getData, setData, userContext]);
 
@@ -455,11 +459,31 @@ const StoresPage: React.FC = () => {
 
       if (response.ok) {
         const result = await response.json();
-        const count = result.itemsCreated || result.ordersCreated || result.productsCreated || result.inventoryCreated || result.customersCreated || 0;
-        toast.success(`Successfully uploaded ${count} ${dataType} to ${selectedStoreForCSV.name}`);
         
-        // Refresh stores to update order counts if applicable
-        // This would be handled by the order management system
+        // Show detailed success message based on data type
+        if (dataType === 'inventory' && result.inventoryCreated && result.productsCreated) {
+          toast.success(`✅ Successfully uploaded ${result.inventoryCreated} inventory items and created ${result.productsCreated} products for ${selectedStoreForCSV.name}`, { duration: 6000 });
+          toast.success('Navigate to the Inventory page to see your uploaded items!', { duration: 5000 });
+        } else {
+          const count = result.itemsCreated || result.ordersCreated || result.productsCreated || result.inventoryCreated || result.customersCreated || csvData.length;
+          toast.success(`Successfully uploaded ${count} ${dataType} to ${selectedStoreForCSV.name}`);
+        }
+        
+        // Log any errors for debugging
+        if (result.errors && result.errors.length > 0) {
+          console.error('Upload errors:', result.errors);
+          toast.error(`⚠️ ${result.errors.length} items had errors during upload`, { duration: 5000 });
+        }
+        
+        // Refresh stores to update counts after a short delay to ensure DB is updated
+        toast('Refreshing store data...', { 
+          duration: 1000,
+          icon: '🔄'
+        });
+        setTimeout(async () => {
+          await loadStores();
+          toast.success('Store data refreshed!', { duration: 2000 });
+        }, 1500);
       } else {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to upload CSV');
@@ -757,15 +781,15 @@ const StoresPage: React.FC = () => {
             )}
 
             <div className="store-stats">
-              {(store.totalProducts !== undefined || store.syncMetadata?.productsCount !== undefined) && (
+              {(store.productsCount !== undefined || store.totalProducts !== undefined || store.syncMetadata?.productsCount !== undefined) && (
                 <div className="stat">
-                  <span className="stat-value">{store.syncMetadata?.productsCount || store.totalProducts || 0}</span>
+                  <span className="stat-value">{store.productsCount || store.syncMetadata?.productsCount || store.totalProducts || 0}</span>
                   <span className="stat-label">Products</span>
                 </div>
               )}
-              {(store.totalOrders !== undefined || store.syncMetadata?.ordersCount !== undefined) && (
+              {(store.ordersCount !== undefined || store.totalOrders !== undefined || store.syncMetadata?.ordersCount !== undefined) && (
                 <div className="stat">
-                  <span className="stat-value">{store.syncMetadata?.ordersCount || store.totalOrders || 0}</span>
+                  <span className="stat-value">{store.ordersCount || store.syncMetadata?.ordersCount || store.totalOrders || 0}</span>
                   <span className="stat-label">Orders</span>
                 </div>
               )}

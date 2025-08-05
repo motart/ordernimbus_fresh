@@ -127,67 +127,15 @@
   }
 }
 
-.dashboard-header {
-  background: white;
-  padding: 20px 30px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  position: sticky;
-  top: 0;
-  z-index: 100;
-}
-
-.header-content {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  width: 100%;
-}
-
-.header-content h1 {
-  margin: 0;
-  font-size: 28px;
-  color: #1e293b;
-  font-weight: 700;
-}
-
-.store-selector {
-  padding: 8px 12px;
-  border: 2px solid #e0e0e0;
-  border-radius: 6px;
-  font-size: 14px;
-  cursor: pointer;
-}
-
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-}
-
-.user-email {
-  color: #666;
-  font-size: 14px;
-}
-
-.logout-button {
-  padding: 8px 16px;
-  background: #ff4757;
-  color: white;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.logout-button:hover {
-  background: #ff3838;
-}
+/* Dashboard header content moved to TopBar component */
 
 .dashboard-content {
   padding: 30px;
   flex: 1;
   overflow-y: auto;
+  max-width: 1400px;
+  margin: 0 auto;
+  width: 100%;
 }
 
 .metrics-row {
@@ -430,24 +378,6 @@
 }
 
 @media (max-width: 768px) {
-  .dashboard-header {
-    padding: 15px 20px;
-  }
-  
-  .header-content {
-    flex-direction: column;
-    gap: 15px;
-    align-items: flex-start;
-  }
-  
-  .header-content h1 {
-    font-size: 24px;
-  }
-  
-  .store-selector {
-    width: 100%;
-  }
-  
   .dashboard-content {
     padding: 20px;
   }

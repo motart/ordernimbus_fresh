@@ -472,7 +472,7 @@ exports.handler = async (event) => {
   try {
     const path = event.path;
     const method = event.httpMethod;
-    const userId = event.requestContext?.authorizer?.userId || event.headers?.userId || event.headers?.userid;
+    const userId = event.requestContext?.authorizer?.userId || event.headers?.userId || event.headers?.Userid || event.headers?.userid;
     
     if (!userId) {
       return {

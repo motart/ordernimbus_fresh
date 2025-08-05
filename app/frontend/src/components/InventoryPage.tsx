@@ -2,7 +2,9 @@ import React, { useState, useEffect } from 'react';
 import './InventoryPage.css';
 import toast from 'react-hot-toast';
 import { ClipLoader } from 'react-spinners';
-import { FiRefreshCw, FiSearch, FiFilter, FiPackage, FiAlertTriangle, FiCheckCircle } from 'react-icons/fi';
+import { FiRefreshCw, FiSearch, FiFilter, FiPackage, FiAlertTriangle, FiCheckCircle, FiPlus } from 'react-icons/fi';
+import ManualEntryModal from './ManualEntryModal';
+import './ManualEntryModal.css';
 
 interface InventoryItem {
   id: string;
@@ -43,6 +45,7 @@ const InventoryPage: React.FC = () => {
   const [stockFilter, setStockFilter] = useState<'all' | 'in-stock' | 'low-stock' | 'out-of-stock'>('all');
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [showManualEntry, setShowManualEntry] = useState(false);
 
   useEffect(() => {
     loadStores();
@@ -87,6 +90,7 @@ const InventoryPage: React.FC = () => {
     
     setIsLoading(true);
     try {
+      // Always fetch from API - backend handles all data storage
       const userId = localStorage.getItem('currentUserId') || 'e85183d0-3061-70b8-25f5-171fd848ac9d';
       
       const response = await fetch(`http://127.0.0.1:3001/api/inventory?storeId=${selectedStore}`, {
@@ -181,6 +185,44 @@ const InventoryPage: React.FC = () => {
     (selectedStoreObj.displayName || selectedStoreObj.name || selectedStoreObj.shopifyDomain || selectedStoreObj.id) : 
     'Unknown Store';
 
+  const handleManualEntry = async (inventoryData: any) => {
+    try {
+      const userId = localStorage.getItem('currentUserId') || 'e85183d0-3061-70b8-25f5-171fd848ac9d';
+      
+      const response = await fetch('http://127.0.0.1:3001/api/inventory', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'userId': userId
+        },
+        body: JSON.stringify({
+          storeId: inventoryData.storeId,
+          inventory: {
+            ...inventoryData,
+            id: `manual-${Date.now()}`,
+            inventoryItemId: `manual-inv-${Date.now()}`,
+            locationId: 'manual-location',
+            available: parseInt(inventoryData.available) || 0,
+            updatedAt: new Date().toISOString(),
+            syncedAt: Date.now()
+          }
+        })
+      });
+
+      if (response.ok) {
+        toast.success('Inventory item added successfully');
+        await loadInventory();
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to add inventory item');
+      }
+    } catch (error) {
+      console.error('Error adding inventory item:', error);
+      toast.error(`Failed to add inventory item: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw error;
+    }
+  };
+
   return (
     <div className="inventory-page">
       <header className="inventory-header">
@@ -190,6 +232,15 @@ const InventoryPage: React.FC = () => {
             <p>Track and manage your product inventory across all stores</p>
           </div>
           <div className="header-actions">
+            {selectedStore && (
+              <button 
+                onClick={() => setShowManualEntry(true)}
+                className="manual-entry-btn"
+              >
+                {React.createElement(FiPlus as any)}
+                Add Inventory
+              </button>
+            )}
             <button 
               onClick={handleRefresh}
               disabled={isRefreshing}
@@ -365,6 +416,17 @@ const InventoryPage: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Manual Entry Modal */}
+      <ManualEntryModal
+        isOpen={showManualEntry}
+        onClose={() => setShowManualEntry(false)}
+        onSubmit={handleManualEntry}
+        title="Add Inventory Item"
+        type="inventory"
+        stores={stores}
+        selectedStore={selectedStore}
+      />
     </div>
   );
 };

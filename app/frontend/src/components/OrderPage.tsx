@@ -2,9 +2,11 @@ import React, { useState, useEffect } from 'react';
 import './OrderPage.css';
 import toast from 'react-hot-toast';
 import { ClipLoader } from 'react-spinners';
-import { FiRefreshCw, FiSearch, FiFilter, FiShoppingBag, FiDollarSign, FiCheckCircle, FiClock, FiX, FiAlertCircle, FiUpload } from 'react-icons/fi';
+import { FiRefreshCw, FiSearch, FiFilter, FiShoppingBag, FiDollarSign, FiCheckCircle, FiClock, FiX, FiAlertCircle, FiUpload, FiPlus } from 'react-icons/fi';
 import CSVUploadModal from './CSVUploadModal';
+import ManualEntryModal from './ManualEntryModal';
 import './CSVUploadModal.css';
+import './ManualEntryModal.css';
 
 interface OrderItem {
   id: string;
@@ -68,10 +70,12 @@ const OrderPage: React.FC = () => {
   const [selectedStore, setSelectedStore] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'paid' | 'fulfilled' | 'cancelled'>('all');
+  const [storeFilter, setStoreFilter] = useState<string>('all');
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [showCSVUpload, setShowCSVUpload] = useState(false);
+  const [showManualEntry, setShowManualEntry] = useState(false);
 
   useEffect(() => {
     loadStores();
@@ -80,6 +84,8 @@ const OrderPage: React.FC = () => {
   useEffect(() => {
     if (selectedStore) {
       loadOrders();
+    } else {
+      loadAllOrders();
     }
   }, [selectedStore]);
 
@@ -98,9 +104,9 @@ const OrderPage: React.FC = () => {
         const data = await response.json();
         setStores(data.stores || []);
         
-        // Auto-select first store
+        // Auto-load all orders initially
         if (data.stores && data.stores.length > 0 && !selectedStore) {
-          setSelectedStore(data.stores[0].id);
+          setSelectedStore('');
         }
       } else {
         toast.error('Failed to load stores');
@@ -142,9 +148,43 @@ const OrderPage: React.FC = () => {
     }
   };
 
+  const loadAllOrders = async () => {
+    setIsLoading(true);
+    try {
+      const userId = localStorage.getItem('currentUserId') || 'e85183d0-3061-70b8-25f5-171fd848ac9d';
+      
+      // Load orders from all stores
+      const response = await fetch('http://127.0.0.1:3001/api/orders', {
+        headers: {
+          'Content-Type': 'application/json',
+          'userId': userId
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setOrders(data.orders || []);
+      } else {
+        const errorData = await response.json();
+        toast.error(errorData.error || 'Failed to load orders');
+        setOrders([]);
+      }
+    } catch (error) {
+      console.error('Error loading all orders:', error);
+      toast.error('Error loading orders');
+      setOrders([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    await loadOrders();
+    if (selectedStore) {
+      await loadOrders();
+    } else {
+      await loadAllOrders();
+    }
     setIsRefreshing(false);
     toast.success('Orders refreshed');
   };
@@ -190,16 +230,27 @@ const OrderPage: React.FC = () => {
     // Search filter
     if (searchTerm) {
       const searchLower = searchTerm.toLowerCase();
+      const orderStore = stores.find(s => s.id === order.storeId);
+      const storeName = orderStore ? 
+        (orderStore.displayName || orderStore.name || orderStore.shopifyDomain || orderStore.id) : 
+        'Unknown Store';
+      
       const matchesSearch = 
         order.name?.toLowerCase().includes(searchLower) ||
         order.email?.toLowerCase().includes(searchLower) ||
         order.id?.toLowerCase().includes(searchLower) ||
+        storeName.toLowerCase().includes(searchLower) ||
         order.line_items?.some(item => 
           item.title?.toLowerCase().includes(searchLower) ||
           item.sku?.toLowerCase().includes(searchLower)
         );
       
       if (!matchesSearch) return false;
+    }
+
+    // Store filter (only applies when viewing all stores)
+    if (!selectedStore && storeFilter !== 'all') {
+      if (order.storeId !== storeFilter) return false;
     }
 
     // Status filter
@@ -277,6 +328,54 @@ const OrderPage: React.FC = () => {
     }
   };
 
+  const handleManualEntry = async (orderData: any) => {
+    try {
+      const userId = localStorage.getItem('currentUserId') || 'e85183d0-3061-70b8-25f5-171fd848ac9d';
+      
+      // Add required fields for order creation
+      const completeOrderData = {
+        ...orderData,
+        id: `manual-${Date.now()}`, // Generate a temporary ID
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        line_items: [], // Empty line items for now
+        // Set default values for required fields
+        financial_status: orderData.financial_status || 'pending',
+        fulfillment_status: orderData.fulfillment_status || null,
+        currency: orderData.currency || 'USD'
+      };
+
+      const response = await fetch('http://127.0.0.1:3001/api/orders', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'userId': userId
+        },
+        body: JSON.stringify({
+          storeId: orderData.storeId,
+          order: completeOrderData
+        })
+      });
+
+      if (response.ok) {
+        toast.success('Order created successfully');
+        // Reload orders to show the new data
+        if (selectedStore) {
+          await loadOrders();
+        } else {
+          await loadAllOrders();
+        }
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create order');
+      }
+    } catch (error) {
+      console.error('Error creating order:', error);
+      toast.error(`Failed to create order: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw error;
+    }
+  };
+
   return (
     <div className="order-page">
       <header className="order-header">
@@ -286,7 +385,14 @@ const OrderPage: React.FC = () => {
             <p>View and manage orders from all your connected stores</p>
           </div>
           <div className="header-actions">
-            {selectedStoreObj?.type !== 'shopify' && selectedStore && (
+            <button 
+              onClick={() => setShowManualEntry(true)}
+              className="manual-entry-btn"
+            >
+              {React.createElement(FiPlus as any)}
+              Add Order
+            </button>
+            {selectedStore && selectedStoreObj?.type !== 'shopify' && (
               <button 
                 onClick={() => setShowCSVUpload(true)}
                 className="csv-upload-btn"
@@ -316,7 +422,7 @@ const OrderPage: React.FC = () => {
               onChange={(e) => setSelectedStore(e.target.value)}
               className="store-selector"
             >
-              <option value="">Select a store</option>
+              <option value="">All Stores</option>
               {stores.map(store => {
                 const storeName = store.displayName || store.name || store.shopifyDomain || store.id;
                 const storeType = store.type || 'shopify';
@@ -333,12 +439,33 @@ const OrderPage: React.FC = () => {
             {React.createElement(FiSearch as any, { className: 'search-icon' })}
             <input
               type="text"
-              placeholder="Search orders..."
+              placeholder="Search orders, customers, stores..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="search-input"
             />
           </div>
+
+          {!selectedStore && (
+            <div className="store-filter-container">
+              <label>Filter by Store:</label>
+              <select
+                value={storeFilter}
+                onChange={(e) => setStoreFilter(e.target.value)}
+                className="store-filter-select"
+              >
+                <option value="all">All Stores</option>
+                {stores.map(store => {
+                  const storeName = store.displayName || store.name || store.shopifyDomain || store.id;
+                  return (
+                    <option key={store.id} value={store.id}>
+                      {storeName}
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+          )}
 
           <div className="filter-container">
             {React.createElement(FiFilter as any, { className: 'filter-icon' })}
@@ -357,7 +484,7 @@ const OrderPage: React.FC = () => {
         </div>
       </div>
 
-      {selectedStore && (
+      {(selectedStore || orders.length > 0) && (
         <div className="order-summary">
           <div 
             className={`summary-card ${statusFilter === 'all' ? 'active' : ''}`}
@@ -395,22 +522,22 @@ const OrderPage: React.FC = () => {
       )}
 
       <div className="order-content">
-        {!selectedStore ? (
+        {stores.length === 0 ? (
           <div className="empty-state">
             {React.createElement(FiShoppingBag as any, { size: 64, color: '#9ca3af' })}
-            <h3>Select a Store</h3>
-            <p>Choose a store from the dropdown to view its orders</p>
+            <h3>No Stores Available</h3>
+            <p>You need to connect at least one store to view orders</p>
           </div>
         ) : isLoading ? (
           <div className="loading-state">
             <ClipLoader size={40} color="#667eea" />
-            <p>Loading orders for {selectedStoreName}...</p>
+            <p>Loading orders {selectedStore ? `for ${selectedStoreName}` : 'from all stores'}...</p>
           </div>
         ) : orders.length === 0 ? (
           <div className="empty-state">
             {React.createElement(FiShoppingBag as any, { size: 64, color: '#9ca3af' })}
             <h3>No Orders Found</h3>
-            <p>No orders found for {selectedStoreName}. Orders will appear here once your store starts receiving them.</p>
+            <p>No orders found {selectedStore ? `for ${selectedStoreName}` : 'across all stores'}. Orders will appear here once your stores start receiving them.</p>
             <button onClick={handleRefresh} className="action-button">
               Refresh Orders
             </button>
@@ -420,7 +547,7 @@ const OrderPage: React.FC = () => {
             {React.createElement(FiSearch as any, { size: 64, color: '#9ca3af' })}
             <h3>No Results Found</h3>
             <p>No orders match your current search and filters.</p>
-            <button onClick={() => { setSearchTerm(''); setStatusFilter('all'); }} className="action-button">
+            <button onClick={() => { setSearchTerm(''); setStatusFilter('all'); setStoreFilter('all'); }} className="action-button">
               Clear Filters
             </button>
           </div>
@@ -428,6 +555,7 @@ const OrderPage: React.FC = () => {
           <div className="order-table">
             <div className="table-header">
               <div className="header-cell">Order</div>
+              <div className="header-cell">Store</div>
               <div className="header-cell">Customer</div>
               <div className="header-cell">Amount</div>
               <div className="header-cell">Payment</div>
@@ -442,6 +570,11 @@ const OrderPage: React.FC = () => {
                 const paymentColor = getStatusColor(order.financial_status);
                 const fulfillmentColor = getStatusColor(order.fulfillment_status || 'unfulfilled');
 
+                const orderStore = stores.find(s => s.id === order.storeId);
+                const orderStoreName = orderStore ? 
+                  (orderStore.displayName || orderStore.name || orderStore.shopifyDomain || orderStore.id) : 
+                  'Unknown Store';
+
                 return (
                   <div key={order.id} className="table-row">
                     <div className="cell order-cell">
@@ -450,6 +583,12 @@ const OrderPage: React.FC = () => {
                         <div className="order-items">
                           {order.line_items?.length || 0} item{(order.line_items?.length || 0) !== 1 ? 's' : ''}
                         </div>
+                      </div>
+                    </div>
+                    <div className="cell store-cell">
+                      <div className="store-info">
+                        <div className="store-name">{orderStoreName}</div>
+                        <div className="store-type">{orderStore?.type || 'shopify'}</div>
                       </div>
                     </div>
                     <div className="cell customer-cell">
@@ -517,6 +656,20 @@ const OrderPage: React.FC = () => {
                   <div className="detail-item">
                     <label>Order ID:</label>
                     <span>{selectedOrder.id}</span>
+                  </div>
+                  <div className="detail-item">
+                    <label>Store:</label>
+                    <span className="store-designation">
+                      {(() => {
+                        const orderStore = stores.find(s => s.id === selectedOrder.storeId);
+                        return orderStore ? 
+                          (orderStore.displayName || orderStore.name || orderStore.shopifyDomain || orderStore.id) : 
+                          'Unknown Store';
+                      })()} ({(() => {
+                        const orderStore = stores.find(s => s.id === selectedOrder.storeId);
+                        return orderStore?.type || 'shopify';
+                      })()})
+                    </span>
                   </div>
                   <div className="detail-item">
                     <label>Created:</label>
@@ -595,6 +748,17 @@ const OrderPage: React.FC = () => {
         onUpload={handleCSVUpload}
         storeId={selectedStore}
         storeName={selectedStoreName}
+      />
+
+      {/* Manual Entry Modal */}
+      <ManualEntryModal
+        isOpen={showManualEntry}
+        onClose={() => setShowManualEntry(false)}
+        onSubmit={handleManualEntry}
+        title="Add New Order"
+        type="order"
+        stores={stores}
+        selectedStore={selectedStore}
       />
     </div>
   );
