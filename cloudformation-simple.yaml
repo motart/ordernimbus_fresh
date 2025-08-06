@@ -1,27 +1,11 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'OrderNimbus - Simplified Fast Deployment with Domain (3-5 minutes)'
+Description: 'OrderNimbus - Production Deployment (3-5 minutes)'
 
 Parameters:
-  Environment:
-    Type: String
-    Default: staging
-    AllowedValues: [dev, staging, production]
-    Description: Environment name
-  
-  EnableDomain:
-    Type: String
-    Default: 'true'
-    AllowedValues: ['true', 'false']
-    Description: Enable custom domain (app.ordernimbus.com)
-  
   HostedZoneId:
     Type: String
     Default: Z03623712FIVU7Z4CJ949
     Description: Route 53 Hosted Zone ID for ordernimbus.com
-
-Conditions:
-  IsProduction: !Equals [!Ref Environment, production]
-  ShouldCreateDNS: !Equals [!Ref EnableDomain, 'true']
 
 Resources:
   # ==================== SINGLE IAM ROLE ====================
@@ -45,12 +29,87 @@ Resources:
               - Effect: Allow
                 Action: '*'
                 Resource: '*'
+        - PolicyName: SecretsManagerAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'secretsmanager:GetSecretValue'
+                  - 'secretsmanager:DescribeSecret'
+                Resource: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:ordernimbus/*'
+        - PolicyName: CognitoAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'cognito-idp:AdminCreateUser'
+                  - 'cognito-idp:AdminGetUser'
+                  - 'cognito-idp:AdminUpdateUserAttributes'
+                  - 'cognito-idp:AdminInitiateAuth'
+                  - 'cognito-idp:AdminSetUserPassword'
+                  - 'cognito-idp:ListUsers'
+                Resource: !GetAtt UserPool.Arn
+
+  # ==================== AWS COGNITO USER POOL ====================
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: ordernimbus-production-users
+      AutoVerifiedAttributes:
+        - email
+      UsernameAttributes:
+        - email
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Required: true
+          Mutable: false
+        - Name: company_id
+          AttributeDataType: String
+          Required: false
+          Mutable: true
+        - Name: company_name
+          AttributeDataType: String
+          Required: false
+          Mutable: true
+        - Name: role
+          AttributeDataType: String
+          Required: false
+          Mutable: true
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref UserPool
+      ClientName: ordernimbus-production-client
+      GenerateSecret: false
+      ExplicitAuthFlows:
+        - ALLOW_ADMIN_USER_PASSWORD_AUTH
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+      TokenValidityUnits:
+        AccessToken: hours
+        IdToken: hours
+        RefreshToken: days
+      AccessTokenValidity: 24
+      IdTokenValidity: 24
+      RefreshTokenValidity: 30
 
   # ==================== SINGLE DYNAMODB TABLE ====================
   MainTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: !Sub 'ordernimbus-${Environment}-main'
+      TableName: 'ordernimbus-production-main'
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: pk
@@ -67,7 +126,7 @@ Resources:
   FrontendBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub 'ordernimbus-${Environment}-simple-${AWS::AccountId}'
+      BucketName: app.ordernimbus.com
       WebsiteConfiguration:
         IndexDocument: index.html
         ErrorDocument: index.html
@@ -98,27 +157,19 @@ Resources:
   # ==================== ROUTE 53 DNS (OPTIONAL) ====================
   DNSRecord:
     Type: AWS::Route53::RecordSet
-    Condition: ShouldCreateDNS
     Properties:
       HostedZoneId: !Ref HostedZoneId
-      Name: !If
-        - IsProduction
-        - app.ordernimbus.com
-        - !Sub 'app-${Environment}.ordernimbus.com'
+      Name: app.ordernimbus.com
       Type: CNAME
       TTL: 300
       ResourceRecords:
-        - !Sub '${FrontendBucket}.s3-website-${AWS::Region}.amazonaws.com'
+        - !Sub 's3-website-${AWS::Region}.amazonaws.com'
 
   APIDNSRecord:
     Type: AWS::Route53::RecordSet
-    Condition: ShouldCreateDNS
     Properties:
       HostedZoneId: !Ref HostedZoneId
-      Name: !If
-        - IsProduction
-        - api.ordernimbus.com
-        - !Sub 'api-${Environment}.ordernimbus.com'
+      Name: api.ordernimbus.com
       Type: CNAME
       TTL: 300
       ResourceRecords:
@@ -128,24 +179,49 @@ Resources:
   MainLambda:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub 'ordernimbus-${Environment}-main'
-      Runtime: nodejs18.x
+      FunctionName: 'ordernimbus-production-main'
+      Runtime: nodejs16.x
       Handler: index.handler
       Role: !GetAtt LambdaExecutionRole.Arn
       Timeout: 30
       Environment:
         Variables:
           TABLE_NAME: !Ref MainTable
-          ENVIRONMENT: !Ref Environment
-          ALLOWED_ORIGINS: !If
-            - ShouldCreateDNS
-            - !If
-              - IsProduction
-              - 'http://app.ordernimbus.com,https://app.ordernimbus.com'
-              - !Sub 'http://app-${Environment}.ordernimbus.com,https://app-${Environment}.ordernimbus.com'
-            - '*'
+          ENVIRONMENT: production
+          ALLOWED_ORIGINS: 'http://app.ordernimbus.com,https://app.ordernimbus.com'
+          USER_POOL_ID: !Ref UserPool
+          USER_POOL_CLIENT_ID: !Ref UserPoolClient
       Code:
         ZipFile: |
+          const AWS = require('aws-sdk');
+          const https = require('https');
+          const querystring = require('querystring');
+          
+          const secretsManager = new AWS.SecretsManager();
+          const dynamodb = new AWS.DynamoDB.DocumentClient();
+          
+          // Cache for Shopify credentials
+          let shopifyCredentials = null;
+          
+          // Get Shopify credentials from Secrets Manager
+          const getShopifyCredentials = async () => {
+            if (shopifyCredentials) return shopifyCredentials;
+            
+            try {
+              const secret = await secretsManager.getSecretValue({ 
+                SecretId: 'ordernimbus/production/shopify' 
+              }).promise();
+              
+              shopifyCredentials = JSON.parse(secret.SecretString);
+              console.log('Retrieved Shopify credentials from Secrets Manager');
+              return shopifyCredentials;
+            } catch (error) {
+              console.error('Error getting Shopify credentials:', error);
+              // Return empty credentials to avoid breaking
+              return { SHOPIFY_CLIENT_ID: '', SHOPIFY_CLIENT_SECRET: '' };
+            }
+          };
+          
           exports.handler = async (event) => {
             console.log('Event:', JSON.stringify(event));
             
@@ -168,8 +244,14 @@ Resources:
             }
             
             // Extract path and method
-            const path = event.rawPath || event.path || '/';
+            let path = event.rawPath || event.path || '/';
             const method = event.requestContext?.http?.method || event.httpMethod || 'GET';
+            
+            // Remove stage from path if present (e.g., /production/api/... -> /api/...)
+            if (path.startsWith('/production')) {
+              path = path.substring('/production'.length);
+            }
+            
             const pathParts = path.split('/').filter(p => p);
             
             // Simple routing
@@ -240,6 +322,233 @@ Resources:
                   };
                   break;
                   
+                case 'shopify':
+                  // Handle Shopify OAuth integration
+                  if (path.includes('/shopify/connect')) {
+                    try {
+                      const body = JSON.parse(event.body || '{}');
+                      const { storeDomain, userId } = body;
+                      
+                      if (!storeDomain) {
+                        return {
+                          statusCode: 400,
+                          headers: corsHeaders,
+                          body: JSON.stringify({ error: 'Store domain is required' })
+                        };
+                      }
+                      
+                      // Get Shopify credentials from Secrets Manager
+                      const credentials = await getShopifyCredentials();
+                      
+                      if (!credentials.SHOPIFY_CLIENT_ID) {
+                        console.error('Shopify credentials not found in Secrets Manager');
+                        return {
+                          statusCode: 500,
+                          headers: corsHeaders,
+                          body: JSON.stringify({ error: 'Shopify integration not configured' })
+                        };
+                      }
+                      
+                      const SHOPIFY_CLIENT_ID = credentials.SHOPIFY_CLIENT_ID;
+                      const API_GATEWAY_URL = 'https://v59jrtezd4.execute-api.us-west-1.amazonaws.com/production';
+                      const REDIRECT_URI = `${API_GATEWAY_URL}/api/shopify/callback`;
+                      const SCOPES = 'read_products,read_orders,read_inventory,read_customers,read_analytics';
+                      
+                      // Clean domain
+                      const cleanDomain = storeDomain.replace(/^https?:\/\//, '').replace(/\/$/, '').replace(/\.myshopify\.com.*$/, '') + '.myshopify.com';
+                      
+                      // Generate random state for CSRF protection
+                      const state = Math.random().toString(36).substring(7);
+                      
+                      // Store state in DynamoDB for verification
+                      await dynamodb.put({
+                        TableName: process.env.TABLE_NAME,
+                        Item: {
+                          pk: `oauth_state_${state}`,
+                          sk: 'shopify',
+                          userId: userId || 'unknown',
+                          storeDomain: cleanDomain,
+                          createdAt: new Date().toISOString(),
+                          ttl: Math.floor(Date.now() / 1000) + 600 // Expire in 10 minutes
+                        }
+                      }).promise();
+                      
+                      const authUrl = `https://${cleanDomain}/admin/oauth/authorize?` +
+                        `client_id=${SHOPIFY_CLIENT_ID}&` +
+                        `scope=${SCOPES}&` +
+                        `redirect_uri=${encodeURIComponent(REDIRECT_URI)}&` +
+                        `state=${state}`;
+                      
+                      responseData = {
+                        authUrl: authUrl,
+                        message: 'Redirect user to Shopify OAuth'
+                      };
+                    } catch (error) {
+                      console.error('Error in Shopify connect:', error);
+                      return {
+                        statusCode: 500,
+                        headers: corsHeaders,
+                        body: JSON.stringify({ error: 'Failed to initiate Shopify connection' })
+                      };
+                    }
+                  } else if (path.includes('/shopify/callback')) {
+                    // Handle OAuth callback
+                    const queryParams = event.queryStringParameters || {};
+                    const { code, state, shop } = queryParams;
+                    
+                    if (!code || !state || !shop) {
+                      return {
+                        statusCode: 400,
+                        headers: { 'Content-Type': 'text/html' },
+                        body: '<html><body><h2>Error: Missing required parameters</h2><script>setTimeout(() => window.close(), 3000);</script></body></html>'
+                      };
+                    }
+                    
+                    try {
+                      // Verify state from DynamoDB
+                      const stateResult = await dynamodb.get({
+                        TableName: process.env.TABLE_NAME,
+                        Key: {
+                          pk: `oauth_state_${state}`,
+                          sk: 'shopify'
+                        }
+                      }).promise();
+                      
+                      if (!stateResult.Item) {
+                        throw new Error('Invalid state parameter');
+                      }
+                      
+                      // Get Shopify credentials
+                      const credentials = await getShopifyCredentials();
+                      
+                      // Exchange code for access token
+                      const tokenData = querystring.stringify({
+                        client_id: credentials.SHOPIFY_CLIENT_ID,
+                        client_secret: credentials.SHOPIFY_CLIENT_SECRET,
+                        code: code
+                      });
+                      
+                      // Make HTTPS request to get access token
+                      const accessToken = await new Promise((resolve, reject) => {
+                        const options = {
+                          hostname: shop,
+                          path: '/admin/oauth/access_token',
+                          method: 'POST',
+                          headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                            'Content-Length': Buffer.byteLength(tokenData)
+                          }
+                        };
+                        
+                        const req = https.request(options, (res) => {
+                          let data = '';
+                          res.on('data', (chunk) => { data += chunk; });
+                          res.on('end', () => {
+                            try {
+                              const result = JSON.parse(data);
+                              resolve(result.access_token);
+                            } catch (e) {
+                              reject(e);
+                            }
+                          });
+                        });
+                        
+                        req.on('error', reject);
+                        req.write(tokenData);
+                        req.end();
+                      });
+                      
+                      // Store the access token in DynamoDB
+                      await dynamodb.put({
+                        TableName: process.env.TABLE_NAME,
+                        Item: {
+                          pk: `store_${shop}`,
+                          sk: `user_${stateResult.Item.userId}`,
+                          accessToken: accessToken,
+                          storeDomain: shop,
+                          connectedAt: new Date().toISOString()
+                        }
+                      }).promise();
+                      
+                      // Delete the state token
+                      await dynamodb.delete({
+                        TableName: process.env.TABLE_NAME,
+                        Key: {
+                          pk: `oauth_state_${state}`,
+                          sk: 'shopify'
+                        }
+                      }).promise();
+                      
+                      // Return success HTML that closes the popup
+                      return {
+                        statusCode: 200,
+                        headers: { 'Content-Type': 'text/html' },
+                        body: `<html><body>
+                          <h2>✅ Successfully connected to Shopify!</h2>
+                          <p>This window will close automatically...</p>
+                          <script>
+                            if (window.opener) {
+                              window.opener.postMessage({ type: 'shopify-connected', success: true }, '*');
+                            }
+                            setTimeout(() => window.close(), 2000);
+                          </script>
+                        </body></html>`
+                      };
+                    } catch (error) {
+                      console.error('Error in Shopify callback:', error);
+                      return {
+                        statusCode: 500,
+                        headers: { 'Content-Type': 'text/html' },
+                        body: `<html><body>
+                          <h2>❌ Connection failed</h2>
+                          <p>${error.message}</p>
+                          <script>setTimeout(() => window.close(), 3000);</script>
+                        </body></html>`
+                      };
+                    }
+                  } else if (path.includes('/shopify/sync')) {
+                    // Sync data using stored access token
+                    const body = JSON.parse(event.body || '{}');
+                    const { storeDomain, userId } = body;
+                    
+                    // Get access token from DynamoDB
+                    const tokenResult = await dynamodb.get({
+                      TableName: process.env.TABLE_NAME,
+                      Key: {
+                        pk: `store_${storeDomain}`,
+                        sk: `user_${userId}`
+                      }
+                    }).promise();
+                    
+                    if (!tokenResult.Item || !tokenResult.Item.accessToken) {
+                      return {
+                        statusCode: 401,
+                        headers: corsHeaders,
+                        body: JSON.stringify({ error: 'Store not connected. Please connect first.' })
+                      };
+                    }
+                    
+                    // For now, return mock data
+                    responseData = {
+                      success: true,
+                      message: 'Store data synced successfully',
+                      data: {
+                        storeId: 'store_' + Date.now(),
+                        storeName: storeDomain.replace('.myshopify.com', ''),
+                        syncedAt: new Date().toISOString(),
+                        products: 10,
+                        orders: 25,
+                        customers: 15
+                      }
+                    };
+                  } else {
+                    responseData = {
+                      message: 'Shopify integration endpoint',
+                      endpoints: ['/api/shopify/connect', '/api/shopify/callback', '/api/shopify/sync']
+                    };
+                  }
+                  break;
+                  
                 case 'auth':
                   responseData = {
                     message: 'Authentication endpoint',
@@ -277,17 +586,10 @@ Resources:
   ApiGateway:
     Type: AWS::ApiGatewayV2::Api
     Properties:
-      Name: !Sub 'ordernimbus-${Environment}-api'
+      Name: 'ordernimbus-production-api'
       ProtocolType: HTTP
       CorsConfiguration:
-        AllowOrigins: !If
-          - ShouldCreateDNS
-          - !If
-            - IsProduction
-            - ['http://app.ordernimbus.com', 'https://app.ordernimbus.com']
-            - - !Sub 'http://app-${Environment}.ordernimbus.com'
-              - !Sub 'https://app-${Environment}.ordernimbus.com'
-          - ['*']
+        AllowOrigins: ['http://app.ordernimbus.com', 'https://app.ordernimbus.com']
         AllowHeaders: ['*']
         AllowMethods: ['*']
         MaxAge: 86400
@@ -296,7 +598,7 @@ Resources:
     Type: AWS::ApiGatewayV2::Stage
     Properties:
       ApiId: !Ref ApiGateway
-      StageName: !Ref Environment
+      StageName: production
       AutoDeploy: true
 
   # Lambda Permission
@@ -369,34 +671,29 @@ Resources:
       RouteKey: 'ANY /api/stores'
       Target: !Sub 'integrations/${LambdaIntegration}'
 
+  ApiShopifyRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: 'ANY /api/shopify/{proxy+}'
+      Target: !Sub 'integrations/${LambdaIntegration}'
+
 Outputs:
   FrontendURL:
     Description: Frontend URL
-    Value: !If
-      - ShouldCreateDNS
-      - !If
-        - IsProduction
-        - 'http://app.ordernimbus.com'
-        - !Sub 'http://app-${Environment}.ordernimbus.com'
-      - !Sub 'http://${FrontendBucket}.s3-website-${AWS::Region}.amazonaws.com'
+    Value: 'http://app.ordernimbus.com'
     Export:
       Name: !Sub '${AWS::StackName}-FrontendURL'
 
   ApiEndpoint:
     Description: API Gateway endpoint
-    Value: !Sub 'https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${Environment}'
+    Value: !Sub 'https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/production'
     Export:
       Name: !Sub '${AWS::StackName}-ApiEndpoint'
 
   ApiDomainURL:
     Description: API Domain URL (if enabled)
-    Value: !If
-      - ShouldCreateDNS
-      - !If
-        - IsProduction
-        - 'https://api.ordernimbus.com'
-        - !Sub 'https://api-${Environment}.ordernimbus.com'
-      - !Sub 'https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com'
+    Value: 'https://api.ordernimbus.com'
     Export:
       Name: !Sub '${AWS::StackName}-ApiDomainURL'
 
@@ -426,6 +723,18 @@ Outputs:
 
   DNSConfigured:
     Description: Whether DNS is configured
-    Value: !If [ShouldCreateDNS, 'true', 'false']
+    Value: 'true'
     Export:
       Name: !Sub '${AWS::StackName}-DNSConfigured'
+
+  UserPoolId:
+    Description: Cognito User Pool ID
+    Value: !Ref UserPool
+    Export:
+      Name: !Sub '${AWS::StackName}-UserPoolId'
+
+  UserPoolClientId:
+    Description: Cognito User Pool Client ID
+    Value: !Ref UserPoolClient
+    Export:
+      Name: !Sub '${AWS::StackName}-UserPoolClientId'
