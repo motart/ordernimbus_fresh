@@ -67,6 +67,8 @@ print_status "Getting stack outputs..."
 API_URL=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$REGION" --query 'Stacks[0].Outputs[?OutputKey==`ApiEndpoint`].OutputValue' --output text)
 FRONTEND_URL=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$REGION" --query 'Stacks[0].Outputs[?OutputKey==`FrontendURL`].OutputValue' --output text)
 S3_BUCKET=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$REGION" --query 'Stacks[0].Outputs[?OutputKey==`S3BucketName`].OutputValue' --output text)
+USER_POOL_ID=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$REGION" --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' --output text)
+USER_POOL_CLIENT_ID=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$REGION" --query 'Stacks[0].Outputs[?OutputKey==`UserPoolClientId`].OutputValue' --output text)
 
 # Build frontend with production API URL
 print_status "Building frontend..."
@@ -75,6 +77,8 @@ npm install --silent 2>/dev/null || npm install
 REACT_APP_API_URL="$API_URL" \
 REACT_APP_ENVIRONMENT="production" \
 REACT_APP_REGION="$REGION" \
+REACT_APP_USER_POOL_ID="$USER_POOL_ID" \
+REACT_APP_CLIENT_ID="$USER_POOL_CLIENT_ID" \
 npm run build
 
 # Deploy frontend
@@ -82,9 +86,13 @@ print_status "Deploying frontend to S3..."
 aws s3 sync build/ "s3://$S3_BUCKET/" --delete --region "$REGION"
 cd ../..
 
-# Test API
+# Test API (now requires authentication)
 print_status "Testing API..."
-curl -s "$API_URL/api/products" -H "userId: test" --max-time 5 >/dev/null && print_success "API is working" || print_warning "API may need initialization"
+if curl -s "$API_URL/api/auth/register" --max-time 5 -o /dev/null; then
+  print_success "API is working (authentication required for endpoints)"
+else 
+  print_warning "API may need initialization"
+fi
 
 # Test domain
 print_status "DNS Configuration:"
@@ -105,6 +113,16 @@ echo -e "${GREEN}✅ Deployment Complete!${NC}"
 echo "=========================================="
 echo -e "Frontend: ${YELLOW}http://app.ordernimbus.com${NC}"
 echo -e "API: ${YELLOW}$API_URL${NC}"
+echo ""
+echo -e "${BLUE}🔐 Authentication System:${NC}"
+echo "  • User Pool: $USER_POOL_ID"
+echo "  • Client ID: $USER_POOL_CLIENT_ID"
+echo "  • JWT-based authentication with company isolation"
+echo ""
+echo -e "${BLUE}📝 Next Steps:${NC}"
+echo "  1. Visit http://app.ordernimbus.com"
+echo "  2. Register new account with company name"
+echo "  3. Login and access company-scoped dashboard"
 echo ""
 echo "Time: ~3-5 minutes"
 echo "=========================================="

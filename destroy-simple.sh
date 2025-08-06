@@ -33,6 +33,13 @@ echo ""
 
 # Confirm destruction
 echo -e "${RED}WARNING: This will delete all production resources!${NC}"
+echo -e "${RED}This includes:${NC}"
+echo "  • AWS Cognito User Pool (all user accounts will be deleted)"
+echo "  • DynamoDB table (all company data will be deleted)"
+echo "  • Lambda functions and API Gateway"
+echo "  • S3 bucket and frontend assets"
+echo "  • DNS records (app.ordernimbus.com, api.ordernimbus.com)"
+echo ""
 read -p "Are you sure you want to destroy the production stack? Type 'yes' to confirm: " confirm
 if [ "$confirm" != "yes" ]; then
     echo "Destruction cancelled."
