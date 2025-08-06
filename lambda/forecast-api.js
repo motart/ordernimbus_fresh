@@ -16,7 +16,7 @@ const { v4: uuidv4 } = require('uuid');
 const dynamodb = new AWS.DynamoDB.DocumentClient();
 const eventbridge = new AWS.EventBridge();
 const bedrock = new AWS.BedrockRuntime({
-  region: 'us-east-1'
+  region: 'us-west-1'
 });
 
 const FORECASTS_TABLE = process.env.FORECASTS_TABLE || 'ordernimbus-forecasts';

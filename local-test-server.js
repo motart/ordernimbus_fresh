@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const AWS = require('aws-sdk');
+require('dotenv').config({ path: '.env.local' });
 
 // Import Lambda handlers
 const storeHandler = require('./lambda/store-management');
@@ -10,6 +11,7 @@ const productHandler = require('./lambda/product-management');
 const inventoryHandler = require('./lambda/inventory-management');
 const customerHandler = require('./lambda/customer-management');
 const dataUploadHandler = require('./lambda/data-upload-handler');
+const notificationHandler = require('./lambda/notification-handler');
 
 const app = express();
 app.use(cors());
@@ -42,6 +44,8 @@ app.put('/api/stores/:storeId', expressToLambda(storeHandler));
 app.delete('/api/stores/:storeId', expressToLambda(storeHandler));
 
 // Shopify routes
+app.post('/api/shopify/connect', expressToLambda(shopifyHandler));
+app.get('/api/shopify/callback', expressToLambda(shopifyHandler));
 app.post('/api/shopify/sync', expressToLambda(shopifyHandler));
 
 // Order routes
@@ -63,6 +67,14 @@ app.post('/api/customers', expressToLambda(customerHandler));
 
 // Data upload routes
 app.post('/api/data/upload-csv', expressToLambda(dataUploadHandler));
+
+// Notification routes
+app.get('/api/notifications', expressToLambda(notificationHandler));
+app.post('/api/notifications', expressToLambda(notificationHandler));
+app.put('/api/notifications/:id/read', expressToLambda(notificationHandler));
+app.put('/api/notifications/read-all', expressToLambda(notificationHandler));
+app.post('/api/notifications/check-inventory', expressToLambda(notificationHandler));
+app.post('/api/notifications/check-order', expressToLambda(notificationHandler));
 
 const PORT = 3001;
 app.listen(PORT, () => {

@@ -4,6 +4,7 @@ import { FiCheck, FiLoader, FiAlertCircle } from 'react-icons/fi';
 import toast from 'react-hot-toast';
 import './ShopifyConnect.css';
 import { isDevelopment, isDevStore, getDevToken, DEV_STORES, DEFAULT_DEV_TOKEN } from '../config/devTokens';
+import { ENV_CONFIG, debugLog } from '../config/environment';
 
 interface ShopifyConnectProps {
   userId: string;
@@ -74,10 +75,24 @@ const ShopifyConnect: React.FC<ShopifyConnectProps> = ({ userId, onSuccess, onCa
     setStep('connecting');
 
     try {
-      const apiUrl = process.env.REACT_APP_API_URL || 'http://127.0.0.1:3001';
+      const apiUrl = ENV_CONFIG.apiUrl;
+      debugLog('Using API URL:', apiUrl, 'for environment:', ENV_CONFIG.environment);
       
       if (useCustomApp) {
         // Custom App mode - directly create store with token
+        const finalApiKey = isDevEnvironment ? DEFAULT_DEV_TOKEN : apiToken;
+        
+        // Validate we have a real token
+        if (!finalApiKey || finalApiKey.length < 20 || finalApiKey.includes('REPLACE')) {
+          toast.error('Development token not configured. Please set REACT_APP_DEV_SHOPIFY_TOKEN in your .env.development.local file');
+          setStep('error');
+          setError('Missing or invalid Shopify access token. Please configure your development environment.');
+          setLoading(false);
+          return;
+        }
+        
+        console.log('Creating Shopify store with token:', finalApiKey.substring(0, 10) + '...');
+        
         const response = await fetch(`${apiUrl}/api/stores`, {
           method: 'POST',
           headers: {
@@ -89,7 +104,7 @@ const ShopifyConnect: React.FC<ShopifyConnectProps> = ({ userId, onSuccess, onCa
             displayName: cleanDomain.replace('.myshopify.com', ''),
             type: 'shopify',
             shopifyDomain: cleanDomain,
-            apiKey: isDevEnvironment ? DEFAULT_DEV_TOKEN : apiToken,
+            apiKey: finalApiKey,
             status: 'active'
           })
         });
@@ -112,7 +127,7 @@ const ShopifyConnect: React.FC<ShopifyConnectProps> = ({ userId, onSuccess, onCa
             userId,
             storeId: result.store.id,
             shopifyDomain: cleanDomain,
-            apiKey: apiToken,
+            apiKey: finalApiKey,
             syncType: 'full'
           })
         });

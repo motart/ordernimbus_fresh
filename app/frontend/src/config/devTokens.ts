@@ -8,6 +8,7 @@ export interface DevStoreConfig {
 }
 
 // Default dev token for all stores in development
+// IMPORTANT: This token is for development only. Never commit real production tokens!
 export const DEFAULT_DEV_TOKEN = process.env.REACT_APP_DEV_SHOPIFY_TOKEN || '';
 
 export const DEV_STORES: Record<string, DevStoreConfig> = {

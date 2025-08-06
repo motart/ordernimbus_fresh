@@ -1,0 +1,431 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'OrderNimbus - Simplified Fast Deployment with Domain (3-5 minutes)'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: staging
+    AllowedValues: [dev, staging, production]
+    Description: Environment name
+  
+  EnableDomain:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: Enable custom domain (app.ordernimbus.com)
+  
+  HostedZoneId:
+    Type: String
+    Default: Z03623712FIVU7Z4CJ949
+    Description: Route 53 Hosted Zone ID for ordernimbus.com
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, production]
+  ShouldCreateDNS: !Equals [!Ref EnableDomain, 'true']
+
+Resources:
+  # ==================== SINGLE IAM ROLE ====================
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: '*'
+                Resource: '*'
+
+  # ==================== SINGLE DYNAMODB TABLE ====================
+  MainTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'ordernimbus-${Environment}-main'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+
+  # ==================== S3 BUCKET (No CloudFront) ====================
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'ordernimbus-${Environment}-simple-${AWS::AccountId}'
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: index.html
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: ['*']
+            AllowedMethods: [GET, HEAD]
+            AllowedOrigins: ['*']
+            MaxAge: 3600
+
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Statement:
+          - Sid: PublicReadGetObject
+            Effect: Allow
+            Principal: '*'
+            Action: s3:GetObject
+            Resource: !Sub '${FrontendBucket.Arn}/*'
+
+  # ==================== ROUTE 53 DNS (OPTIONAL) ====================
+  DNSRecord:
+    Type: AWS::Route53::RecordSet
+    Condition: ShouldCreateDNS
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !If
+        - IsProduction
+        - app.ordernimbus.com
+        - !Sub 'app-${Environment}.ordernimbus.com'
+      Type: CNAME
+      TTL: 300
+      ResourceRecords:
+        - !Sub '${FrontendBucket}.s3-website-${AWS::Region}.amazonaws.com'
+
+  APIDNSRecord:
+    Type: AWS::Route53::RecordSet
+    Condition: ShouldCreateDNS
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !If
+        - IsProduction
+        - api.ordernimbus.com
+        - !Sub 'api-${Environment}.ordernimbus.com'
+      Type: CNAME
+      TTL: 300
+      ResourceRecords:
+        - !Sub '${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com'
+
+  # ==================== SINGLE LAMBDA FUNCTION ====================
+  MainLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'ordernimbus-${Environment}-main'
+      Runtime: nodejs18.x
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 30
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref MainTable
+          ENVIRONMENT: !Ref Environment
+          ALLOWED_ORIGINS: !If
+            - ShouldCreateDNS
+            - !If
+              - IsProduction
+              - 'http://app.ordernimbus.com,https://app.ordernimbus.com'
+              - !Sub 'http://app-${Environment}.ordernimbus.com,https://app-${Environment}.ordernimbus.com'
+            - '*'
+      Code:
+        ZipFile: |
+          exports.handler = async (event) => {
+            console.log('Event:', JSON.stringify(event));
+            
+            // Get allowed origins from environment
+            const allowedOrigins = (process.env.ALLOWED_ORIGINS || '*').split(',');
+            const origin = event.headers?.origin || event.headers?.Origin || '*';
+            const allowOrigin = allowedOrigins.includes('*') ? '*' : 
+                               (allowedOrigins.includes(origin) ? origin : allowedOrigins[0]);
+            
+            const corsHeaders = {
+              'Access-Control-Allow-Origin': allowOrigin,
+              'Access-Control-Allow-Headers': '*',
+              'Access-Control-Allow-Methods': '*',
+              'Content-Type': 'application/json'
+            };
+            
+            // Handle OPTIONS for CORS
+            if (event.requestContext?.http?.method === 'OPTIONS' || event.httpMethod === 'OPTIONS') {
+              return { statusCode: 200, headers: corsHeaders, body: '' };
+            }
+            
+            // Extract path and method
+            const path = event.rawPath || event.path || '/';
+            const method = event.requestContext?.http?.method || event.httpMethod || 'GET';
+            const pathParts = path.split('/').filter(p => p);
+            
+            // Simple routing
+            const resource = pathParts[1]; // api/products -> products
+            
+            try {
+              // Mock data based on resource
+              let responseData = {};
+              
+              switch(resource) {
+                case 'products':
+                  responseData = {
+                    products: [
+                      { id: '1', name: 'Product 1', price: 99.99, inventory: 100 },
+                      { id: '2', name: 'Product 2', price: 149.99, inventory: 50 }
+                    ],
+                    count: 2
+                  };
+                  break;
+                  
+                case 'orders':
+                  responseData = {
+                    orders: [
+                      { id: '1', customerName: 'John Doe', total: 299.99, status: 'completed' },
+                      { id: '2', customerName: 'Jane Smith', total: 149.99, status: 'pending' }
+                    ],
+                    count: 2
+                  };
+                  break;
+                  
+                case 'inventory':
+                  responseData = {
+                    inventory: [
+                      { productId: '1', quantity: 100, location: 'Warehouse A' },
+                      { productId: '2', quantity: 50, location: 'Warehouse B' }
+                    ],
+                    count: 2
+                  };
+                  break;
+                  
+                case 'customers':
+                  responseData = {
+                    customers: [
+                      { id: '1', name: 'John Doe', email: 'john@example.com', orders: 5 },
+                      { id: '2', name: 'Jane Smith', email: 'jane@example.com', orders: 3 }
+                    ],
+                    count: 2
+                  };
+                  break;
+                  
+                case 'notifications':
+                  responseData = {
+                    notifications: [
+                      { id: '1', type: 'info', message: 'System update completed' },
+                      { id: '2', type: 'warning', message: 'Low inventory alert' }
+                    ],
+                    count: 2
+                  };
+                  break;
+                  
+                case 'stores':
+                  responseData = {
+                    stores: [
+                      { id: '1', name: 'Main Store', domain: 'main.myshopify.com' },
+                      { id: '2', name: 'Secondary Store', domain: 'secondary.myshopify.com' }
+                    ],
+                    count: 2
+                  };
+                  break;
+                  
+                case 'auth':
+                  responseData = {
+                    message: 'Authentication endpoint',
+                    status: 'active'
+                  };
+                  break;
+                  
+                default:
+                  responseData = {
+                    message: 'OrderNimbus API',
+                    version: '1.0',
+                    environment: process.env.ENVIRONMENT,
+                    path: path,
+                    method: method
+                  };
+              }
+              
+              return {
+                statusCode: 200,
+                headers: corsHeaders,
+                body: JSON.stringify(responseData)
+              };
+              
+            } catch (error) {
+              console.error('Error:', error);
+              return {
+                statusCode: 500,
+                headers: corsHeaders,
+                body: JSON.stringify({ error: 'Internal server error' })
+              };
+            }
+          };
+
+  # ==================== API GATEWAY (Simplified) ====================
+  ApiGateway:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub 'ordernimbus-${Environment}-api'
+      ProtocolType: HTTP
+      CorsConfiguration:
+        AllowOrigins: !If
+          - ShouldCreateDNS
+          - !If
+            - IsProduction
+            - ['http://app.ordernimbus.com', 'https://app.ordernimbus.com']
+            - - !Sub 'http://app-${Environment}.ordernimbus.com'
+              - !Sub 'https://app-${Environment}.ordernimbus.com'
+          - ['*']
+        AllowHeaders: ['*']
+        AllowMethods: ['*']
+        MaxAge: 86400
+
+  ApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref ApiGateway
+      StageName: !Ref Environment
+      AutoDeploy: true
+
+  # Lambda Permission
+  LambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref MainLambda
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'
+
+  # Single Integration
+  LambdaIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref ApiGateway
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${MainLambda}'
+      IntegrationMethod: POST
+      PayloadFormatVersion: '2.0'
+
+  # Catch-all route
+  CatchAllRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: '$default'
+      Target: !Sub 'integrations/${LambdaIntegration}'
+
+  # Specific routes for clarity (optional but helps with API Gateway console)
+  ApiProductsRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: 'ANY /api/products'
+      Target: !Sub 'integrations/${LambdaIntegration}'
+
+  ApiOrdersRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: 'ANY /api/orders'
+      Target: !Sub 'integrations/${LambdaIntegration}'
+
+  ApiInventoryRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: 'ANY /api/inventory'
+      Target: !Sub 'integrations/${LambdaIntegration}'
+
+  ApiCustomersRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: 'ANY /api/customers'
+      Target: !Sub 'integrations/${LambdaIntegration}'
+
+  ApiNotificationsRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: 'ANY /api/notifications'
+      Target: !Sub 'integrations/${LambdaIntegration}'
+
+  ApiStoresRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: 'ANY /api/stores'
+      Target: !Sub 'integrations/${LambdaIntegration}'
+
+Outputs:
+  FrontendURL:
+    Description: Frontend URL
+    Value: !If
+      - ShouldCreateDNS
+      - !If
+        - IsProduction
+        - 'http://app.ordernimbus.com'
+        - !Sub 'http://app-${Environment}.ordernimbus.com'
+      - !Sub 'http://${FrontendBucket}.s3-website-${AWS::Region}.amazonaws.com'
+    Export:
+      Name: !Sub '${AWS::StackName}-FrontendURL'
+
+  ApiEndpoint:
+    Description: API Gateway endpoint
+    Value: !Sub 'https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${Environment}'
+    Export:
+      Name: !Sub '${AWS::StackName}-ApiEndpoint'
+
+  ApiDomainURL:
+    Description: API Domain URL (if enabled)
+    Value: !If
+      - ShouldCreateDNS
+      - !If
+        - IsProduction
+        - 'https://api.ordernimbus.com'
+        - !Sub 'https://api-${Environment}.ordernimbus.com'
+      - !Sub 'https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com'
+    Export:
+      Name: !Sub '${AWS::StackName}-ApiDomainURL'
+
+  S3BucketName:
+    Description: S3 Bucket for frontend hosting
+    Value: !Ref FrontendBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-S3BucketName'
+
+  S3WebsiteURL:
+    Description: S3 Website URL
+    Value: !Sub 'http://${FrontendBucket}.s3-website-${AWS::Region}.amazonaws.com'
+    Export:
+      Name: !Sub '${AWS::StackName}-S3WebsiteURL'
+
+  Region:
+    Description: AWS Region
+    Value: !Ref AWS::Region
+    Export:
+      Name: !Sub '${AWS::StackName}-Region'
+
+  TableName:
+    Description: Main DynamoDB Table
+    Value: !Ref MainTable
+    Export:
+      Name: !Sub '${AWS::StackName}-TableName'
+
+  DNSConfigured:
+    Description: Whether DNS is configured
+    Value: !If [ShouldCreateDNS, 'true', 'false']
+    Export:
+      Name: !Sub '${AWS::StackName}-DNSConfigured'

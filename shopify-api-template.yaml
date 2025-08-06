@@ -1,0 +1,72 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: 'Minimal Shopify API for OrderNimbus Staging'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: staging
+    Description: Environment name
+
+Resources:
+  # API Gateway
+  ShopifyApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub 'ordernimbus-${Environment}-shopify-api'
+      StageName: !Ref Environment
+      Cors:
+        AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
+        AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,userId'"
+        AllowOrigin: "'*'"
+        AllowCredentials: false
+
+  # Shopify Integration Function
+  ShopifyIntegrationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'ordernimbus-${Environment}-shopify-integration'
+      CodeUri: lambda/
+      Handler: shopify-integration.handler
+      Runtime: nodejs18.x
+      Timeout: 30
+      MemorySize: 512
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          TABLE_PREFIX: !Sub 'ordernimbus-${Environment}'
+      Policies:
+        - Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action:
+                - ssm:GetParameter
+                - ssm:GetParameters
+              Resource: 
+                - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/ordernimbus/shopify/*'
+      Events:
+        ShopifyConnect:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ShopifyApi
+            Path: /api/shopify/connect
+            Method: post
+        ShopifyCallback:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ShopifyApi
+            Path: /api/shopify/callback
+            Method: get
+        ShopifySync:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ShopifyApi
+            Path: /api/shopify/sync
+            Method: post
+
+Outputs:
+  ShopifyApiUrl:
+    Description: "API Gateway endpoint URL for Shopify integration"
+    Value: !Sub "https://${ShopifyApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}"
+    Export:
+      Name: !Sub "${AWS::StackName}-ShopifyApiUrl"

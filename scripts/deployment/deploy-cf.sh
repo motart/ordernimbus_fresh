@@ -14,7 +14,7 @@ PURPLE='\033[0;35m'
 NC='\033[0m' # No Color
 
 # Configuration
-DEFAULT_REGION="us-east-1"
+DEFAULT_REGION="us-west-1"
 DEFAULT_ENV="staging"
 STACK_NAME="ordernimbus"
 
@@ -65,13 +65,15 @@ check_aws_config() {
 validate_template() {
     echo "📋 Validating CloudFormation template..."
     
-    if [ ! -f "cloudformation-template.yaml" ]; then
-        print_error "CloudFormation template not found!"
+    TEMPLATE_PATH="../../infrastructure/cloudformation/cloudformation-template.yaml"
+    
+    if [ ! -f "$TEMPLATE_PATH" ]; then
+        print_error "CloudFormation template not found at $TEMPLATE_PATH!"
         exit 1
     fi
     
     if aws cloudformation validate-template \
-        --template-body file://cloudformation-template.yaml \
+        --template-body file://$TEMPLATE_PATH \
         --region $AWS_REGION &>/dev/null; then
         print_status "Template validation successful"
     else
@@ -101,9 +103,11 @@ deploy_stack() {
     fi
     
     # Deploy/Update the stack
+    TEMPLATE_PATH="../../infrastructure/cloudformation/cloudformation-template.yaml"
+    
     aws cloudformation $STACK_OPERATION \
         --stack-name $STACK_FULL_NAME \
-        --template-body file://cloudformation-template.yaml \
+        --template-body file://$TEMPLATE_PATH \
         --parameters \
             ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
             ParameterKey=AdminEmail,ParameterValue=$ADMIN_EMAIL \

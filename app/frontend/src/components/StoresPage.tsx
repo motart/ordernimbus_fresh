@@ -51,6 +51,7 @@ interface Store {
   totalOrders?: number;
   productsCount?: number;
   ordersCount?: number;
+  inventoryCount?: number;
   lastForecast?: string;
   forecastAccuracy?: number;
   nextForecast?: string;

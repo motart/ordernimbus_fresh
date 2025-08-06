@@ -15,7 +15,7 @@ CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # Configuration
-DEFAULT_REGION="us-east-1"
+DEFAULT_REGION="us-west-1"
 DEFAULT_ENV="staging"
 STACK_PREFIX="ordernimbus"
 MAX_WAIT_TIME=600  # 10 minutes max wait for any single operation

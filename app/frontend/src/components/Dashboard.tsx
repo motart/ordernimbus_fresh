@@ -11,6 +11,7 @@ import InventoryPage from './InventoryPage';
 import OrderPage from './OrderPage';
 import ProductsPage from './ProductsPage';
 import CustomersPage from './CustomersPage';
+import NotificationsPage from './NotificationsPage';
 import SecureDataManager from '../utils/SecureDataManager';
 
 interface DashboardProps {
@@ -166,6 +167,8 @@ const Dashboard: React.FC<DashboardProps> = ({ userEmail, onLogout }) => {
           <ProductsPage />
         ) : activePage === 'customers' ? (
           <CustomersPage />
+        ) : activePage === 'notifications' ? (
+          <NotificationsPage />
         ) : (
           <div className="dashboard-content">
               {!hasData && activePage === 'dashboard' ? (

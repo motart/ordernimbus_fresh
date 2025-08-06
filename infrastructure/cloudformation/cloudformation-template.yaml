@@ -212,7 +212,9 @@ Resources:
               - Effect: Allow
                 Action:
                   - secretsmanager:GetSecretValue
-                Resource: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:ordernimbus-${Environment}-*'
+                Resource: 
+                  - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:ordernimbus/${Environment}/shopify-*'
+                  - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:ordernimbus-${Environment}-*'
       Tags:
         - Key: Name
           Value: !Sub 'ordernimbus-${Environment}-lambda-role'
@@ -374,6 +376,25 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub 'ordernimbus-${Environment}-sessions'
+
+  StoresTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'ordernimbus-${Environment}-stores'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: storeId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: storeId
+          KeyType: RANGE
+      Tags:
+        - Key: Name
+          Value: !Sub 'ordernimbus-${Environment}-stores'
 
   ConversationsTable:
     Type: AWS::DynamoDB::Table
@@ -810,6 +831,505 @@ Resources:
         - Key: Name
           Value: !Sub 'ordernimbus-${Environment}-forecast-api'
 
+  # Shopify Integration Lambda
+  ShopifyIntegrationFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'ordernimbus-${Environment}-shopify-integration'
+      Runtime: nodejs18.x
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          REGION: !Ref AWS::Region
+          STORES_TABLE: !Ref StoresTable
+          DYNAMODB_ENDPOINT: ''
+      Code:
+        ZipFile: |
+          exports.handler = async (event) => {
+              console.log('Shopify integration request:', JSON.stringify(event));
+              
+              const corsHeaders = {
+                  'Access-Control-Allow-Origin': '*',
+                  'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
+                  'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
+                  'Content-Type': 'application/json'
+              };
+              
+              // Handle preflight requests
+              if (event.requestContext?.http?.method === 'OPTIONS') {
+                  return {
+                      statusCode: 200,
+                      headers: corsHeaders,
+                      body: ''
+                  };
+              }
+              
+              try {
+                  let body;
+                  try {
+                      body = JSON.parse(event.body || '{}');
+                  } catch (e) {
+                      body = event;
+                  }
+                  
+                  const path = event.rawPath || event.path || '';
+                  
+                  // Handle different Shopify endpoints
+                  if (path.includes('/connect')) {
+                      // Handle Shopify connection
+                      const { shopUrl, accessToken } = body;
+                      
+                      if (!shopUrl || !accessToken) {
+                          return {
+                              statusCode: 400,
+                              headers: corsHeaders,
+                              body: JSON.stringify({
+                                  error: 'Missing required fields: shopUrl and accessToken'
+                              })
+                          };
+                      }
+                      
+                      // In a real implementation, this would validate the token and store it
+                      return {
+                          statusCode: 200,
+                          headers: corsHeaders,
+                          body: JSON.stringify({
+                              success: true,
+                              message: 'Store connected successfully',
+                              storeId: 'store-' + Date.now(),
+                              shopUrl: shopUrl
+                          })
+                      };
+                  } else if (path.includes('/oauth/callback')) {
+                      // Handle OAuth callback
+                      const { code, shop, state } = event.queryStringParameters || {};
+                      
+                      return {
+                          statusCode: 200,
+                          headers: corsHeaders,
+                          body: JSON.stringify({
+                              success: true,
+                              message: 'OAuth callback processed',
+                              shop: shop
+                          })
+                      };
+                  } else if (path.includes('/stores')) {
+                      // Get stores list
+                      return {
+                          statusCode: 200,
+                          headers: corsHeaders,
+                          body: JSON.stringify({
+                              stores: [
+                                  {
+                                      id: 'store-1',
+                                      name: 'Demo Store',
+                                      url: 'demo-store.myshopify.com',
+                                      status: 'active'
+                                  }
+                              ]
+                          })
+                      };
+                  }
+                  
+                  // Default response
+                  return {
+                      statusCode: 200,
+                      headers: corsHeaders,
+                      body: JSON.stringify({
+                          message: 'Shopify integration endpoint',
+                          path: path
+                      })
+                  };
+              } catch (error) {
+                  console.error('Error:', error);
+                  return {
+                      statusCode: 500,
+                      headers: corsHeaders,
+                      body: JSON.stringify({
+                          error: 'Internal server error',
+                          message: error.message
+                      })
+                  };
+              }
+          };
+      Tags:
+        - Key: Name
+          Value: !Sub 'ordernimbus-${Environment}-shopify-integration'
+
+  # Products Management Lambda
+  ProductsManagementFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'ordernimbus-${Environment}-products-management'
+      Runtime: nodejs18.x
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          REGION: !Ref AWS::Region
+      Code:
+        ZipFile: |
+          exports.handler = async (event) => {
+              const corsHeaders = {
+                  'Access-Control-Allow-Origin': '*',
+                  'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,userId',
+                  'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
+                  'Content-Type': 'application/json'
+              };
+              
+              // Handle OPTIONS requests for CORS
+              if (event.requestContext?.http?.method === 'OPTIONS' || event.httpMethod === 'OPTIONS') {
+                  return {
+                      statusCode: 200,
+                      headers: corsHeaders,
+                      body: ''
+                  };
+              }
+              
+              // Get query parameters
+              const queryParams = event.queryStringParameters || {};
+              const storeId = queryParams.storeId || 'store-1';
+              
+              // Sample products data
+              const allProducts = [
+                  {
+                      id: 'prod-1',
+                      storeId: 'store-1',
+                      title: 'Sample Product 1',
+                      price: '29.99',
+                      inventory_quantity: 100,
+                      created_at: new Date().toISOString()
+                  },
+                  {
+                      id: 'prod-2',
+                      storeId: 'store-1',
+                      title: 'Sample Product 2',
+                      price: '49.99',
+                      inventory_quantity: 50,
+                      created_at: new Date().toISOString()
+                  }
+              ];
+              
+              // Filter by storeId if provided
+              const products = storeId ? allProducts.filter(p => p.storeId === storeId) : allProducts;
+              
+              return {
+                  statusCode: 200,
+                  headers: corsHeaders,
+                  body: JSON.stringify(products)
+              };
+          };
+      Tags:
+        - Key: Name
+          Value: !Sub 'ordernimbus-${Environment}-products-management'
+
+  # Orders Management Lambda
+  OrdersManagementFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'ordernimbus-${Environment}-orders-management'
+      Runtime: nodejs18.x
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          REGION: !Ref AWS::Region
+      Code:
+        ZipFile: |
+          exports.handler = async (event) => {
+              const corsHeaders = {
+                  'Access-Control-Allow-Origin': '*',
+                  'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,userId',
+                  'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
+                  'Content-Type': 'application/json'
+              };
+              
+              // Handle OPTIONS requests for CORS
+              if (event.requestContext?.http?.method === 'OPTIONS' || event.httpMethod === 'OPTIONS') {
+                  return {
+                      statusCode: 200,
+                      headers: corsHeaders,
+                      body: ''
+                  };
+              }
+              
+              // Get query parameters
+              const queryParams = event.queryStringParameters || {};
+              const storeId = queryParams.storeId;
+              
+              // Sample orders data
+              const allOrders = [
+                  {
+                      id: 'order-1',
+                      storeId: 'store-1',
+                      orderNumber: '#1001',
+                      customer: 'John Doe',
+                      total: '79.98',
+                      status: 'fulfilled',
+                      created_at: new Date().toISOString()
+                  },
+                  {
+                      id: 'order-2',
+                      storeId: 'store-1',
+                      orderNumber: '#1002',
+                      customer: 'Jane Smith',
+                      total: '149.99',
+                      status: 'pending',
+                      created_at: new Date().toISOString()
+                  }
+              ];
+              
+              // Filter by storeId if provided
+              const orders = storeId ? allOrders.filter(o => o.storeId === storeId) : allOrders;
+              
+              return {
+                  statusCode: 200,
+                  headers: corsHeaders,
+                  body: JSON.stringify(orders)
+              };
+          };
+      Tags:
+        - Key: Name
+          Value: !Sub 'ordernimbus-${Environment}-orders-management'
+
+  # Inventory Management Lambda
+  InventoryManagementFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'ordernimbus-${Environment}-inventory-management'
+      Runtime: nodejs18.x
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          REGION: !Ref AWS::Region
+      Code:
+        ZipFile: |
+          exports.handler = async (event) => {
+              const corsHeaders = {
+                  'Access-Control-Allow-Origin': '*',
+                  'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,userId',
+                  'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
+                  'Content-Type': 'application/json'
+              };
+              
+              // Handle OPTIONS requests for CORS
+              if (event.requestContext?.http?.method === 'OPTIONS' || event.httpMethod === 'OPTIONS') {
+                  return {
+                      statusCode: 200,
+                      headers: corsHeaders,
+                      body: ''
+                  };
+              }
+              
+              // Get query parameters
+              const queryParams = event.queryStringParameters || {};
+              const storeId = queryParams.storeId;
+              
+              // Sample inventory data
+              const inventory = [
+                  {
+                      id: 'inv-1',
+                      storeId: 'store-1',
+                      sku: 'SKU001',
+                      product_name: 'Sample Product 1',
+                      quantity: 100,
+                      location: 'Warehouse A',
+                      updated_at: new Date().toISOString()
+                  },
+                  {
+                      id: 'inv-2',
+                      storeId: 'store-1',
+                      sku: 'SKU002',
+                      product_name: 'Sample Product 2',
+                      quantity: 50,
+                      location: 'Warehouse B',
+                      updated_at: new Date().toISOString()
+                  }
+              ];
+              
+              return {
+                  statusCode: 200,
+                  headers: corsHeaders,
+                  body: JSON.stringify(inventory)
+              };
+          };
+      Tags:
+        - Key: Name
+          Value: !Sub 'ordernimbus-${Environment}-inventory-management'
+
+  # Customers Management Lambda
+  CustomersManagementFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'ordernimbus-${Environment}-customers-management'
+      Runtime: nodejs18.x
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          REGION: !Ref AWS::Region
+      Code:
+        ZipFile: |
+          exports.handler = async (event) => {
+              const corsHeaders = {
+                  'Access-Control-Allow-Origin': '*',
+                  'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,userId',
+                  'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
+                  'Content-Type': 'application/json'
+              };
+              
+              // Sample customers data
+              const customers = [
+                  {
+                      id: 'cust-1',
+                      storeId: 'store-1',
+                      name: 'John Doe',
+                      email: 'john@example.com',
+                      total_spent: '249.97',
+                      orders_count: 3,
+                      created_at: new Date().toISOString()
+                  },
+                  {
+                      id: 'cust-2',
+                      storeId: 'store-1',
+                      name: 'Jane Smith',
+                      email: 'jane@example.com',
+                      total_spent: '449.99',
+                      orders_count: 5,
+                      created_at: new Date().toISOString()
+                  }
+              ];
+              
+              return {
+                  statusCode: 200,
+                  headers: corsHeaders,
+                  body: JSON.stringify(customers)
+              };
+          };
+      Tags:
+        - Key: Name
+          Value: !Sub 'ordernimbus-${Environment}-customers-management'
+
+  # Notifications Lambda
+  NotificationsFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'ordernimbus-${Environment}-notifications'
+      Runtime: nodejs18.x
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          REGION: !Ref AWS::Region
+      Code:
+        ZipFile: |
+          exports.handler = async (event) => {
+              const corsHeaders = {
+                  'Access-Control-Allow-Origin': '*',
+                  'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,userId',
+                  'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
+                  'Content-Type': 'application/json'
+              };
+              
+              // Sample notifications data
+              const notifications = [
+                  {
+                      id: 'notif-1',
+                      title: 'New Order Received',
+                      message: 'Order #1003 has been placed',
+                      type: 'info',
+                      read: false,
+                      created_at: new Date().toISOString()
+                  },
+                  {
+                      id: 'notif-2',
+                      title: 'Low Stock Alert',
+                      message: 'Product SKU001 is running low',
+                      type: 'warning',
+                      read: false,
+                      created_at: new Date().toISOString()
+                  }
+              ];
+              
+              return {
+                  statusCode: 200,
+                  headers: corsHeaders,
+                  body: JSON.stringify({ notifications, unreadCount: 2 })
+              };
+          };
+      Tags:
+        - Key: Name
+          Value: !Sub 'ordernimbus-${Environment}-notifications'
+
+  # Store Management Lambda
+  StoreManagementFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'ordernimbus-${Environment}-store-management'
+      Runtime: nodejs18.x
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          REGION: !Ref AWS::Region
+          STORES_TABLE: !Ref StoresTable
+      Code:
+        ZipFile: |
+          exports.handler = async (event) => {
+              console.log('Store management request:', JSON.stringify(event));
+              
+              const corsHeaders = {
+                  'Access-Control-Allow-Origin': '*',
+                  'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
+                  'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
+                  'Content-Type': 'application/json'
+              };
+              
+              // Sample store data
+              const stores = [
+                  {
+                      id: 'store-1',
+                      name: 'Main Store',
+                      platform: 'shopify',
+                      url: 'main-store.myshopify.com',
+                      status: 'active',
+                      lastSync: new Date().toISOString()
+                  }
+              ];
+              
+              return {
+                  statusCode: 200,
+                  headers: corsHeaders,
+                  body: JSON.stringify({ stores })
+              };
+          };
+      Tags:
+        - Key: Name
+          Value: !Sub 'ordernimbus-${Environment}-store-management'
+
   # ==================== API GATEWAY ====================
   ApiGateway:
     Type: AWS::ApiGatewayV2::Api
@@ -912,6 +1432,77 @@ Resources:
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'
 
+  # Shopify Integration Routes
+  ShopifyIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref ApiGateway
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt ShopifyIntegrationFunction.Arn
+      IntegrationMethod: POST
+      PayloadFormatVersion: '2.0'
+
+  ShopifyConnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: 'POST /api/shopify/connect'
+      Target: !Sub 'integrations/${ShopifyIntegration}'
+
+  ShopifyOAuthRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: 'GET /api/shopify/oauth/callback'
+      Target: !Sub 'integrations/${ShopifyIntegration}'
+
+  ShopifyStoresRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: 'GET /api/shopify/stores'
+      Target: !Sub 'integrations/${ShopifyIntegration}'
+
+  ShopifyOptionsRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: 'OPTIONS /api/shopify/{proxy+}'
+      Target: !Sub 'integrations/${ShopifyIntegration}'
+
+  ShopifyPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ShopifyIntegrationFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'
+
+  # Store Management Routes
+  StoreIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref ApiGateway
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt StoreManagementFunction.Arn
+      IntegrationMethod: POST
+      PayloadFormatVersion: '2.0'
+
+  StoresRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: 'GET /api/stores'
+      Target: !Sub 'integrations/${StoreIntegration}'
+
+  StorePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref StoreManagementFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'
+
   ForecastIntegration:
     Type: AWS::ApiGatewayV2::Integration
     Properties:
@@ -939,6 +1530,194 @@ Resources:
     Type: AWS::Lambda::Permission
     Properties:
       FunctionName: !Ref ForecastApiFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'
+
+  # Products API Routes
+  ProductsIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref ApiGateway
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt ProductsManagementFunction.Arn
+      IntegrationMethod: POST
+      PayloadFormatVersion: '2.0'
+
+  ProductsGetRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: 'GET /api/products'
+      Target: !Sub 'integrations/${ProductsIntegration}'
+
+  ProductsPostRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: 'POST /api/products'
+      Target: !Sub 'integrations/${ProductsIntegration}'
+
+  ProductsOptionsRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: 'OPTIONS /api/products'
+      Target: !Sub 'integrations/${ProductsIntegration}'
+
+  ProductsPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ProductsManagementFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'
+
+  # Orders API Routes
+  OrdersIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref ApiGateway
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt OrdersManagementFunction.Arn
+      IntegrationMethod: POST
+      PayloadFormatVersion: '2.0'
+
+  OrdersGetRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: 'GET /api/orders'
+      Target: !Sub 'integrations/${OrdersIntegration}'
+
+  OrdersPostRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: 'POST /api/orders'
+      Target: !Sub 'integrations/${OrdersIntegration}'
+
+  OrdersOptionsRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: 'OPTIONS /api/orders'
+      Target: !Sub 'integrations/${OrdersIntegration}'
+
+  OrdersPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref OrdersManagementFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'
+
+  # Inventory API Routes
+  InventoryIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref ApiGateway
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt InventoryManagementFunction.Arn
+      IntegrationMethod: POST
+      PayloadFormatVersion: '2.0'
+
+  InventoryGetRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: 'GET /api/inventory'
+      Target: !Sub 'integrations/${InventoryIntegration}'
+
+  InventoryPostRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: 'POST /api/inventory'
+      Target: !Sub 'integrations/${InventoryIntegration}'
+
+  InventoryOptionsRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: 'OPTIONS /api/inventory'
+      Target: !Sub 'integrations/${InventoryIntegration}'
+
+  InventoryPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref InventoryManagementFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'
+
+  # Customers API Routes
+  CustomersIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref ApiGateway
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt CustomersManagementFunction.Arn
+      IntegrationMethod: POST
+      PayloadFormatVersion: '2.0'
+
+  CustomersGetRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: 'GET /api/customers'
+      Target: !Sub 'integrations/${CustomersIntegration}'
+
+  CustomersPostRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: 'POST /api/customers'
+      Target: !Sub 'integrations/${CustomersIntegration}'
+
+  CustomersOptionsRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: 'OPTIONS /api/customers'
+      Target: !Sub 'integrations/${CustomersIntegration}'
+
+  CustomersPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref CustomersManagementFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'
+
+  # Notifications API Routes  
+  NotificationsIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref ApiGateway
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt NotificationsFunction.Arn
+      IntegrationMethod: POST
+      PayloadFormatVersion: '2.0'
+
+  NotificationsGetRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: 'GET /api/notifications'
+      Target: !Sub 'integrations/${NotificationsIntegration}'
+
+  NotificationsOptionsRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: 'OPTIONS /api/notifications'
+      Target: !Sub 'integrations/${NotificationsIntegration}'
+
+  NotificationsPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref NotificationsFunction
       Action: lambda:InvokeFunction
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'

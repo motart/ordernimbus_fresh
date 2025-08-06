@@ -4,7 +4,7 @@ const axios = require('axios');
 
 // Initialize AWS services
 const dynamoConfig = {
-  region: process.env.AWS_REGION || 'us-east-1'
+  region: process.env.AWS_REGION || 'us-west-1'
 };
 
 // Only set endpoint for local development
@@ -15,7 +15,7 @@ if (process.env.DYNAMODB_ENDPOINT) {
 const dynamodb = new AWS.DynamoDB.DocumentClient(dynamoConfig);
 
 const secretsManager = new AWS.SecretsManager({
-  region: process.env.AWS_REGION || 'us-east-1'
+  region: process.env.AWS_REGION || 'us-west-1'
 });
 
 // Determine environment and set URLs accordingly

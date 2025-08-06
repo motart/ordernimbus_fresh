@@ -46,9 +46,9 @@ Update `/Users/rachid/workspace/ordernimbus/env.json`:
     "REGION": "us-east-1",
     "TABLE_PREFIX": "ordernimbus-local",
     "SHOPIFY_SYNC_FUNCTION": "ordernimbus-local-shopify-integration",
-    "SHOPIFY_API_KEY": "paste-your-api-key-here",
-    "SHOPIFY_API_SECRET": "paste-your-api-secret-here",
-    "SHOPIFY_REDIRECT_URI": "http://localhost:3001/api/shopify/callback",
+    "SHOPIFY_API_KEY": "d4599bc60ea67dabd0be7fccc10476d9",
+    "SHOPIFY_API_SECRET": "y0c9bd606f75d8bebc451115f996a17bc",
+    "SHOPIFY_REDIRECT_URI": "https://app.ordernimbus.com/api/shopify/callback",
     "DYNAMODB_ENDPOINT": "http://host.docker.internal:8000",
     "AWS_ACCESS_KEY_ID": "local",
     "AWS_SECRET_ACCESS_KEY": "local"

@@ -3,7 +3,7 @@ const axios = require('axios');
 
 // Initialize AWS services
 const dynamoConfig = {
-  region: process.env.AWS_REGION || 'us-east-1'
+  region: process.env.AWS_REGION || 'us-west-1'
 };
 
 // Only set endpoint for local development
@@ -12,16 +12,75 @@ if (process.env.DYNAMODB_ENDPOINT) {
 }
 
 const dynamodb = new AWS.DynamoDB.DocumentClient(dynamoConfig);
+const secretsManager = new AWS.SecretsManager({ region: process.env.AWS_REGION || 'us-west-1' });
+
+// Cache for Shopify credentials to avoid repeated calls
+let shopifyCredentials = null;
 
 const SHOPIFY_API_VERSION = '2024-01';
 
+// Helper function to get Shopify credentials from AWS Secrets Manager
+const getShopifyCredentials = async () => {
+  if (shopifyCredentials) {
+    return shopifyCredentials;
+  }
+
+  try {
+    const environment = process.env.ENVIRONMENT || 'staging';
+    const secretName = `ordernimbus/${environment}/shopify`;
+    
+    console.log(`Fetching Shopify credentials from Secrets Manager: ${secretName}`);
+    
+    const secret = await secretsManager.getSecretValue({ SecretId: secretName }).promise();
+    const credentials = JSON.parse(secret.SecretString);
+    
+    if (!credentials.SHOPIFY_CLIENT_ID || !credentials.SHOPIFY_CLIENT_SECRET) {
+      throw new Error('Invalid Shopify credentials in Secrets Manager');
+    }
+
+    // Cache credentials for the duration of this Lambda execution
+    shopifyCredentials = {
+      apiKey: credentials.SHOPIFY_CLIENT_ID,
+      apiSecret: credentials.SHOPIFY_CLIENT_SECRET,
+      appUrl: credentials.SHOPIFY_APP_URL || '',
+      redirectUri: credentials.SHOPIFY_REDIRECT_URI || ''
+    };
+    
+    console.log('Successfully retrieved Shopify credentials');
+    return shopifyCredentials;
+    
+  } catch (error) {
+    console.error('Error fetching Shopify credentials from Secrets Manager:', error);
+    
+    // Fallback to environment variables for local development
+    if (process.env.SHOPIFY_CLIENT_ID && process.env.SHOPIFY_CLIENT_SECRET) {
+      console.log('Using fallback environment variables for local development');
+      return {
+        apiKey: process.env.SHOPIFY_CLIENT_ID,
+        apiSecret: process.env.SHOPIFY_CLIENT_SECRET,
+        appUrl: process.env.SHOPIFY_APP_URL || '',
+        redirectUri: process.env.SHOPIFY_REDIRECT_URI || ''
+      };
+    }
+    
+    throw new Error('Failed to retrieve Shopify credentials. Ensure they are stored in AWS Secrets Manager.');
+  }
+};
+
+// Helper function to clean and normalize Shopify domain
+const cleanShopifyDomain = (domain) => {
+  let cleanDomain = domain.replace(/^https?:\/\//, '').replace(/\/$/, '');
+  
+  // Remove all instances of .myshopify.com to avoid duplication
+  cleanDomain = cleanDomain.replace(/\.myshopify\.com/g, '');
+  
+  // Add .myshopify.com
+  return `${cleanDomain}.myshopify.com`;
+};
+
 // Helper function to build Shopify API URL
 const buildShopifyUrl = (domain, endpoint) => {
-  const cleanDomain = domain.replace(/^https?:\/\//, '').replace(/\/$/, '');
-  // Ensure .myshopify.com domain
-  const fullDomain = cleanDomain.includes('.myshopify.com') 
-    ? cleanDomain 
-    : `${cleanDomain}.myshopify.com`;
+  const fullDomain = cleanShopifyDomain(domain);
   return `https://${fullDomain}/admin/api/${SHOPIFY_API_VERSION}/${endpoint}`;
 };
 
@@ -336,6 +395,45 @@ const storeProducts = async (userId, storeId, products) => {
   console.log(`Stored ${products.length} products for store ${storeId}`);
 };
 
+// Store individual orders in orders table
+const storeOrders = async (userId, storeId, orders) => {
+  const ordersTable = `${process.env.TABLE_PREFIX || 'ordernimbus-local'}-orders`;
+  const timestamp = Date.now();
+  
+  for (const order of orders) {
+    // Ensure order ID is a string
+    const orderId = String(order.id || order.name);
+    
+    const item = {
+      userId,
+      id: orderId,
+      storeId,
+      name: order.name,
+      created_at: order.created_at,
+      updated_at: order.updated_at,
+      total_price: String(order.total_price || '0'),
+      subtotal_price: String(order.subtotal_price || order.total_price || '0'),
+      currency: order.currency || 'USD',
+      financial_status: order.financial_status,
+      fulfillment_status: order.fulfillment_status,
+      line_items: order.line_items || [],
+      customer: order.customer || {},
+      email: order.email || order.customer?.email || '',
+      shipping_address: order.shipping_address || {},
+      billing_address: order.billing_address || {},
+      sample_data: order.sample_data || false,
+      syncedAt: timestamp
+    };
+    
+    await dynamodb.put({
+      TableName: ordersTable,
+      Item: item
+    }).promise();
+  }
+  
+  console.log(`Stored ${orders.length} orders for store ${storeId}`);
+};
+
 // Process and store orders as sales data
 const storeSalesData = async (userId, storeId, orders, isSampleData = false) => {
   const tableName = `${process.env.TABLE_PREFIX || 'ordernimbus-local'}-sales`;
@@ -442,11 +540,222 @@ const updateStoreSyncStatus = async (userId, storeId, status, metadata = {}) => 
   }).promise();
 };
 
+// Handle Shopify OAuth connection
+const handleShopifyConnect = async (event) => {
+  console.log('Handling Shopify connect request');
+  
+  const { userId, storeDomain } = JSON.parse(event.body);
+  
+  if (!userId || !storeDomain) {
+    return {
+      statusCode: 400,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*'
+      },
+      body: JSON.stringify({
+        error: 'Missing required parameters: userId, storeDomain'
+      })
+    };
+  }
+  
+  // Clean the domain to avoid duplication
+  const cleanDomain = cleanShopifyDomain(storeDomain);
+  
+  // Get Shopify credentials securely from Parameter Store
+  const credentials = await getShopifyCredentials();
+  const SHOPIFY_API_KEY = credentials.apiKey;
+  
+  // Use redirect URI from credentials or determine based on environment
+  let redirectUri = credentials.redirectUri;
+  if (!redirectUri) {
+    // Auto-detect environment and set appropriate redirect URI
+    const environment = process.env.ENVIRONMENT || 'local';
+    switch (environment) {
+      case 'staging':
+        redirectUri = 'https://staging.ordernimbus.com/api/shopify/callback';
+        break;
+      case 'production':
+        redirectUri = 'https://app.ordernimbus.com/api/shopify/callback';
+        break;
+      default:
+        redirectUri = 'http://localhost:3001/api/shopify/callback';
+    }
+  }
+  
+  console.log('Using Shopify redirect URI:', redirectUri);
+  
+  // Required Shopify OAuth scopes
+  const scopes = [
+    'read_products',
+    'read_orders',
+    'read_inventory',
+    'read_customers',
+    'read_analytics'
+  ].join(',');
+  
+  // Generate OAuth URL with real credentials
+  const authUrl = `https://${cleanDomain}/admin/oauth/authorize` +
+    `?client_id=${SHOPIFY_API_KEY}` +
+    `&scope=${encodeURIComponent(scopes)}` +
+    `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+    `&state=${encodeURIComponent(JSON.stringify({ userId, storeDomain: cleanDomain }))}`;
+  
+  return {
+    statusCode: 200,
+    headers: {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*'
+    },
+    body: JSON.stringify({
+      authUrl,
+      message: 'Redirecting to Shopify for authorization...'
+    })
+  };
+};
+
+// Handle Shopify OAuth callback
+const handleShopifyCallback = async (event) => {
+  console.log('Handling Shopify OAuth callback');
+  
+  const { code, state, shop, error } = event.queryStringParameters || {};
+  
+  if (error) {
+    console.error('OAuth error:', error);
+    return {
+      statusCode: 400,
+      headers: {
+        'Content-Type': 'text/html',
+      },
+      body: `
+        <html>
+          <body>
+            <script>
+              window.opener.postMessage({
+                type: 'shopify-oauth-error',
+                error: '${error}'
+              }, '*');
+              window.close();
+            </script>
+          </body>
+        </html>
+      `
+    };
+  }
+  
+  if (!code || !shop || !state) {
+    return {
+      statusCode: 400,
+      headers: {
+        'Content-Type': 'text/html',
+      },
+      body: `
+        <html>
+          <body>
+            <script>
+              window.opener.postMessage({
+                type: 'shopify-oauth-error',
+                error: 'Missing required parameters'
+              }, '*');
+              window.close();
+            </script>
+          </body>
+        </html>
+      `
+    };
+  }
+  
+  try {
+    // Parse state to get user info
+    const stateData = JSON.parse(decodeURIComponent(state));
+    const { userId, storeDomain } = stateData;
+    
+    // Get Shopify credentials securely from Parameter Store
+    const credentials = await getShopifyCredentials();
+    const SHOPIFY_API_KEY = credentials.apiKey;
+    const SHOPIFY_API_SECRET = credentials.apiSecret;
+    
+    const tokenResponse = await axios.post(`https://${shop}/admin/oauth/access_token`, {
+      client_id: SHOPIFY_API_KEY,
+      client_secret: SHOPIFY_API_SECRET,
+      code: code
+    });
+    
+    const { access_token } = tokenResponse.data;
+    
+    // Get shop info
+    const shopResponse = await axios.get(`https://${shop}/admin/api/2024-01/shop.json`, {
+      headers: {
+        'X-Shopify-Access-Token': access_token
+      }
+    });
+    
+    const shopData = shopResponse.data.shop;
+    
+    return {
+      statusCode: 200,
+      headers: {
+        'Content-Type': 'text/html',
+      },
+      body: `
+        <html>
+          <body>
+            <script>
+              window.opener.postMessage({
+                type: 'shopify-oauth-success',
+                data: {
+                  storeId: '${shopData.id}',
+                  storeName: '${shopData.name}',
+                  domain: '${shopData.domain}',
+                  accessToken: '${access_token}'
+                }
+              }, '*');
+              window.close();
+            </script>
+          </body>
+        </html>
+      `
+    };
+  } catch (error) {
+    console.error('Error in OAuth callback:', error);
+    return {
+      statusCode: 500,
+      headers: {
+        'Content-Type': 'text/html',
+      },
+      body: `
+        <html>
+          <body>
+            <script>
+              window.opener.postMessage({
+                type: 'shopify-oauth-error',
+                error: 'Failed to complete OAuth flow'
+              }, '*');
+              window.close();
+            </script>
+          </body>
+        </html>
+      `
+    };
+  }
+};
+
 // Main handler
 exports.handler = async (event) => {
   console.log('Shopify Integration Lambda triggered:', JSON.stringify(event));
   
   try {
+    // Check if this is a connect request (OAuth flow)
+    if (event.path && event.path.includes('/connect')) {
+      return await handleShopifyConnect(event);
+    }
+    
+    // Check if this is a callback request (OAuth callback)
+    if (event.path && event.path.includes('/callback')) {
+      return await handleShopifyCallback(event);
+    }
+    
+    // Default to sync flow
     const { userId, storeId, shopifyDomain, apiKey, syncType = 'full', locationId } = 
       event.body ? JSON.parse(event.body) : event;
     
@@ -558,6 +867,9 @@ exports.handler = async (event) => {
     if (orders.length > 0) {
       // Check if orders are sample data
       const isSampleData = orders.some(order => order.sample_data === true);
+      // Store individual orders
+      storePromises.push(storeOrders(userId, storeId, orders));
+      // Also store aggregated sales data
       storePromises.push(storeSalesData(userId, storeId, orders, isSampleData));
     }
     if (inventory.length > 0) {

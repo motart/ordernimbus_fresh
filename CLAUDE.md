@@ -26,12 +26,12 @@ Multi-tenant, highly-scalable Sales Forecasting Platform with AWS-native infrast
 # Complete platform deployment
 ./scripts/deployment/deploy.sh staging              # Deploy to staging
 ./scripts/deployment/deploy.sh production          # Deploy to production
-./scripts/deployment/deploy.sh dev us-east-1 true  # Deploy to dev (skip tests)
+./scripts/deployment/deploy.sh dev us-west-1 true  # Deploy to dev (skip tests)
 
 # Infrastructure destruction (CAREFUL!)
 ./scripts/infrastructure/destroy.sh staging            # Destroy staging environment
 ./scripts/infrastructure/destroy.sh production        # Destroy production environment
-./scripts/infrastructure/destroy.sh staging us-east-1 true  # Destroy without confirmation
+./scripts/infrastructure/destroy.sh staging us-west-1 true  # Destroy without confirmation
 
 # Alternative npm commands
 npm run deploy:staging          # Deploy to staging
@@ -82,19 +82,19 @@ cd app/frontend && ./auto-deploy.sh  # Auto-build and deploy frontend to AWS S3
 ### Usage Examples
 ```bash
 # Deploy with all fixes
-./scripts/deployment/deploy.sh staging us-east-1
+./scripts/deployment/deploy.sh staging us-west-1
 
 # Destroy everything (with confirmation)
-./scripts/infrastructure/destroy.sh staging us-east-1
+./scripts/infrastructure/destroy.sh staging us-west-1
 
 # Destroy without prompts (DANGEROUS!)
-./scripts/infrastructure/destroy.sh staging us-east-1 true
+./scripts/infrastructure/destroy.sh staging us-west-1 true
 ```
 
 ## Current Deployment Status
 
 - **Frontend**: Deployed to S3 bucket `ordernimbus-staging-frontend-assets`
-- **Frontend URL**: http://ordernimbus-staging-frontend-assets.s3-website-us-east-1.amazonaws.com
+- **Frontend URL**: http://ordernimbus-staging-frontend-assets.s3-website-us-west-1.amazonaws.com
 - **Chatbot**: Fixed blank page issue, now working correctly
 - **Auto-deployment**: Configured via `app/frontend/auto-deploy.sh`
 

@@ -3,7 +3,7 @@ const crypto = require('crypto');
 
 // Initialize AWS services
 const dynamoConfig = {
-  region: process.env.AWS_REGION || 'us-east-1'
+  region: process.env.AWS_REGION || 'us-west-1'
 };
 
 // Only set endpoint for local development
@@ -14,7 +14,7 @@ if (process.env.DYNAMODB_ENDPOINT) {
 const dynamodb = new AWS.DynamoDB.DocumentClient(dynamoConfig);
 
 const lambdaConfig = {
-  region: process.env.AWS_REGION || 'us-east-1'
+  region: process.env.AWS_REGION || 'us-west-1'
 };
 
 // Only set endpoint for local development
@@ -57,6 +57,15 @@ const createStore = async (userId, storeData) => {
   const timestamp = Date.now();
   const storeId = storeData.id || `store_${crypto.randomBytes(8).toString('hex')}`;
   
+  // Validate API key for Shopify stores
+  if (storeData.type === 'shopify' && storeData.apiKey) {
+    if (storeData.apiKey === 'shpat_REPLACE_WITH_YOUR_DEV_TOKEN' || 
+        storeData.apiKey.includes('REPLACE') || 
+        storeData.apiKey.length < 20) {
+      throw new Error('Invalid API key. Please provide a valid Shopify access token.');
+    }
+  }
+  
   const item = {
     userId,
     id: storeId,
@@ -98,6 +107,7 @@ const getStores = async (userId) => {
   const tableName = `${process.env.TABLE_PREFIX || 'ordernimbus-local'}-stores`;
   const productsTable = `${process.env.TABLE_PREFIX || 'ordernimbus-local'}-products`;
   const ordersTable = `${process.env.TABLE_PREFIX || 'ordernimbus-local'}-orders`;
+  const inventoryTable = `${process.env.TABLE_PREFIX || 'ordernimbus-local'}-inventory`;
   
   console.log('Getting stores for user:', userId);
   console.log('Using table:', tableName);
@@ -146,10 +156,28 @@ const getStores = async (userId) => {
       
       store.ordersCount = ordersResult.Count || 0;
       
+      // Get inventory count for brick & mortar stores
+      if (store.type === 'brick-and-mortar') {
+        const inventoryResult = await dynamodb.scan({
+          TableName: inventoryTable,
+          FilterExpression: '#storeId = :storeId',
+          ExpressionAttributeNames: {
+            '#storeId': 'storeId'
+          },
+          ExpressionAttributeValues: {
+            ':storeId': store.id
+          },
+          Select: 'COUNT'
+        }).promise();
+        
+        store.inventoryCount = inventoryResult.Count || 0;
+      }
+      
     } catch (error) {
       console.error(`Error getting counts for store ${store.id}:`, error);
       store.productsCount = 0;
       store.ordersCount = 0;
+      store.inventoryCount = 0;
     }
   }
   

@@ -7,6 +7,7 @@ import CSVUploadModal from './CSVUploadModal';
 import ManualEntryModal from './ManualEntryModal';
 import './CSVUploadModal.css';
 import './ManualEntryModal.css';
+import { getApiUrl } from '../config/environment';
 
 interface OrderItem {
   id: string;
@@ -93,7 +94,7 @@ const OrderPage: React.FC = () => {
     try {
       const userId = localStorage.getItem('currentUserId') || 'e85183d0-3061-70b8-25f5-171fd848ac9d';
       
-      const response = await fetch('http://127.0.0.1:3001/api/stores', {
+      const response = await fetch(`${getApiUrl()}/api/stores`, {
         headers: {
           'Content-Type': 'application/json',
           'userId': userId
@@ -124,7 +125,7 @@ const OrderPage: React.FC = () => {
     try {
       const userId = localStorage.getItem('currentUserId') || 'e85183d0-3061-70b8-25f5-171fd848ac9d';
       
-      const response = await fetch(`http://127.0.0.1:3001/api/orders?storeId=${selectedStore}`, {
+      const response = await fetch(`${getApiUrl()}/api/orders?storeId=${selectedStore}`, {
         headers: {
           'Content-Type': 'application/json',
           'userId': userId
@@ -154,7 +155,7 @@ const OrderPage: React.FC = () => {
       const userId = localStorage.getItem('currentUserId') || 'e85183d0-3061-70b8-25f5-171fd848ac9d';
       
       // Load orders from all stores
-      const response = await fetch('http://127.0.0.1:3001/api/orders', {
+      const response = await fetch(`${getApiUrl()}/api/orders`, {
         headers: {
           'Content-Type': 'application/json',
           'userId': userId
@@ -299,7 +300,7 @@ const OrderPage: React.FC = () => {
       const userId = localStorage.getItem('currentUserId') || 'e85183d0-3061-70b8-25f5-171fd848ac9d';
       
       // Use the universal data upload endpoint
-      const response = await fetch('http://127.0.0.1:3001/api/data/upload-csv', {
+      const response = await fetch(`${getApiUrl()}/api/data/upload-csv`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -345,7 +346,7 @@ const OrderPage: React.FC = () => {
         currency: orderData.currency || 'USD'
       };
 
-      const response = await fetch('http://127.0.0.1:3001/api/orders', {
+      const response = await fetch(`${getApiUrl()}/api/orders`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

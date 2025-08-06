@@ -5,6 +5,7 @@ import { ClipLoader } from 'react-spinners';
 import { FiRefreshCw, FiSearch, FiFilter, FiUsers, FiPlus, FiMail, FiPhone, FiMapPin } from 'react-icons/fi';
 import ManualEntryModal from './ManualEntryModal';
 import './ManualEntryModal.css';
+import { getApiUrl } from '../config/environment';
 
 interface Customer {
   id: string;
@@ -44,7 +45,7 @@ const CustomersPage: React.FC = () => {
     try {
       const userId = localStorage.getItem('currentUserId') || 'e85183d0-3061-70b8-25f5-171fd848ac9d';
       
-      const response = await fetch('http://127.0.0.1:3001/api/customers', {
+      const response = await fetch(`${getApiUrl()}/api/customers`, {
         headers: {
           'Content-Type': 'application/json',
           'userId': userId
@@ -79,7 +80,7 @@ const CustomersPage: React.FC = () => {
     try {
       const userId = localStorage.getItem('currentUserId') || 'e85183d0-3061-70b8-25f5-171fd848ac9d';
       
-      const response = await fetch('http://127.0.0.1:3001/api/customers', {
+      const response = await fetch(`${getApiUrl()}/api/customers`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

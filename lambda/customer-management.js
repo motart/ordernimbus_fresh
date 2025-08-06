@@ -2,7 +2,7 @@ const AWS = require('aws-sdk');
 
 // Initialize AWS services
 const dynamoConfig = {
-  region: process.env.AWS_REGION || 'us-east-1'
+  region: process.env.AWS_REGION || 'us-west-1'
 };
 
 // Only set endpoint for local development

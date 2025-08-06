@@ -4,6 +4,7 @@ import {
   FiBell,
   FiHelpCircle
 } from 'react-icons/fi';
+import { getApiUrl } from '../config/environment';
 
 interface TopBarProps {
   userEmail: string;
@@ -15,6 +16,42 @@ interface TopBarProps {
 }
 
 const TopBar: React.FC<TopBarProps> = ({ userEmail, onNavigate, onLogout, activePage, pageTitle, leftContent }) => {
+  const [notificationCount, setNotificationCount] = React.useState(0);
+
+  React.useEffect(() => {
+    // Listen for notification updates
+    const handleNotificationUpdate = (event: any) => {
+      setNotificationCount(event.detail.count);
+    };
+
+    window.addEventListener('notificationUpdate', handleNotificationUpdate);
+    
+    // Load initial notification count
+    loadNotificationCount();
+
+    return () => {
+      window.removeEventListener('notificationUpdate', handleNotificationUpdate);
+    };
+  }, []);
+
+  const loadNotificationCount = async () => {
+    try {
+      const userId = localStorage.getItem('currentUserId') || 'e85183d0-3061-70b8-25f5-171fd848ac9d';
+      const response = await fetch(`${getApiUrl()}/api/notifications?unreadOnly=true`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'userId': userId
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setNotificationCount(data.unreadCount || 0);
+      }
+    } catch (error) {
+      console.error('Error loading notification count:', error);
+    }
+  };
 
   const getUserInitials = () => {
     return userEmail ? userEmail.substring(0, 2).toUpperCase() : 'UN';
@@ -46,7 +83,7 @@ const TopBar: React.FC<TopBarProps> = ({ userEmail, onNavigate, onLogout, active
             title="Notifications"
           >
             {React.createElement(FiBell as any, { size: 20 })}
-            <span className="notification-badge">3</span>
+            {notificationCount > 0 && <span className="notification-badge">{notificationCount}</span>}
           </button>
 
           {/* Help & Support */}

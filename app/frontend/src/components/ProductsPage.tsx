@@ -5,6 +5,7 @@ import { ClipLoader } from 'react-spinners';
 import { FiRefreshCw, FiSearch, FiFilter, FiPackage, FiPlus, FiTag, FiDollarSign } from 'react-icons/fi';
 import ManualEntryModal from './ManualEntryModal';
 import './ManualEntryModal.css';
+import { getApiUrl } from '../config/environment';
 
 interface Product {
   id: string;
@@ -58,7 +59,7 @@ const ProductsPage: React.FC = () => {
     try {
       const userId = localStorage.getItem('currentUserId') || 'e85183d0-3061-70b8-25f5-171fd848ac9d';
       
-      const response = await fetch('http://127.0.0.1:3001/api/stores', {
+      const response = await fetch(`${getApiUrl()}/api/stores`, {
         headers: {
           'Content-Type': 'application/json',
           'userId': userId
@@ -89,7 +90,7 @@ const ProductsPage: React.FC = () => {
     try {
       const userId = localStorage.getItem('currentUserId') || 'e85183d0-3061-70b8-25f5-171fd848ac9d';
       
-      const response = await fetch(`http://127.0.0.1:3001/api/products?storeId=${selectedStore}`, {
+      const response = await fetch(`${getApiUrl()}/api/products?storeId=${selectedStore}`, {
         headers: {
           'Content-Type': 'application/json',
           'userId': userId
@@ -124,7 +125,7 @@ const ProductsPage: React.FC = () => {
     try {
       const userId = localStorage.getItem('currentUserId') || 'e85183d0-3061-70b8-25f5-171fd848ac9d';
       
-      const response = await fetch('http://127.0.0.1:3001/api/products', {
+      const response = await fetch(`${getApiUrl()}/api/products`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -212,8 +213,8 @@ const ProductsPage: React.FC = () => {
     'Unknown Store';
 
   return (
-    <div className="products-page">
-      <header className="products-header">
+    <div className="order-page">
+      <header className="order-header">
         <div className="header-content">
           <div className="header-left">
             <h1>Product Management</h1>
@@ -223,7 +224,7 @@ const ProductsPage: React.FC = () => {
             {selectedStore && (
               <button 
                 onClick={() => setShowManualEntry(true)}
-                className="manual-entry-btn"
+                className="csv-upload-btn"
               >
                 {React.createElement(FiPlus as any)}
                 Add Product
@@ -241,7 +242,7 @@ const ProductsPage: React.FC = () => {
         </div>
       </header>
 
-      <div className="products-controls">
+      <div className="order-controls">
         <div className="controls-row">
           <div className="store-selector-container">
             <label>Store:</label>
@@ -303,7 +304,37 @@ const ProductsPage: React.FC = () => {
         </div>
       </div>
 
-      <div className="products-content">
+      {/* Summary Cards */}
+      {selectedStore && !isLoading && products.length > 0 && (
+        <div className="order-summary">
+          <div className="summary-card">
+            <div className="summary-value">{filteredProducts.length}</div>
+            <div className="summary-label">Total Products</div>
+          </div>
+          <div className="summary-card low-stock">
+            <div className="summary-value">
+              {filteredProducts.filter(p => (p.inventory_quantity || 0) < 10 && (p.inventory_quantity || 0) > 0).length}
+            </div>
+            <div className="summary-label">Low Stock</div>
+          </div>
+          <div className="summary-card out-of-stock">
+            <div className="summary-value">
+              {filteredProducts.filter(p => (p.inventory_quantity || 0) === 0).length}
+            </div>
+            <div className="summary-label">Out of Stock</div>
+          </div>
+          <div className="summary-card revenue">
+            <div className="summary-value">
+              {formatCurrency(
+                filteredProducts.reduce((sum, p) => sum + (parseFloat(p.price) || 0) * (p.inventory_quantity || 0), 0)
+              )}
+            </div>
+            <div className="summary-label">Total Value</div>
+          </div>
+        </div>
+      )}
+
+      <div className="order-content">
         {!selectedStore ? (
           <div className="empty-state">
             {React.createElement(FiPackage as any, { size: 64, color: '#9ca3af' })}
@@ -334,7 +365,7 @@ const ProductsPage: React.FC = () => {
             </button>
           </div>
         ) : (
-          <div className="products-table">
+          <div className="order-table">
             <div className="table-header">
               <div className="header-cell">Product</div>
               <div className="header-cell">Type</div>

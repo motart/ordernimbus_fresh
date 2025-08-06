@@ -22,7 +22,7 @@ MAX_WAIT_TIME=600  # 10 minutes max wait for any single operation
 RETRY_ATTEMPTS=3
 
 # AWS Regions to check (add more as needed)
-REGIONS=("us-east-1" "us-west-1" "us-west-2" "eu-west-1")
+REGIONS=("us-west-1" "us-east-1" "us-west-2" "eu-west-1")
 
 # Parse command line arguments
 ENVIRONMENT=${1:-$DEFAULT_ENV}

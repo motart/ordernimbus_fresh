@@ -5,13 +5,13 @@
   "main": "index.js",
   "scripts": {
     "deploy": "./scripts/deployment/deploy.sh",
-    "deploy:staging": "./scripts/deployment/deploy.sh staging us-east-1",
-    "deploy:production": "./scripts/deployment/deploy.sh production us-east-1",
-    "deploy:dev": "./scripts/deployment/deploy.sh dev us-east-1 true",
+    "deploy:staging": "./scripts/deployment/deploy.sh staging us-west-1",
+    "deploy:production": "./scripts/deployment/deploy.sh production us-west-1",
+    "deploy:dev": "./scripts/deployment/deploy.sh dev us-west-1 true",
     "deploy:safe": "./scripts/deployment/deploy-with-rollback.sh",
-    "deploy:safe:staging": "./scripts/deployment/deploy-with-rollback.sh staging us-east-1",
-    "deploy:safe:production": "./scripts/deployment/deploy-with-rollback.sh production us-east-1",
-    "deploy:safe:dev": "./scripts/deployment/deploy-with-rollback.sh dev us-east-1 true",
+    "deploy:safe:staging": "./scripts/deployment/deploy-with-rollback.sh staging us-west-1",
+    "deploy:safe:production": "./scripts/deployment/deploy-with-rollback.sh production us-west-1",
+    "deploy:safe:dev": "./scripts/deployment/deploy-with-rollback.sh dev us-west-1 true",
     "cdk:bootstrap": "npx cdk bootstrap",
     "cdk:deploy": "npx cdk deploy --all --require-approval never",
     "cdk:destroy": "npx cdk destroy --all --force",
@@ -24,8 +24,12 @@
     "logs:api": "aws logs tail /aws/ecs/ordernimbus-api --follow",
     "logs:ml": "aws logs tail /aws/mwaa/ordernimbus-airflow --follow",
     "rollback:verify": "./scripts/utilities/rollback-verify.sh",
-    "rollback:verify:staging": "./scripts/utilities/rollback-verify.sh staging us-east-1",
-    "rollback:verify:production": "./scripts/utilities/rollback-verify.sh production us-east-1"
+    "rollback:verify:staging": "./scripts/utilities/rollback-verify.sh staging us-west-1",
+    "rollback:verify:production": "./scripts/utilities/rollback-verify.sh production us-west-1",
+    "dev": "nodemon local-test-server.js",
+    "dev:frontend": "cd app/frontend && npm start",
+    "start:local": "./start-local-env.sh",
+    "stop:local": "./stop-local-env.sh"
   },
   "keywords": [
     "sales-forecasting",
@@ -43,6 +47,7 @@
     "body-parser": "^2.2.0",
     "cors": "^2.8.5",
     "express": "^5.1.0",
+    "nodemon": "^3.1.10",
     "source-map-support": "^0.5.21",
     "ts-node": "^10.9.0",
     "typescript": "^5.0.0"
@@ -51,7 +56,8 @@
     "aws-cdk-lib": "^2.100.0",
     "aws-sdk": "^2.1400.0",
     "axios": "^1.11.0",
-    "constructs": "^10.0.0"
+    "constructs": "^10.0.0",
+    "dotenv": "^17.2.1"
   },
   "engines": {
     "node": ">=18.0.0",

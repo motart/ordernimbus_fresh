@@ -15,7 +15,7 @@ MAGENTA='\033[0;35m'
 NC='\033[0m' # No Color
 
 # Configuration
-DEFAULT_REGION="us-east-1"
+DEFAULT_REGION="us-west-1"
 DEFAULT_ENV="staging"
 STACK_PREFIX="ordernimbus"
 PROJECT_NAME="sales-forecasting-platform"

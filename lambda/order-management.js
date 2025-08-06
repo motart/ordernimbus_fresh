@@ -2,7 +2,7 @@ const AWS = require('aws-sdk');
 
 // Initialize AWS services
 const dynamoConfig = {
-  region: process.env.AWS_REGION || 'us-east-1'
+  region: process.env.AWS_REGION || 'us-west-1'
 };
 
 // Only set endpoint for local development
@@ -157,7 +157,7 @@ const getOrdersForStore = async (userId, storeId) => {
     }
     
     // If no real orders found, generate sample orders from sales data
-    if (orders.length === 0) {
+    if (orders.length === 0 && false) { // Disabled synthetic order generation
       try {
         // Get sales data
         const salesResult = await dynamodb.scan({

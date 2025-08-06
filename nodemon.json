@@ -1,0 +1,27 @@
+{
+  "watch": [
+    "lambda/**/*.js",
+    "local-test-server.js"
+  ],
+  "ext": "js,json",
+  "ignore": [
+    "node_modules/**/*",
+    "app/frontend/**/*",
+    "build/**/*",
+    "dist/**/*",
+    "*.test.js",
+    "*.spec.js"
+  ],
+  "delay": 500,
+  "env": {
+    "NODE_ENV": "development",
+    "DYNAMODB_ENDPOINT": "http://localhost:8000",
+    "TABLE_PREFIX": "ordernimbus-local",
+    "AWS_REGION": "us-east-1",
+    "AWS_ACCESS_KEY_ID": "local",
+    "AWS_SECRET_ACCESS_KEY": "local"
+  },
+  "execMap": {
+    "js": "node"
+  }
+}

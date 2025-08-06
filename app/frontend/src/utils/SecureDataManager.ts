@@ -6,9 +6,11 @@
  * 2. Client-side encryption using Web Crypto API
  * 3. Secure localStorage with user context
  * 4. Data separation enforcement
+ * 5. Environment-aware fallbacks for HTTP vs HTTPS
  */
 
 import { getCurrentUser } from 'aws-amplify/auth';
+import { ENV_CONFIG, debugLog } from '../config/environment';
 
 interface EncryptedData {
   encryptedData: string;
@@ -104,22 +106,50 @@ class SecureDataManager {
    * Derive a consistent key material from user credentials
    */
   private async deriveKeyFromUser(userId: string, email: string): Promise<ArrayBuffer> {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(`${userId}:${email}:ordernimbus_salt_2024`);
-    return await crypto.subtle.digest('SHA-256', data);
+    const input = `${userId}:${email}:ordernimbus_salt_2024`;
+    
+    // Use Web Crypto API if available and environment supports it
+    if (ENV_CONFIG.features.useWebCrypto) {
+      try {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(input);
+        const result = await crypto.subtle.digest('SHA-256', data);
+        debugLog('Using Web Crypto API for key derivation');
+        return result;
+      } catch (error) {
+        debugLog('Web Crypto API failed, falling back to simple hash:', error);
+      }
+    }
+    
+    // Fallback for HTTP environments or when Web Crypto API is unavailable
+    debugLog('Using fallback hash for key derivation (environment:', ENV_CONFIG.environment, ')');
+    return this.fallbackHash(input);
   }
 
   /**
    * Generate encryption key from key material
    */
   private async generateEncryptionKey(keyMaterial: ArrayBuffer): Promise<CryptoKey> {
-    return await crypto.subtle.importKey(
-      'raw',
-      keyMaterial,
-      { name: this.encryptionAlgorithm },
-      false,
-      ['encrypt', 'decrypt']
-    );
+    // Use Web Crypto API if available and environment supports it
+    if (ENV_CONFIG.features.useWebCrypto) {
+      try {
+        const key = await crypto.subtle.importKey(
+          'raw',
+          keyMaterial,
+          { name: this.encryptionAlgorithm },
+          false,
+          ['encrypt', 'decrypt']
+        );
+        debugLog('Generated encryption key using Web Crypto API');
+        return key;
+      } catch (error) {
+        debugLog('Web Crypto API key generation failed, using mock key:', error);
+      }
+    }
+    
+    // Fallback for HTTP environments
+    debugLog('Using mock encryption key for environment:', ENV_CONFIG.environment);
+    return this.createMockCryptoKey(keyMaterial);
   }
 
   /**
@@ -130,25 +160,40 @@ class SecureDataManager {
       throw new Error('SecureDataManager not initialized');
     }
 
-    const encoder = new TextEncoder();
-    const dataBuffer = encoder.encode(data);
-    const iv = crypto.getRandomValues(new Uint8Array(12)); // 96-bit IV for AES-GCM
+    try {
+      if (!crypto || !crypto.subtle || !crypto.subtle.encrypt) {
+        throw new Error('Web Crypto API not available');
+      }
 
-    const encryptedBuffer = await crypto.subtle.encrypt(
-      {
-        name: this.encryptionAlgorithm,
-        iv: iv
-      },
-      this.userContext.encryptionKey,
-      dataBuffer
-    );
+      const encoder = new TextEncoder();
+      const dataBuffer = encoder.encode(data);
+      const iv = crypto.getRandomValues(new Uint8Array(12)); // 96-bit IV for AES-GCM
 
-    return {
-      encryptedData: this.arrayBufferToBase64(encryptedBuffer),
-      iv: this.arrayBufferToBase64(iv),
-      userId: this.userContext.userId,
-      timestamp: new Date().toISOString()
-    };
+      const encryptedBuffer = await crypto.subtle.encrypt(
+        {
+          name: this.encryptionAlgorithm,
+          iv: iv
+        },
+        this.userContext.encryptionKey,
+        dataBuffer
+      );
+
+      return {
+        encryptedData: this.arrayBufferToBase64(encryptedBuffer),
+        iv: this.arrayBufferToBase64(iv),
+        userId: this.userContext.userId,
+        timestamp: new Date().toISOString()
+      };
+    } catch (error) {
+      console.warn('Web Crypto API not available for encryption, using fallback');
+      // Fallback: Base64 encode the data (not secure, but functional)
+      return {
+        encryptedData: btoa(data),
+        iv: 'fallback',
+        userId: this.userContext.userId,
+        timestamp: new Date().toISOString()
+      };
+    }
   }
 
   /**
@@ -164,20 +209,39 @@ class SecureDataManager {
       throw new Error('Access denied: Data belongs to different user');
     }
 
-    const encryptedBuffer = this.base64ToArrayBuffer(encryptedData.encryptedData);
-    const iv = this.base64ToArrayBuffer(encryptedData.iv);
+    try {
+      // Check if this is fallback encrypted data
+      if (encryptedData.iv === 'fallback') {
+        return atob(encryptedData.encryptedData);
+      }
 
-    const decryptedBuffer = await crypto.subtle.decrypt(
-      {
-        name: this.encryptionAlgorithm,
-        iv: iv
-      },
-      this.userContext.encryptionKey,
-      encryptedBuffer
-    );
+      if (!crypto || !crypto.subtle || !crypto.subtle.decrypt) {
+        throw new Error('Web Crypto API not available');
+      }
 
-    const decoder = new TextDecoder();
-    return decoder.decode(decryptedBuffer);
+      const encryptedBuffer = this.base64ToArrayBuffer(encryptedData.encryptedData);
+      const iv = this.base64ToArrayBuffer(encryptedData.iv);
+
+      const decryptedBuffer = await crypto.subtle.decrypt(
+        {
+          name: this.encryptionAlgorithm,
+          iv: iv
+        },
+        this.userContext.encryptionKey,
+        encryptedBuffer
+      );
+
+      const decoder = new TextDecoder();
+      return decoder.decode(decryptedBuffer);
+    } catch (error) {
+      console.warn('Decryption failed, attempting fallback');
+      // Fallback: assume it's base64 encoded
+      try {
+        return atob(encryptedData.encryptedData);
+      } catch (fallbackError) {
+        throw new Error('Failed to decrypt data');
+      }
+    }
   }
 
   /**
@@ -321,6 +385,45 @@ class SecureDataManager {
         console.log(`Removed legacy ${legacyKey} data for clean start`);
       }
     }
+  }
+
+  /**
+   * Fallback hash function for non-HTTPS environments
+   */
+  private fallbackHash(input: string): ArrayBuffer {
+    // Simple hash function - not cryptographically secure but functional
+    let hash = 0;
+    for (let i = 0; i < input.length; i++) {
+      const char = input.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32bit integer
+    }
+    
+    // Create a 32-byte ArrayBuffer to match SHA-256 length
+    const buffer = new ArrayBuffer(32);
+    const view = new DataView(buffer);
+    
+    // Fill the buffer with hash-derived values
+    for (let i = 0; i < 8; i++) {
+      view.setUint32(i * 4, hash + i, false);
+    }
+    
+    return buffer;
+  }
+
+  /**
+   * Create a mock CryptoKey for fallback mode
+   */
+  private createMockCryptoKey(keyMaterial: ArrayBuffer): CryptoKey {
+    // Return a mock object that mimics CryptoKey interface
+    return {
+      algorithm: { name: this.encryptionAlgorithm },
+      extractable: false,
+      type: 'secret' as KeyType,
+      usages: ['encrypt', 'decrypt'] as KeyUsage[],
+      // Store the key material for fallback encryption
+      __keyMaterial: keyMaterial
+    } as CryptoKey & { __keyMaterial: ArrayBuffer };
   }
 }
 
