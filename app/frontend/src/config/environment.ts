@@ -27,10 +27,7 @@ export const detectEnvironment = (): 'development' | 'staging' | 'production' =>
     return 'development';
   }
   
-  if (hostname.includes('-staging-') || hostname.includes('staging')) {
-    return 'staging';
-  }
-  
+  // Everything else is production (app.ordernimbus.com)
   return 'production';
 };
 
@@ -54,35 +51,29 @@ export const getApiUrl = (): string => {
     case 'development':
       return 'http://127.0.0.1:3001';
     
-    case 'staging':
-      // Use deployed API Gateway for staging environment
-      return process.env.REACT_APP_STAGING_API_URL || 'https://api.ordernimbus.com/staging';
-    
     case 'production':
-      // Production uses api.ordernimbus.com domain
-      return process.env.REACT_APP_API_URL || 'https://api.ordernimbus.com/staging';
+      // Production uses the direct API Gateway URL (set during deployment)
+      return process.env.REACT_APP_API_URL || 'https://api.ordernimbus.com/production';
     
     default:
-      return 'https://api.ordernimbus.com/staging';
+      return process.env.REACT_APP_API_URL || 'https://api.ordernimbus.com/production';
   }
 };
 
 // Get Shopify redirect URI based on environment
 export const getShopifyRedirectUri = (): string => {
   const env = detectEnvironment();
+  const apiUrl = getApiUrl();
   
   switch (env) {
     case 'development':
       return 'http://localhost:3001/api/shopify/callback';
     
-    case 'staging':
-      return 'https://api.ordernimbus.com/staging/api/shopify/callback';
-    
     case 'production':
-      return 'https://api.ordernimbus.com/staging/api/shopify/callback';
+      return `${apiUrl}/api/shopify/callback`;
     
     default:
-      return 'https://api.ordernimbus.com/staging/api/shopify/callback';
+      return `${apiUrl}/api/shopify/callback`;
   }
 };
 

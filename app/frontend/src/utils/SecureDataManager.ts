@@ -77,12 +77,12 @@ class SecureDataManager {
   async initializeFallback(fallbackEmail: string = 'temp@example.com'): Promise<void> {
     try {
       // Use a consistent userId for local development
-      // Check if we have a stored userId first
+      // For development, use a fixed userId to ensure consistency
       let tempUserId = localStorage.getItem('ordernimbus_local_userId');
       
       if (!tempUserId) {
-        // Generate a new UUID-like userId and store it
-        tempUserId = `local-user-${crypto.randomUUID ? crypto.randomUUID() : Date.now()}`;
+        // For development, use the existing connected user's ID
+        tempUserId = 'e85183d0-3061-70b8-25f5-171fd848ac9d';
         localStorage.setItem('ordernimbus_local_userId', tempUserId);
       }
       

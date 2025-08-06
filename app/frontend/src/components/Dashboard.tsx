@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import './Dashboard.css';
-import { signOut } from 'aws-amplify/auth';
 import toast from 'react-hot-toast';
 import Sidebar from './Sidebar';
 import TopBar from './TopBar';
@@ -13,11 +12,7 @@ import ProductsPage from './ProductsPage';
 import CustomersPage from './CustomersPage';
 import NotificationsPage from './NotificationsPage';
 import SecureDataManager from '../utils/SecureDataManager';
-
-interface DashboardProps {
-  userEmail: string;
-  onLogout: () => void;
-}
+import { useAuth } from '../contexts/AuthContext';
 
 interface SalesData {
   date: string;
@@ -25,7 +20,8 @@ interface SalesData {
   forecast: number;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ userEmail, onLogout }) => {
+const Dashboard: React.FC = () => {
+  const { user, logout } = useAuth();
   const [selectedStore, setSelectedStore] = useState('');
   const [timeRange, setTimeRange] = useState('7days');
   const [salesData, setSalesData] = useState<SalesData[]>([]);
@@ -39,11 +35,11 @@ const Dashboard: React.FC<DashboardProps> = ({ userEmail, onLogout }) => {
       const secureDataManager = SecureDataManager.getInstance();
       secureDataManager.reset();
       
-      await signOut();
+      // Logout handled by auth service
       toast.success('Logged out successfully', {
         icon: '👋',
       });
-      onLogout();
+      logout();
     } catch (error) {
       console.error('Error signing out:', error);
       toast.error('Logout failed, but clearing local session');
@@ -52,7 +48,7 @@ const Dashboard: React.FC<DashboardProps> = ({ userEmail, onLogout }) => {
       const secureDataManager = SecureDataManager.getInstance();
       secureDataManager.reset();
       
-      onLogout(); // Still logout locally even if Cognito fails
+      logout(); // Still logout locally even if Cognito fails
     }
   };
 
@@ -62,8 +58,8 @@ const Dashboard: React.FC<DashboardProps> = ({ userEmail, onLogout }) => {
       try {
         // This would normally call an API to check if user has stores/data
         // For now, we'll check localStorage
-        const userStores = localStorage.getItem(`stores_${userEmail}`);
-        const userData = localStorage.getItem(`sales_data_${userEmail}`);
+        const userStores = localStorage.getItem(`stores_${user?.email || ''}`);
+        const userData = localStorage.getItem(`sales_data_${user?.email || ''}`);
         
         if (userStores) {
           const parsedStores = JSON.parse(userStores);
@@ -89,7 +85,7 @@ const Dashboard: React.FC<DashboardProps> = ({ userEmail, onLogout }) => {
     };
 
     checkUserData();
-  }, [timeRange, userEmail]);
+  }, [timeRange, user?.email || '']);
 
   const totalSales = salesData.reduce((sum, day) => sum + day.actual, 0);
   const avgSales = salesData.length > 0 ? totalSales / salesData.length : 0;
@@ -125,13 +121,13 @@ const Dashboard: React.FC<DashboardProps> = ({ userEmail, onLogout }) => {
   return (
     <div className="dashboard-container">
       <Sidebar 
-        userEmail={userEmail}
+        userEmail={user?.email || ''}
         onLogout={handleLogout}
         onNavigate={handleNavigate}
         activePage={activePage}
       />
       <TopBar
-        userEmail={userEmail}
+        userEmail={user?.email || ''}
         onNavigate={handleNavigate}
         onLogout={handleLogout}
         activePage={activePage}

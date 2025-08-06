@@ -179,7 +179,38 @@ const ShopifyConnect: React.FC<ShopifyConnectProps> = ({ userId, onSuccess, onCa
           toast.error('Please allow popups for this site to connect to Shopify');
           setStep('error');
           setError('Popup was blocked. Please allow popups and try again.');
+          return;
         }
+
+        // Listen for message from popup
+        const handleMessage = (event: MessageEvent) => {
+          if (event.data.type === 'shopify-connected') {
+            window.removeEventListener('message', handleMessage);
+            if (event.data.success) {
+              toast.success('Successfully connected to Shopify!');
+              setStep('success');
+              // Trigger sync
+              setTimeout(() => {
+                // You can trigger a sync here if needed
+                window.location.reload();
+              }, 2000);
+            } else {
+              toast.error('Failed to connect to Shopify');
+              setStep('error');
+              setError('Connection failed. Please try again.');
+            }
+          }
+        };
+        
+        window.addEventListener('message', handleMessage);
+        
+        // Check if popup is closed
+        const checkClosed = setInterval(() => {
+          if (popup.closed) {
+            clearInterval(checkClosed);
+            window.removeEventListener('message', handleMessage);
+          }
+        }, 1000);
       }
 
     } catch (error: any) {

@@ -14,6 +14,8 @@ import {
 import { SiShopify } from 'react-icons/si';
 import { MdStorefront } from 'react-icons/md';
 import useSecureData from '../hooks/useSecureData';
+import { useAuth } from '../contexts/AuthContext';
+import { authService } from '../services/auth';
 import ShopifyConnect from './ShopifyConnect';
 import CSVUploadModal from './CSVUploadModal';
 import './CSVUploadModal.css';
@@ -104,63 +106,49 @@ const StoresPage: React.FC = () => {
     isInitialized, 
     error: secureDataError, 
     setData, 
-    getData, 
-    userContext 
+    getData 
   } = useSecureData();
+  const { user } = useAuth();
 
   // Load stores function - moved outside useEffect to be reusable
   const loadStores = async () => {
-    if (!isInitialized || !userContext) return;
+    if (!user) return;
     
     setIsLoadingStores(true);
     try {
-      // First, try to load from API to get the latest data
-      const apiUrl = process.env.REACT_APP_API_URL || 'http://127.0.0.1:3001';
-      const response = await fetch(`${apiUrl}/api/stores?t=${Date.now()}`, {
-        headers: {
-          'userId': userContext.userId,
-          'Cache-Control': 'no-cache'
-        }
-      });
+      // Use the authenticated API request helper
+      const response = await authService.authenticatedRequest(`/api/stores?t=${Date.now()}`);
       
       if (response.ok) {
         const result = await response.json();
-        if (result.stores && result.stores.length > 0) {
+        if (result.stores && result.stores.length >= 0) {
           setStores(result.stores);
-          // Save to local storage for offline access
-          await setData('stores', result.stores);
-        } else {
-          // No stores in API, check local storage
-          const savedStores = await getData<Store[]>('stores');
-          if (savedStores && savedStores.length > 0) {
-            setStores(savedStores);
-          } else {
-            setStores([]);
+          console.log('Loaded stores from API:', result.stores.length, 'stores');
+          
+          // Save to local storage as backup
+          if (result.stores.length > 0) {
+            await setData('stores', result.stores);
           }
         }
+      } else if (response.status === 401) {
+        toast.error('Please log in again');
+        return;
       } else {
-        // API failed, fall back to local storage
-        const savedStores = await getData<Store[]>('stores');
-        if (savedStores && savedStores.length > 0) {
-          setStores(savedStores);
-        } else {
-          setStores([]);
-        }
+        throw new Error('Failed to load stores from API');
       }
     } catch (error) {
-      console.error('Failed to load stores:', error);
-      // Try local storage as fallback
+      console.error('Error loading stores:', error);
+      toast.error('Failed to load stores. Please try again.');
+      
+      // Try to load from local storage as fallback
       try {
-        const savedStores = await getData<Store[]>('stores');
-        if (savedStores && savedStores.length > 0) {
-          setStores(savedStores);
-        } else {
-          setStores([]);
+        const localStores = await getData<Store[]>('stores');
+        if (localStores && localStores.length > 0) {
+          setStores(localStores);
+          console.log('Loaded stores from local storage:', localStores.length, 'stores');
         }
       } catch (localError) {
-        console.error('Failed to load stores from local storage:', localError);
-        toast.error('Failed to load stores');
-        setStores([]);
+        console.warn('No local stores found:', localError);
       }
     } finally {
       setIsLoadingStores(false);
@@ -170,7 +158,7 @@ const StoresPage: React.FC = () => {
   // Load stores securely when initialized
   useEffect(() => {
     loadStores();
-  }, [isInitialized, getData, setData, userContext]);
+  }, [user]);
 
   // Handle secure data errors
   useEffect(() => {
@@ -226,7 +214,7 @@ const StoresPage: React.FC = () => {
       const apiUrl = process.env.REACT_APP_API_URL || 'http://127.0.0.1:3001';
       
       const storePayload = {
-        userId: userContext?.userId || 'test-user',
+        userId: user?.userId || 'test-user',
         name: formData.name,
         type: formData.type,
         address: formData.address,
@@ -250,7 +238,7 @@ const StoresPage: React.FC = () => {
         method,
         headers: {
           'Content-Type': 'application/json',
-          'userId': userContext?.userId || 'test-user'
+          'userId': user?.userId || 'test-user'
         },
         body: JSON.stringify(storePayload)
       });
@@ -299,7 +287,7 @@ const StoresPage: React.FC = () => {
       const apiUrl = process.env.REACT_APP_API_URL || 'http://127.0.0.1:3001';
       const response = await fetch(`${apiUrl}/api/stores`, {
         headers: {
-          'userId': userContext?.userId || 'test-user'
+          'userId': user?.userId || 'test-user'
         }
       });
       
@@ -336,7 +324,7 @@ const StoresPage: React.FC = () => {
       try {
         const response = await fetch(`${apiUrl}/api/stores`, {
           headers: {
-            'userId': userContext?.userId || 'test-user'
+            'userId': user?.userId || 'test-user'
           }
         });
         
@@ -405,7 +393,7 @@ const StoresPage: React.FC = () => {
       const response = await fetch(`${apiUrl}/api/stores/${storeToDelete.id}`, {
         method: 'DELETE',
         headers: {
-          'userId': userContext?.userId || 'test-user'
+          'userId': user?.userId || 'test-user'
         }
       });
 
@@ -448,7 +436,7 @@ const StoresPage: React.FC = () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'userId': userContext?.userId || 'test-user'
+          'userId': user?.userId || 'test-user'
         },
         body: JSON.stringify({
           storeId: selectedStoreForCSV.id,
@@ -509,10 +497,10 @@ const StoresPage: React.FC = () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'userId': userContext?.userId || 'test-user'
+          'userId': user?.userId || 'test-user'
         },
         body: JSON.stringify({
-          userId: userContext?.userId || 'test-user',
+          userId: user?.userId || 'test-user',
           storeId: store.id,
           shopifyDomain: store.shopifyDomain,
           apiKey: store.apiKey,
@@ -663,9 +651,9 @@ const StoresPage: React.FC = () => {
           <p style={{ color: '#667eea', fontSize: '16px' }}>
             {!isInitialized ? 'Initializing secure data...' : 'Loading your stores...'}
           </p>
-          {userContext && (
+          {user && (
             <p style={{ color: '#6b7280', fontSize: '14px' }}>
-              User: {userContext.email}
+              User: {user?.email || 'Unknown User'}
             </p>
           )}
         </div>
@@ -1189,7 +1177,7 @@ const StoresPage: React.FC = () => {
       {/* Shopify Connect Modal */}
       {showShopifyConnect && (
         <ShopifyConnect
-          userId={userContext?.userId || 'test-user'}
+          userId={user?.userId || 'test-user'}
           onSuccess={handleShopifyConnectSuccess}
           onCancel={() => setShowShopifyConnect(false)}
         />

@@ -1,149 +1,50 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import './App.css';
 import './animations.css';
-import LoginPage from './components/LoginPage';
-import SignupPage from './components/SignupPage';
-import ForgotPassword from './components/ForgotPassword';
 import Dashboard from './components/Dashboard';
-import { Amplify } from 'aws-amplify';
-import { awsConfig } from './aws-config';
-import { getCurrentUser } from 'aws-amplify/auth';
+import AuthPage from './components/AuthPage';
 import { Toaster } from 'react-hot-toast';
-import { ClipLoader } from 'react-spinners';
-import { clearAllAppData, hasLegacyData } from './utils/clearAppData';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
 
-type PageType = 'login' | 'signup' | 'forgot' | 'dashboard';
-
-function App() {
-  const [currentPage, setCurrentPage] = useState<PageType>('login');
-  const [userEmail, setUserEmail] = useState('');
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    Amplify.configure(awsConfig);
-    
-    // Clear all legacy demo data on app load
-    if (hasLegacyData()) {
-      clearAllAppData();
-      console.log('Cleared legacy demo data for fresh start');
-    }
-    
-    checkCurrentUser();
-  }, []);
-
-  const checkCurrentUser = async () => {
-    try {
-      const user = await getCurrentUser();
-      if (user && user.signInDetails?.loginId) {
-        setUserEmail(user.signInDetails.loginId);
-        setCurrentPage('dashboard');
-      }
-    } catch (error) {
-      // No user is signed in, stay on login page
-      console.log('No authenticated user');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleLogin = (email: string) => {
-    setUserEmail(email);
-    setCurrentPage('dashboard');
-  };
-
-  const handleSignup = (email: string) => {
-    setUserEmail(email);
-    setCurrentPage('dashboard');
-  };
-
-  const handleLogout = () => {
-    setUserEmail('');
-    setCurrentPage('login');
-  };
-
-  const renderPage = () => {
-    switch (currentPage) {
-      case 'login':
-        return (
-          <LoginPage 
-            onLogin={handleLogin}
-            onSignupClick={() => setCurrentPage('signup')}
-            onForgotClick={() => setCurrentPage('forgot')}
-          />
-        );
-      case 'signup':
-        return (
-          <SignupPage 
-            onSignup={handleSignup}
-            onBackToLogin={() => setCurrentPage('login')}
-          />
-        );
-      case 'forgot':
-        return (
-          <ForgotPassword 
-            onBackToLogin={() => setCurrentPage('login')}
-          />
-        );
-      case 'dashboard':
-        return (
-          <Dashboard 
-            userEmail={userEmail} 
-            onLogout={handleLogout}
-          />
-        );
-      default:
-        return null;
-    }
-  };
+// App content that uses auth context
+const AppContent: React.FC = () => {
+  const { isAuthenticated, isLoading } = useAuth();
 
   if (isLoading) {
     return (
-      <div className="App">
-        <div style={{
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          height: '100vh',
-          flexDirection: 'column',
-          gap: '20px'
-        }}>
-          <ClipLoader size={50} color="#667eea" />
-          <p style={{ color: '#667eea', fontSize: '16px' }}>Loading...</p>
+      <div className="loading-container">
+        <div className="loading-spinner">
+          <div className="spinner"></div>
+          <p>Loading OrderNimbus...</p>
         </div>
       </div>
     );
   }
 
+  if (!isAuthenticated) {
+    return <AuthPage />;
+  }
+
+  return <Dashboard />;
+};
+
+function App() {
   return (
-    <div className="App">
-      <Toaster 
-        position="bottom-left"
-        toastOptions={{
-          duration: 4000,
-          style: {
-            background: 'rgba(51, 51, 51, 0.85)',
-            color: '#fff',
-            borderRadius: '8px',
-            padding: '12px 16px',
-            backdropFilter: 'blur(8px)',
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
-          },
-          success: {
-            iconTheme: {
-              primary: '#10b981',
-              secondary: '#fff',
+    <AuthProvider>
+      <div className="App">
+        <Toaster 
+          position="top-right"
+          toastOptions={{
+            duration: 4000,
+            style: {
+              background: '#363636',
+              color: '#fff',
             },
-          },
-          error: {
-            iconTheme: {
-              primary: '#ef4444',
-              secondary: '#fff',
-            },
-          },
-        }}
-      />
-      {renderPage()}
-    </div>
+          }}
+        />
+        <AppContent />
+      </div>
+    </AuthProvider>
   );
 }
 
