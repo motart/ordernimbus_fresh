@@ -1,4 +1,6 @@
-import React, { useState, useEffect } from 'react';
+// Fix for ShopifyConnect component - simplified OAuth flow only
+
+const fixedShopifyConnectCode = `import React, { useState, useEffect } from 'react';
 import { SiShopify } from 'react-icons/si';
 import { FiCheck, FiLoader, FiAlertCircle } from 'react-icons/fi';
 import toast from 'react-hot-toast';
@@ -51,7 +53,7 @@ const ShopifyConnect: React.FC<ShopifyConnectProps> = ({ userId, onSuccess, onCa
 
     // Clean up domain
     let cleanDomain = storeDomain.trim().toLowerCase();
-    cleanDomain = cleanDomain.replace(/^https?:\/\//, '').replace(/\/$/, '');
+    cleanDomain = cleanDomain.replace(/^https?:\\/\\//, '').replace(/\\/$/, '');
     
     // Add .myshopify.com if not present
     if (!cleanDomain.includes('.myshopify.com')) {
@@ -67,7 +69,7 @@ const ShopifyConnect: React.FC<ShopifyConnectProps> = ({ userId, onSuccess, onCa
       console.log('Connecting to:', cleanDomain, 'via API:', apiUrl);
       
       // Always use OAuth mode (no dev/custom app logic)
-      const response = await fetch(`${apiUrl}/api/shopify/connect`, {
+      const response = await fetch(\`\${apiUrl}/api/shopify/connect\`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -95,7 +97,7 @@ const ShopifyConnect: React.FC<ShopifyConnectProps> = ({ userId, onSuccess, onCa
       const popup = window.open(
         authUrl,
         'shopify-oauth',
-        `width=${width},height=${height},left=${left},top=${top},toolbar=no,menubar=no,scrollbars=yes,resizable=yes`
+        \`width=\${width},height=\${height},left=\${left},top=\${top},toolbar=no,menubar=no,scrollbars=yes,resizable=yes\`
       );
 
       // Check if popup was blocked
@@ -257,4 +259,6 @@ const ShopifyConnect: React.FC<ShopifyConnectProps> = ({ userId, onSuccess, onCa
   );
 };
 
-export default ShopifyConnect;
+export default ShopifyConnect;`;
+
+console.log("Fixed ShopifyConnect component ready to deploy!");

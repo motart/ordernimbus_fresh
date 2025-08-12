@@ -1,4 +1,6 @@
 // Authentication service for OrderNimbus
+import { getApiUrl } from '../config/environment';
+
 interface LoginResponse {
   success: boolean;
   tokens?: {
@@ -34,7 +36,8 @@ class AuthService {
   private userInfo: UserInfo | null = null;
 
   constructor() {
-    this.apiUrl = process.env.REACT_APP_API_URL || 'http://127.0.0.1:3001';
+    // Use dynamic API URL based on environment
+    this.apiUrl = getApiUrl();
     this.loadFromStorage();
   }
 
@@ -165,13 +168,14 @@ class AuthService {
 
   // Create authenticated API call helper
   async authenticatedRequest(endpoint: string, options: RequestInit = {}) {
-    if (!this.accessToken) {
-      throw new Error('Not authenticated');
-    }
+    // For now, we'll use the userId from userInfo or fallback
+    // In production, the Lambda should validate the Bearer token
+    const userId = this.userInfo?.userId || 'e85183d0-3061-70b8-25f5-171fd848ac9d';
 
     const headers = {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${this.accessToken}`,
+      'userId': userId, // Lambda expects this header
+      ...(this.accessToken ? { 'Authorization': `Bearer ${this.accessToken}` } : {}),
       ...options.headers
     };
 

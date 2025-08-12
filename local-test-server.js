@@ -12,6 +12,7 @@ const inventoryHandler = require('./lambda/inventory-management');
 const customerHandler = require('./lambda/customer-management');
 const dataUploadHandler = require('./lambda/data-upload-handler');
 const notificationHandler = require('./lambda/notification-handler');
+const authHandler = require('./lambda/local-auth-handler');
 
 const app = express();
 app.use(cors());
@@ -36,6 +37,12 @@ const expressToLambda = (handler) => async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
+// Auth routes
+app.post('/api/auth/login', expressToLambda(authHandler));
+app.post('/api/auth/register', expressToLambda(authHandler));
+app.post('/api/auth/forgot-password', expressToLambda(authHandler));
+app.post('/api/auth/refresh', expressToLambda(authHandler));
 
 // Store routes
 app.get('/api/stores', expressToLambda(storeHandler));

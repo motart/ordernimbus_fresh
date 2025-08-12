@@ -44,13 +44,20 @@ class SecureDataManager {
    */
   async initialize(): Promise<void> {
     try {
-      // Add timeout to prevent hanging
-      const userPromise = getCurrentUser();
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Authentication timeout')), 5000)
-      );
-      
-      const user = await Promise.race([userPromise, timeoutPromise]) as any;
+      // Check if Amplify is configured
+      let user;
+      try {
+        // Add timeout to prevent hanging
+        const userPromise = getCurrentUser();
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Authentication timeout')), 5000)
+        );
+        
+        user = await Promise.race([userPromise, timeoutPromise]) as any;
+      } catch (amplifyError) {
+        // If Amplify is not configured, throw error to trigger fallback
+        throw new Error('Amplify not configured or authentication failed');
+      }
       
       if (!user || !user.userId) {
         throw new Error('No authenticated user found');

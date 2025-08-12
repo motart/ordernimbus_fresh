@@ -1,10 +1,14 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import './App.css';
 import './animations.css';
 import Dashboard from './components/Dashboard';
 import AuthPage from './components/AuthPage';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { configureAmplify } from './config/amplify-config';
+
+// Configure Amplify on app initialization
+const amplifyConfigured = configureAmplify();
 
 // App content that uses auth context
 const AppContent: React.FC = () => {

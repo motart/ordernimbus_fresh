@@ -122,11 +122,11 @@ Resources:
         - AttributeName: sk
           KeyType: RANGE
 
-  # ==================== S3 BUCKET (No CloudFront) ====================
+  # ==================== S3 BUCKET ====================
   FrontendBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: app.ordernimbus.com
+      BucketName: !Sub 'ordernimbus-production-frontend-${AWS::AccountId}'
       WebsiteConfiguration:
         IndexDocument: index.html
         ErrorDocument: index.html
@@ -155,16 +155,9 @@ Resources:
             Resource: !Sub '${FrontendBucket.Arn}/*'
 
   # ==================== ROUTE 53 DNS (OPTIONAL) ====================
-  DNSRecord:
-    Type: AWS::Route53::RecordSet
-    Properties:
-      HostedZoneId: !Ref HostedZoneId
-      Name: app.ordernimbus.com
-      Type: CNAME
-      TTL: 300
-      ResourceRecords:
-        - !Sub 's3-website-${AWS::Region}.amazonaws.com'
-
+  # Note: app.ordernimbus.com DNS is managed by CloudFront separately
+  # Only managing api.ordernimbus.com here
+  
   APIDNSRecord:
     Type: AWS::Route53::RecordSet
     Properties:
@@ -173,14 +166,16 @@ Resources:
       Type: CNAME
       TTL: 300
       ResourceRecords:
-        - !Sub '${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com'
+        - !Sub 
+          - '${ApiId}.execute-api.${AWS::Region}.amazonaws.com'
+          - ApiId: !Ref ApiGateway
 
   # ==================== SINGLE LAMBDA FUNCTION ====================
   MainLambda:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: 'ordernimbus-production-main'
-      Runtime: nodejs16.x
+      Runtime: nodejs16.x  # Use Node 16 which includes aws-sdk v2
       Handler: index.handler
       Role: !GetAtt LambdaExecutionRole.Arn
       Timeout: 30
@@ -188,7 +183,6 @@ Resources:
         Variables:
           TABLE_NAME: !Ref MainTable
           ENVIRONMENT: production
-          ALLOWED_ORIGINS: 'http://app.ordernimbus.com,https://app.ordernimbus.com'
           USER_POOL_ID: !Ref UserPool
           USER_POOL_CLIENT_ID: !Ref UserPoolClient
       Code:
@@ -225,22 +219,39 @@ Resources:
           exports.handler = async (event) => {
             console.log('Event:', JSON.stringify(event));
             
-            // Get allowed origins from environment
-            const allowedOrigins = (process.env.ALLOWED_ORIGINS || '*').split(',');
-            const origin = event.headers?.origin || event.headers?.Origin || '*';
-            const allowOrigin = allowedOrigins.includes('*') ? '*' : 
-                               (allowedOrigins.includes(origin) ? origin : allowedOrigins[0]);
+            // Get origin from request headers
+            const origin = event.headers?.origin || event.headers?.Origin || 'http://app.ordernimbus.com';
+            
+            // List of allowed origins
+            const allowedOrigins = [
+              'http://app.ordernimbus.com',
+              'https://app.ordernimbus.com',
+              'http://localhost:3000',
+              'http://127.0.0.1:3000',
+              'http://app.ordernimbus.com.s3-website-us-west-1.amazonaws.com',
+              'http://app.ordernimbus.com.s3-website-us-east-1.amazonaws.com'
+            ];
+            
+            // Check if origin is allowed
+            const allowOrigin = allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
             
             const corsHeaders = {
               'Access-Control-Allow-Origin': allowOrigin,
-              'Access-Control-Allow-Headers': '*',
-              'Access-Control-Allow-Methods': '*',
+              'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,userId',
+              'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS,HEAD,PATCH',
+              'Access-Control-Allow-Credentials': 'true',
+              'Access-Control-Max-Age': '86400',
               'Content-Type': 'application/json'
             };
             
-            // Handle OPTIONS for CORS
+            // Handle OPTIONS for CORS preflight
             if (event.requestContext?.http?.method === 'OPTIONS' || event.httpMethod === 'OPTIONS') {
-              return { statusCode: 200, headers: corsHeaders, body: '' };
+              console.log('Handling OPTIONS request for CORS');
+              return { 
+                statusCode: 200, 
+                headers: corsHeaders, 
+                body: JSON.stringify({ message: 'CORS preflight successful' }) 
+              };
             }
             
             // Extract path and method
@@ -550,10 +561,182 @@ Resources:
                   break;
                   
                 case 'auth':
-                  responseData = {
-                    message: 'Authentication endpoint',
-                    status: 'active'
-                  };
+                  // Handle authentication endpoints
+                  const authPath = pathParts[2]; // e.g., login, register
+                  const body = JSON.parse(event.body || '{}');
+                  const cognito = new AWS.CognitoIdentityServiceProvider();
+                  
+                  if (authPath === 'login' && method === 'POST') {
+                    try {
+                      const { email, password } = body;
+                      
+                      if (!email || !password) {
+                        return {
+                          statusCode: 400,
+                          headers: corsHeaders,
+                          body: JSON.stringify({ success: false, error: 'Email and password required' })
+                        };
+                      }
+                      
+                      // Authenticate with Cognito
+                      const authResult = await cognito.adminInitiateAuth({
+                        UserPoolId: process.env.USER_POOL_ID,
+                        ClientId: process.env.USER_POOL_CLIENT_ID,
+                        AuthFlow: 'ADMIN_USER_PASSWORD_AUTH',
+                        AuthParameters: {
+                          USERNAME: email,
+                          PASSWORD: password
+                        }
+                      }).promise();
+                      
+                      responseData = {
+                        success: true,
+                        tokens: {
+                          AccessToken: authResult.AuthenticationResult.AccessToken,
+                          RefreshToken: authResult.AuthenticationResult.RefreshToken,
+                          IdToken: authResult.AuthenticationResult.IdToken,
+                          ExpiresIn: authResult.AuthenticationResult.ExpiresIn,
+                          TokenType: authResult.AuthenticationResult.TokenType
+                        }
+                      };
+                    } catch (error) {
+                      console.error('Login error:', error);
+                      return {
+                        statusCode: 401,
+                        headers: corsHeaders,
+                        body: JSON.stringify({ 
+                          success: false, 
+                          error: error.code === 'NotAuthorizedException' ? 'Invalid credentials' : 'Login failed'
+                        })
+                      };
+                    }
+                  } else if (authPath === 'register' && method === 'POST') {
+                    try {
+                      const { email, password, companyName, firstName, lastName } = body;
+                      
+                      if (!email || !password || !companyName) {
+                        return {
+                          statusCode: 400,
+                          headers: corsHeaders,
+                          body: JSON.stringify({ 
+                            success: false, 
+                            error: 'Email, password and company name required' 
+                          })
+                        };
+                      }
+                      
+                      // Generate unique company ID
+                      const companyId = 'company-' + Date.now() + '-' + Math.random().toString(36).substring(7);
+                      
+                      // Create user in Cognito
+                      const createUserResult = await cognito.adminCreateUser({
+                        UserPoolId: process.env.USER_POOL_ID,
+                        Username: email,
+                        UserAttributes: [
+                          { Name: 'email', Value: email },
+                          { Name: 'email_verified', Value: 'true' },
+                          { Name: 'custom:company_id', Value: companyId },
+                          { Name: 'custom:company_name', Value: companyName },
+                          { Name: 'custom:role', Value: 'admin' }
+                        ],
+                        TemporaryPassword: password,
+                        MessageAction: 'SUPPRESS'
+                      }).promise();
+                      
+                      // Set permanent password
+                      await cognito.adminSetUserPassword({
+                        UserPoolId: process.env.USER_POOL_ID,
+                        Username: email,
+                        Password: password,
+                        Permanent: true
+                      }).promise();
+                      
+                      // Store company info in DynamoDB
+                      await dynamodb.put({
+                        TableName: process.env.TABLE_NAME,
+                        Item: {
+                          pk: `company_${companyId}`,
+                          sk: 'metadata',
+                          companyName: companyName,
+                          adminEmail: email,
+                          createdAt: new Date().toISOString()
+                        }
+                      }).promise();
+                      
+                      responseData = {
+                        success: true,
+                        message: 'Registration successful',
+                        userId: createUserResult.User.Username,
+                        companyId: companyId,
+                        companyName: companyName
+                      };
+                    } catch (error) {
+                      console.error('Registration error:', error);
+                      return {
+                        statusCode: 400,
+                        headers: corsHeaders,
+                        body: JSON.stringify({ 
+                          success: false, 
+                          error: error.code === 'UsernameExistsException' ? 'User already exists' : 'Registration failed'
+                        })
+                      };
+                    }
+                  } else if (authPath === 'forgot-password' && method === 'POST') {
+                    try {
+                      const { email } = body;
+                      
+                      await cognito.forgotPassword({
+                        ClientId: process.env.USER_POOL_CLIENT_ID,
+                        Username: email
+                      }).promise();
+                      
+                      responseData = {
+                        success: true,
+                        message: 'Password reset email sent'
+                      };
+                    } catch (error) {
+                      console.error('Forgot password error:', error);
+                      responseData = {
+                        success: true, // Always return success to avoid user enumeration
+                        message: 'If the email exists, a password reset link has been sent'
+                      };
+                    }
+                  } else if (authPath === 'refresh' && method === 'POST') {
+                    try {
+                      const { refreshToken } = body;
+                      
+                      const authResult = await cognito.adminInitiateAuth({
+                        UserPoolId: process.env.USER_POOL_ID,
+                        ClientId: process.env.USER_POOL_CLIENT_ID,
+                        AuthFlow: 'REFRESH_TOKEN_AUTH',
+                        AuthParameters: {
+                          REFRESH_TOKEN: refreshToken
+                        }
+                      }).promise();
+                      
+                      responseData = {
+                        success: true,
+                        tokens: {
+                          AccessToken: authResult.AuthenticationResult.AccessToken,
+                          IdToken: authResult.AuthenticationResult.IdToken,
+                          ExpiresIn: authResult.AuthenticationResult.ExpiresIn,
+                          TokenType: authResult.AuthenticationResult.TokenType
+                        }
+                      };
+                    } catch (error) {
+                      console.error('Refresh token error:', error);
+                      return {
+                        statusCode: 401,
+                        headers: corsHeaders,
+                        body: JSON.stringify({ success: false, error: 'Invalid refresh token' })
+                      };
+                    }
+                  } else {
+                    responseData = {
+                      message: 'Authentication endpoint',
+                      availableEndpoints: ['/api/auth/login', '/api/auth/register', '/api/auth/forgot-password', '/api/auth/refresh']
+                    };
+                  }
                   break;
                   
                 default:
@@ -589,9 +772,25 @@ Resources:
       Name: 'ordernimbus-production-api'
       ProtocolType: HTTP
       CorsConfiguration:
-        AllowOrigins: ['http://app.ordernimbus.com', 'https://app.ordernimbus.com']
-        AllowHeaders: ['*']
-        AllowMethods: ['*']
+        AllowOrigins: 
+          - 'http://app.ordernimbus.com'
+          - 'https://app.ordernimbus.com'
+          - 'http://localhost:3000'
+          - 'http://127.0.0.1:3000'
+          - !Sub 'http://${FrontendBucket}.s3-website-${AWS::Region}.amazonaws.com'
+        AllowHeaders: 
+          - '*'
+        AllowMethods: 
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+          - HEAD
+          - PATCH
+        AllowCredentials: true
+        ExposeHeaders:
+          - '*'
         MaxAge: 86400
 
   ApiStage:
@@ -678,6 +877,13 @@ Resources:
       RouteKey: 'ANY /api/shopify/{proxy+}'
       Target: !Sub 'integrations/${LambdaIntegration}'
 
+  ApiAuthRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: 'ANY /api/auth/{proxy+}'
+      Target: !Sub 'integrations/${LambdaIntegration}'
+
 Outputs:
   FrontendURL:
     Description: Frontend URL
@@ -702,6 +908,18 @@ Outputs:
     Value: !Ref FrontendBucket
     Export:
       Name: !Sub '${AWS::StackName}-S3BucketName'
+
+  UserPoolId:
+    Description: Cognito User Pool ID
+    Value: !Ref UserPool
+    Export:
+      Name: !Sub '${AWS::StackName}-UserPoolId'
+
+  UserPoolClientId:
+    Description: Cognito User Pool Client ID
+    Value: !Ref UserPoolClient
+    Export:
+      Name: !Sub '${AWS::StackName}-UserPoolClientId'
 
   S3WebsiteURL:
     Description: S3 Website URL

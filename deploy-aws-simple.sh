@@ -1,13 +1,17 @@
 #!/bin/bash
 
 ################################################################################
-# OrderNimbus Production Deployment Script (3-5 minutes)
+# OrderNimbus AWS Production Deployment Script (3-5 minutes)
 # Deploys directly to production on app.ordernimbus.com
 # Includes complete Shopify integration with full data population
-# Last Updated: Full Shopify data sync - products, orders, customers, inventory
+# Last Updated: Configurable URL system with environment separation
 ################################################################################
 
 set -e
+
+# Load AWS configuration
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/scripts/config-helper.sh" aws
 
 # Colors
 RED='\033[0;31m'
@@ -16,9 +20,11 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-# Configuration
-REGION=${1:-us-west-1}
-STACK_NAME="ordernimbus-production"
+# Override with command line args if provided
+if [ -n "$1" ]; then
+    export AWS_REGION=$1
+fi
+STACK_NAME="$STACK_PREFIX"
 TEMPLATE_FILE="cloudformation-simple.yaml"
 HOSTED_ZONE_ID="Z03623712FIVU7Z4CJ949"
 
@@ -63,11 +69,11 @@ aws secretsmanager create-secret \
     --name "ordernimbus/production/shopify" \
     --description "Shopify OAuth credentials" \
     --secret-string "{\"SHOPIFY_CLIENT_ID\":\"$SHOPIFY_CLIENT_ID\",\"SHOPIFY_CLIENT_SECRET\":\"$SHOPIFY_CLIENT_SECRET\"}" \
-    --region "$REGION" >/dev/null 2>&1 || \
+    --region "$AWS_REGION" >/dev/null 2>&1 || \
 aws secretsmanager update-secret \
     --secret-id "ordernimbus/production/shopify" \
     --secret-string "{\"SHOPIFY_CLIENT_ID\":\"$SHOPIFY_CLIENT_ID\",\"SHOPIFY_CLIENT_SECRET\":\"$SHOPIFY_CLIENT_SECRET\"}" \
-    --region "$REGION" >/dev/null 2>&1
+    --region "$AWS_REGION" >/dev/null 2>&1
 print_success "Shopify credentials configured"
 
 # Deploy CloudFormation stack
@@ -78,16 +84,32 @@ aws cloudformation deploy \
     --parameter-overrides \
         HostedZoneId="$HOSTED_ZONE_ID" \
     --capabilities CAPABILITY_IAM \
-    --region "$REGION" \
+    --region "$AWS_REGION" \
     --no-fail-on-empty-changeset
 
-# Get stack outputs
+# Get stack outputs - DISCOVER the actual API URL from CloudFormation!
 print_status "Getting stack outputs..."
-API_URL=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$REGION" --query 'Stacks[0].Outputs[?OutputKey==`ApiEndpoint`].OutputValue' --output text)
-FRONTEND_URL=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$REGION" --query 'Stacks[0].Outputs[?OutputKey==`FrontendURL`].OutputValue' --output text)
-S3_BUCKET=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$REGION" --query 'Stacks[0].Outputs[?OutputKey==`S3BucketName`].OutputValue' --output text)
-USER_POOL_ID=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$REGION" --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' --output text)
-USER_POOL_CLIENT_ID=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$REGION" --query 'Stacks[0].Outputs[?OutputKey==`UserPoolClientId`].OutputValue' --output text)
+# IMPORTANT: Get the ACTUAL API URL that was just created, not from config
+API_URL=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$AWS_REGION" --query 'Stacks[0].Outputs[?OutputKey==`ApiEndpoint`].OutputValue' --output text 2>/dev/null)
+
+# If no API URL from CloudFormation, try to find it from API Gateway directly
+if [ -z "$API_URL" ] || [ "$API_URL" = "None" ]; then
+    print_status "Looking for API Gateway endpoint..."
+    API_ENDPOINT=$(aws apigatewayv2 get-apis --region "$AWS_REGION" --query "Items[?contains(Name, 'ordernimbus-production')].ApiEndpoint" --output text | head -1)
+    if [ -n "$API_ENDPOINT" ]; then
+        API_URL="${API_ENDPOINT}/production"
+        print_success "Found API Gateway: $API_URL"
+    else
+        print_error "Could not find API Gateway endpoint!"
+        exit 1
+    fi
+fi
+
+# Get other outputs
+FRONTEND_URL=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$AWS_REGION" --query 'Stacks[0].Outputs[?OutputKey==`FrontendURL`].OutputValue' --output text 2>/dev/null || echo "$APP_URL")
+S3_BUCKET=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$AWS_REGION" --query 'Stacks[0].Outputs[?OutputKey==`S3BucketName`].OutputValue' --output text 2>/dev/null || echo "$S3_BUCKET")
+USER_POOL_ID=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$AWS_REGION" --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' --output text 2>/dev/null || echo "")
+USER_POOL_CLIENT_ID=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$AWS_REGION" --query 'Stacks[0].Outputs[?OutputKey==`UserPoolClientId`].OutputValue' --output text 2>/dev/null || echo "")
 
 # Create DNS record for api.ordernimbus.com if it doesn't exist
 if [ -n "$API_URL" ]; then
@@ -120,8 +142,26 @@ if [ -n "$API_URL" ]; then
     fi
 fi
 
+# IMPORTANT: Update config.json with the discovered API URL for future reference
+print_status "Updating configuration with discovered API URL..."
+if [ -n "$API_URL" ]; then
+    # Use Python to update the config file cleanly
+    python3 -c "
+import json
+config_file = '$SCRIPT_DIR/config.json'
+with open(config_file, 'r') as f:
+    config = json.load(f)
+config['environments']['aws']['API_URL'] = '$API_URL'
+config['environments']['aws']['SHOPIFY_REDIRECT_URI'] = '$API_URL/api/shopify/callback'
+with open(config_file, 'w') as f:
+    json.dump(config, f, indent=2)
+print('Config updated with API URL: $API_URL')
+" 2>/dev/null || print_warning "Could not update config.json"
+fi
+
 # Build frontend with production API URL
-print_status "Building frontend..."
+print_status "Building frontend with discovered API URL..."
+print_status "API URL: $API_URL"
 
 # Save current directory
 ORIGINAL_DIR=$(pwd)
@@ -140,39 +180,51 @@ else
 fi
 
 npm install --silent 2>/dev/null || npm install
-# Use the actual API Gateway URL from CloudFormation output
-# This ensures the frontend always points to the correct API endpoint
+# Use the DISCOVERED API URL from CloudFormation, not from old config
+# This ensures the frontend always uses the ACTUAL deployed endpoint
 REACT_APP_API_URL="$API_URL" \
 REACT_APP_ENVIRONMENT="production" \
-REACT_APP_REGION="$REGION" \
+REACT_APP_REGION="$AWS_REGION" \
 REACT_APP_USER_POOL_ID="$USER_POOL_ID" \
 REACT_APP_CLIENT_ID="$USER_POOL_CLIENT_ID" \
 npm run build
 
 # Deploy frontend
 print_status "Deploying frontend to S3..."
-aws s3 sync build/ "s3://$S3_BUCKET/" --delete --region "$REGION"
+aws s3 sync build/ "s3://$S3_BUCKET/" --delete --region "$AWS_REGION"
 
 # Verify deployment
-FILE_COUNT=$(aws s3 ls "s3://$S3_BUCKET/" --recursive --region "$REGION" 2>/dev/null | wc -l | tr -d ' ')
+FILE_COUNT=$(aws s3 ls "s3://$S3_BUCKET/" --recursive --region "$AWS_REGION" 2>/dev/null | wc -l | tr -d ' ')
 if [ "$FILE_COUNT" -gt 0 ]; then
     print_success "Frontend deployed successfully ($FILE_COUNT files)"
 else
     print_warning "Frontend deployment may have failed - no files in S3"
 fi
 
-# Invalidate CloudFront cache if distribution exists
-CLOUDFRONT_ID=$(aws cloudfront list-distributions \
-    --query "DistributionList.Items[?contains(Aliases.Items, 'app.ordernimbus.com')].Id" \
-    --output text 2>/dev/null || echo "")
-
-if [ -n "$CLOUDFRONT_ID" ]; then
+# Invalidate CloudFront cache if distribution exists and enabled
+if [ "$CLOUDFRONT_ENABLED" = "true" ] && [ -n "$CLOUDFRONT_DISTRIBUTION_ID" ]; then
     print_status "Invalidating CloudFront cache..."
     aws cloudfront create-invalidation \
-        --distribution-id "$CLOUDFRONT_ID" \
+        --distribution-id "$CLOUDFRONT_DISTRIBUTION_ID" \
         --paths "/*" \
+        --region "$AWS_REGION" \
         --output text >/dev/null 2>&1
     print_success "CloudFront cache invalidated"
+elif [ "$CLOUDFRONT_ENABLED" = "true" ]; then
+    # Try to find CloudFront distribution if ID not configured
+    CLOUDFRONT_ID=$(aws cloudfront list-distributions \
+        --query "DistributionList.Items[?contains(Aliases.Items, 'app.ordernimbus.com')].Id" \
+        --output text 2>/dev/null || echo "")
+    
+    if [ -n "$CLOUDFRONT_ID" ]; then
+        print_status "Invalidating CloudFront cache..."
+        aws cloudfront create-invalidation \
+            --distribution-id "$CLOUDFRONT_ID" \
+            --paths "/*" \
+            --region "$AWS_REGION" \
+            --output text >/dev/null 2>&1
+        print_success "CloudFront cache invalidated"
+    fi
 fi
 
 # Return to original directory
@@ -1035,17 +1087,17 @@ zip -qr lambda-package.zip .
 
 # Update Lambda function
 aws lambda update-function-code \
-    --function-name "ordernimbus-production-main" \
+    --function-name "$TABLE_NAME" \
     --zip-file fileb://lambda-package.zip \
-    --region "$REGION" \
+    --region "$AWS_REGION" \
     --output text >/dev/null
 
 # Update Lambda environment variables to include API_GATEWAY_URL
 aws lambda update-function-configuration \
-    --function-name "ordernimbus-production-main" \
-    --region "$REGION" \
+    --function-name "$TABLE_NAME" \
+    --region "$AWS_REGION" \
     --environment "Variables={
-        TABLE_NAME=ordernimbus-production-main,
+        TABLE_NAME=$TABLE_NAME,
         ENVIRONMENT=production,
         USER_POOL_ID=$USER_POOL_ID,
         USER_POOL_CLIENT_ID=$USER_POOL_CLIENT_ID,
@@ -1055,8 +1107,8 @@ aws lambda update-function-configuration \
 
 # Update IAM permissions for Secrets Manager
 LAMBDA_ROLE=$(aws lambda get-function-configuration \
-    --function-name "ordernimbus-production-main" \
-    --region "$REGION" \
+    --function-name "$TABLE_NAME" \
+    --region "$AWS_REGION" \
     --query 'Role' \
     --output text)
 
@@ -1169,7 +1221,7 @@ echo "  • Client ID: $SHOPIFY_CLIENT_ID"
 echo "  • Credentials stored in AWS Secrets Manager"
 echo ""
 echo -e "${BLUE}📝 Next Steps:${NC}"
-echo "  1. Visit http://app.ordernimbus.com"
+echo "  1. Visit $APP_URL"
 echo "  2. Register new account with company name"
 echo "  3. Login and navigate to Stores"
 echo "  4. Click 'Connect Shopify' to add your store"

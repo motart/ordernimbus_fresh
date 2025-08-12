@@ -15,7 +15,19 @@ export interface EnvironmentConfig {
 
 // Environment detection
 export const detectEnvironment = (): 'development' | 'staging' | 'production' => {
-  // Check NODE_ENV first
+  // Check explicit environment variable first
+  const envVar = process.env.REACT_APP_ENVIRONMENT;
+  if (envVar === 'local' || envVar === 'development') {
+    return 'development';
+  }
+  if (envVar === 'staging') {
+    return 'staging';
+  }
+  if (envVar === 'production') {
+    return 'production';
+  }
+  
+  // Check NODE_ENV
   if (process.env.NODE_ENV === 'development') {
     return 'development';
   }
@@ -25,6 +37,10 @@ export const detectEnvironment = (): 'development' | 'staging' | 'production' =>
   
   if (hostname === 'localhost' || hostname === '127.0.0.1') {
     return 'development';
+  }
+  
+  if (hostname.includes('staging')) {
+    return 'staging';
   }
   
   // Everything else is production (app.ordernimbus.com)
@@ -40,41 +56,44 @@ export const isSecureContext = (): boolean => {
 
 // Get API URL based on environment
 export const getApiUrl = (): string => {
-  const env = detectEnvironment();
-  
-  // Check for explicit environment variable first
+  // CRITICAL: Always use API URL from build environment in production
   if (process.env.REACT_APP_API_URL) {
+    console.log('Using API URL from build:', process.env.REACT_APP_API_URL);
     return process.env.REACT_APP_API_URL;
   }
   
+  // Fallback based on detected environment
+  const env = detectEnvironment();
+  
   switch (env) {
     case 'development':
-      return 'http://127.0.0.1:3001';
-    
+      // Local development
+      if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+        return 'http://localhost:3001';
+      }
+      return 'http://localhost:3001';
+    case 'staging':
+      // Staging should always have REACT_APP_API_URL set
+      console.warn('No REACT_APP_API_URL for staging - using fallback');
+      return 'https://staging-api.ordernimbus.com';
     case 'production':
-      // Production uses the direct API Gateway URL (set during deployment)
-      return process.env.REACT_APP_API_URL || 'https://api.ordernimbus.com/production';
-    
     default:
-      return process.env.REACT_APP_API_URL || 'https://api.ordernimbus.com/production';
+      // PRODUCTION MUST HAVE REACT_APP_API_URL SET DURING BUILD
+      console.error('CRITICAL: No REACT_APP_API_URL in production! Deploy script must set this.');
+      // Try to use api.ordernimbus.com if DNS is configured
+      if (window.location.hostname.includes('ordernimbus.com')) {
+        return 'https://api.ordernimbus.com';
+      }
+      // This should never be reached in properly deployed production
+      return 'https://api.ordernimbus.com';
   }
 };
 
 // Get Shopify redirect URI based on environment
 export const getShopifyRedirectUri = (): string => {
-  const env = detectEnvironment();
+  // Use the same API URL logic for consistency
   const apiUrl = getApiUrl();
-  
-  switch (env) {
-    case 'development':
-      return 'http://localhost:3001/api/shopify/callback';
-    
-    case 'production':
-      return `${apiUrl}/api/shopify/callback`;
-    
-    default:
-      return `${apiUrl}/api/shopify/callback`;
-  }
+  return `${apiUrl}/api/shopify/callback`;
 };
 
 // Main environment configuration
@@ -90,7 +109,7 @@ export const getEnvironmentConfig = (): EnvironmentConfig => {
     features: {
       useWebCrypto: Boolean(isSecure && window.crypto && window.crypto.subtle),
       enableDebugLogs: env === 'development',
-      mockShopifyData: env === 'development'
+      mockShopifyData: env === 'development' && !process.env.REACT_APP_API_URL
     }
   };
 };

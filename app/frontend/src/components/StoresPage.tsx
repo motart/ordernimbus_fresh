@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import './StoresPage.css';
 import toast from 'react-hot-toast';
+import { getApiUrl } from '../config/environment';
 import { 
   FiPlus, 
   FiEdit2, 
@@ -211,7 +212,7 @@ const StoresPage: React.FC = () => {
     }
 
     try {
-      const apiUrl = process.env.REACT_APP_API_URL || 'http://127.0.0.1:3001';
+      const apiUrl = getApiUrl();
       
       const storePayload = {
         userId: user?.userId || 'test-user',
@@ -284,7 +285,7 @@ const StoresPage: React.FC = () => {
   const handleShopifyConnectSuccess = async (storeData: any) => {
     // Store has been created via OAuth, fetch the full store data
     try {
-      const apiUrl = process.env.REACT_APP_API_URL || 'http://127.0.0.1:3001';
+      const apiUrl = getApiUrl();
       const response = await fetch(`${apiUrl}/api/stores`, {
         headers: {
           'userId': user?.userId || 'test-user'
@@ -316,7 +317,7 @@ const StoresPage: React.FC = () => {
   };
 
   const pollSyncStatus = async (storeId: string) => {
-    const apiUrl = process.env.REACT_APP_API_URL || 'http://127.0.0.1:3001';
+    const apiUrl = getApiUrl();
     let attempts = 0;
     const maxAttempts = 20;
     
@@ -387,7 +388,7 @@ const StoresPage: React.FC = () => {
 
     setIsDeleting(true);
     try {
-      const apiUrl = process.env.REACT_APP_API_URL || 'http://127.0.0.1:3001';
+      const apiUrl = getApiUrl();
       
       // Call API to delete store
       const response = await fetch(`${apiUrl}/api/stores/${storeToDelete.id}`, {
@@ -429,7 +430,7 @@ const StoresPage: React.FC = () => {
     if (!selectedStoreForCSV) return;
     
     try {
-      const apiUrl = process.env.REACT_APP_API_URL || 'http://127.0.0.1:3001';
+      const apiUrl = getApiUrl();
       const endpoint = dataType === 'orders' ? '/api/orders/upload-csv' : '/api/data/upload-csv';
       
       const response = await fetch(`${apiUrl}${endpoint}`, {
@@ -492,7 +493,7 @@ const StoresPage: React.FC = () => {
     try {
       toast('🔄 Starting manual sync...', { duration: 2000 });
       
-      const apiUrl = process.env.REACT_APP_API_URL || 'http://127.0.0.1:3001';
+      const apiUrl = getApiUrl();
       const response = await fetch(`${apiUrl}/api/shopify/sync`, {
         method: 'POST',
         headers: {
@@ -665,10 +666,7 @@ const StoresPage: React.FC = () => {
     <div className="stores-page">
       <div className="page-header">
         <div className="header-content">
-          <h1>
-            Stores
-            <span className="page-subtitle">Manage your retail locations and online stores</span>
-          </h1>
+          <h1>Stores</h1>
         </div>
         <div className="header-actions">
           <button className="btn-shopify" onClick={() => setShowShopifyConnect(true)}>
@@ -1177,7 +1175,7 @@ const StoresPage: React.FC = () => {
       {/* Shopify Connect Modal */}
       {showShopifyConnect && (
         <ShopifyConnect
-          userId={user?.userId || 'test-user'}
+          userId={user?.userId || 'e85183d0-3061-70b8-25f5-171fd848ac9d'}
           onSuccess={handleShopifyConnectSuccess}
           onCancel={() => setShowShopifyConnect(false)}
         />
