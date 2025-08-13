@@ -6,6 +6,25 @@ Parameters:
     Type: String
     Default: Z03623712FIVU7Z4CJ949
     Description: Route 53 Hosted Zone ID for ordernimbus.com
+  
+  CertificateArn:
+    Type: String
+    Default: ''
+    Description: ACM Certificate ARN for app.ordernimbus.com (must be in us-east-1 for CloudFront)
+  
+  EnableCloudFront:
+    Type: String
+    Default: 'false'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: Enable CloudFront distribution (requires certificate in us-east-1)
+
+Conditions:
+  CreateApiDNS: !Not [!Equals [!Ref HostedZoneId, '']]
+  CreateCloudFront: !And
+    - !Equals [!Ref EnableCloudFront, 'true']
+    - !Not [!Equals [!Ref CertificateArn, '']]
 
 Resources:
   # ==================== SINGLE IAM ROLE ====================
@@ -154,21 +173,115 @@ Resources:
             Action: s3:GetObject
             Resource: !Sub '${FrontendBucket.Arn}/*'
 
-  # ==================== ROUTE 53 DNS (OPTIONAL) ====================
-  # Note: app.ordernimbus.com DNS is managed by CloudFront separately
-  # Only managing api.ordernimbus.com here
+  # ==================== SSL CERTIFICATE ====================
+  # Note: Certificate must be in us-east-1 for CloudFront
+  # If deploying to us-west-1, you'll need to manually create a certificate in us-east-1
+  # and provide its ARN as a parameter, or use a Custom Resource to create it
   
-  APIDNSRecord:
+  # For now, we'll assume the certificate exists or create it conditionally
+  # You can manually create the certificate using:
+  # aws acm request-certificate --domain-name app.ordernimbus.com --validation-method DNS --region us-east-1
+
+  # ==================== CLOUDFRONT DISTRIBUTION ====================
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Condition: CreateCloudFront
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub 'OrderNimbus Production - ${AWS::StackName}'
+        DefaultRootObject: index.html
+        HttpVersion: http2
+        
+        # Custom domain
+        Aliases:
+          - app.ordernimbus.com
+        
+        # SSL Certificate
+        ViewerCertificate:
+          AcmCertificateArn: !Ref CertificateArn
+          MinimumProtocolVersion: TLSv1.2_2021
+          SslSupportMethod: sni-only
+        
+        # S3 Origin
+        Origins:
+          - Id: S3Origin
+            DomainName: !Sub '${FrontendBucket}.s3-website-${AWS::Region}.amazonaws.com'
+            CustomOriginConfig:
+              HTTPPort: 80
+              HTTPSPort: 443
+              OriginProtocolPolicy: http-only
+              OriginSSLProtocols:
+                - TLSv1.2
+        
+        # Default Cache Behavior
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          CachedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          Compress: true
+          ForwardedValues:
+            QueryString: false
+            Cookies:
+              Forward: none
+          MinTTL: 0
+          DefaultTTL: 86400
+          MaxTTL: 31536000
+        
+        # Custom Error Pages for SPA
+        CustomErrorResponses:
+          - ErrorCachingMinTTL: 0
+            ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+          - ErrorCachingMinTTL: 0
+            ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+        
+        # Price Class
+        PriceClass: PriceClass_100
+        
+        # Logging (optional)
+        # Logging:
+        #   Bucket: !Sub '${LoggingBucket}.s3.amazonaws.com'
+        #   Prefix: cloudfront/
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-cloudfront'
+
+  # ==================== ROUTE 53 DNS ====================
+  # DNS record for app.ordernimbus.com pointing to CloudFront
+  AppDNSRecord:
     Type: AWS::Route53::RecordSet
+    Condition: CreateCloudFront
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: app.ordernimbus.com
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt CloudFrontDistribution.DomainName
+        HostedZoneId: Z2FDTNDATAQYW2  # CloudFront's hosted zone ID (fixed value)
+        EvaluateTargetHealth: false
+  
+  # DNS record for api.ordernimbus.com pointing to API Gateway
+  ApiDNSRecord:
+    Type: AWS::Route53::RecordSet
+    Condition: CreateApiDNS
     Properties:
       HostedZoneId: !Ref HostedZoneId
       Name: api.ordernimbus.com
       Type: CNAME
       TTL: 300
       ResourceRecords:
-        - !Sub 
-          - '${ApiId}.execute-api.${AWS::Region}.amazonaws.com'
-          - ApiId: !Ref ApiGateway
+        - !Sub '${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com'
 
   # ==================== SINGLE LAMBDA FUNCTION ====================
   MainLambda:
@@ -886,10 +999,24 @@ Resources:
 
 Outputs:
   FrontendURL:
-    Description: Frontend URL
-    Value: 'http://app.ordernimbus.com'
+    Description: Frontend URL (via CloudFront)
+    Value: 'https://app.ordernimbus.com'
     Export:
       Name: !Sub '${AWS::StackName}-FrontendURL'
+
+  CloudFrontDistributionId:
+    Description: CloudFront Distribution ID
+    Condition: CreateCloudFront
+    Value: !Ref CloudFrontDistribution
+    Export:
+      Name: !Sub '${AWS::StackName}-CloudFrontDistributionId'
+
+  CloudFrontDomainName:
+    Description: CloudFront Distribution Domain Name
+    Condition: CreateCloudFront
+    Value: !GetAtt CloudFrontDistribution.DomainName
+    Export:
+      Name: !Sub '${AWS::StackName}-CloudFrontDomainName'
 
   ApiEndpoint:
     Description: API Gateway endpoint

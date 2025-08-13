@@ -155,7 +155,7 @@ const handleOAuthCallback = async (code, shop, state, hmac) => {
     const { access_token, scope } = tokenResponse.data;
     
     // Get shop information
-    const shopInfoResponse = await axios.get(`https://${shop}/admin/api/2024-01/shop.json`, {
+    const shopInfoResponse = await axios.get(`https://${shop}/admin/api/2024-07/shop.json`, {
       headers: {
         'X-Shopify-Access-Token': access_token
       }
@@ -167,7 +167,7 @@ const handleOAuthCallback = async (code, shop, state, hmac) => {
     let locationId = null;
     try {
       // Get primary location for inventory tracking
-      const locationsResponse = await axios.get(`https://${shop}/admin/api/2024-01/locations.json`, {
+      const locationsResponse = await axios.get(`https://${shop}/admin/api/2024-07/locations.json`, {
         headers: {
           'X-Shopify-Access-Token': access_token
         }

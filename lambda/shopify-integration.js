@@ -14,10 +14,15 @@ if (process.env.DYNAMODB_ENDPOINT) {
 const dynamodb = new AWS.DynamoDB.DocumentClient(dynamoConfig);
 const secretsManager = new AWS.SecretsManager({ region: process.env.AWS_REGION || 'us-west-1' });
 
+// Import new GraphQL services
+const ProductService = require('./shopify/services/productService');
+const InventoryService = require('./shopify/services/inventoryService');
+
 // Cache for Shopify credentials to avoid repeated calls
 let shopifyCredentials = null;
 
-const SHOPIFY_API_VERSION = '2024-01';
+// Use latest API version
+const SHOPIFY_API_VERSION = '2024-07';
 
 // Helper function to get Shopify credentials from AWS Secrets Manager
 const getShopifyCredentials = async () => {
@@ -104,14 +109,25 @@ const shopifyRequest = async (domain, apiKey, endpoint) => {
   }
 };
 
-// Fetch products from Shopify
+// Fetch products from Shopify using GraphQL
 const fetchShopifyProducts = async (domain, apiKey) => {
   if (!apiKey) {
     throw new Error('API key is required. Please connect your Shopify store using OAuth or provide an API token.');
   }
   
-  const data = await shopifyRequest(domain, apiKey, 'products.json?limit=250');
-  return data.products || [];
+  // Use GraphQL service if feature flag is enabled
+  if (process.env.USE_GRAPHQL_PRODUCTS !== 'false') {
+    const productService = new ProductService(domain, apiKey);
+    
+    // Fetch all products (handles pagination automatically)
+    const products = await productService.fetchAllProducts({ maxProducts: 10000 });
+    console.log(`Fetched ${products.length} products via GraphQL`);
+    return products;
+  } else {
+    // Fallback to REST API
+    const data = await shopifyRequest(domain, apiKey, 'products.json?limit=250');
+    return data.products || [];
+  }
 };
 
 // Fetch orders from Shopify - Try GraphQL first, fallback to REST
@@ -334,33 +350,63 @@ const fetchShopifyAnalytics = async (domain, apiKey) => {
   return null;
 };
 
-// Fetch inventory levels from Shopify
+// Fetch inventory levels from Shopify using GraphQL
 const fetchShopifyInventory = async (domain, apiKey, locationId) => {
   if (!apiKey) {
     throw new Error('API key is required. Please connect your Shopify store using OAuth or provide an API token.');
   }
   
-  // If we have a locationId, use it to get inventory for that location
-  // Otherwise, try to get the primary location first
-  if (!locationId) {
-    try {
-      const locationsData = await shopifyRequest(domain, apiKey, 'locations.json');
-      if (locationsData.locations && locationsData.locations.length > 0) {
-        locationId = locationsData.locations[0].id;
-        console.log('Using location ID:', locationId);
+  // Use GraphQL service if feature flag is enabled
+  if (process.env.USE_GRAPHQL_PRODUCTS !== 'false') {
+    const inventoryService = new InventoryService(domain, apiKey);
+    
+    // Get locations if not provided
+    if (!locationId) {
+      try {
+        const locations = await inventoryService.fetchLocations();
+        if (locations && locations.length > 0) {
+          locationId = locations[0].id;
+          console.log('Using location ID:', locationId);
+        } else {
+          console.log('No locations found, skipping inventory sync');
+          return [];
+        }
+      } catch (error) {
+        console.log('Could not fetch locations, skipping inventory sync:', error.message);
+        return [];
       }
-    } catch (error) {
-      console.log('Could not fetch locations, skipping inventory sync');
-      return [];
     }
+    
+    // Fetch inventory levels for the location
+    if (locationId) {
+      const inventory = await inventoryService.fetchInventoryLevels([locationId]);
+      console.log(`Fetched ${inventory.length} inventory levels via GraphQL`);
+      return inventory;
+    }
+    
+    return [];
+  } else {
+    // Fallback to REST API
+    if (!locationId) {
+      try {
+        const locationsData = await shopifyRequest(domain, apiKey, 'locations.json');
+        if (locationsData.locations && locationsData.locations.length > 0) {
+          locationId = locationsData.locations[0].id;
+          console.log('Using location ID:', locationId);
+        }
+      } catch (error) {
+        console.log('Could not fetch locations, skipping inventory sync');
+        return [];
+      }
+    }
+    
+    if (locationId) {
+      const data = await shopifyRequest(domain, apiKey, `inventory_levels.json?location_ids=${locationId}&limit=250`);
+      return data.inventory_levels || [];
+    }
+    
+    return [];
   }
-  
-  if (locationId) {
-    const data = await shopifyRequest(domain, apiKey, `inventory_levels.json?location_ids=${locationId}&limit=250`);
-    return data.inventory_levels || [];
-  }
-  
-  return [];
 };
 
 

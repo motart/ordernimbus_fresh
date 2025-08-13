@@ -14,16 +14,17 @@
     },
     "aws": {
       "APP_URL": "https://app.ordernimbus.com",
-      "API_URL": "https://rup1tylcrh.execute-api.us-west-1.amazonaws.com/production",
-      "SHOPIFY_REDIRECT_URI": "https://rup1tylcrh.execute-api.us-west-1.amazonaws.com/production/api/shopify/callback",
+      "API_URL": "https://zz42a4fll4.execute-api.us-west-1.amazonaws.com/production",
+      "SHOPIFY_REDIRECT_URI": "https://zz42a4fll4.execute-api.us-west-1.amazonaws.com/production/api/shopify/callback",
       "AWS_REGION": "us-west-1",
       "STACK_PREFIX": "ordernimbus-production",
       "TABLE_NAME": "ordernimbus-production-main",
       "S3_BUCKET": "ordernimbus-production-frontend-335021149718",
       "CLOUDFRONT_ENABLED": true,
-      "CLOUDFRONT_DISTRIBUTION_ID": "ENL63P7DS49HQ",
+      "CLOUDFRONT_DISTRIBUTION_ID": "EP62VZVVDF7SQ",
       "DOMAIN_ENABLED": true,
-      "COGNITO_POOL_NAME": "ordernimbus-production-users"
+      "COGNITO_POOL_NAME": "ordernimbus-production-users",
+      "CLOUDFRONT_DOMAIN": "d39qw5rr9tjqlc.cloudfront.net"
     }
   }
 }
