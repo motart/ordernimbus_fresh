@@ -17,6 +17,8 @@ const secretsManager = new AWS.SecretsManager({ region: process.env.AWS_REGION |
 // Import new GraphQL services
 const ProductService = require('./shopify/services/productService');
 const InventoryService = require('./shopify/services/inventoryService');
+const OrderService = require('./shopify/services/orderService');
+const ShopService = require('./shopify/services/shopService');
 
 // Cache for Shopify credentials to avoid repeated calls
 let shopifyCredentials = null;
@@ -115,8 +117,8 @@ const fetchShopifyProducts = async (domain, apiKey) => {
     throw new Error('API key is required. Please connect your Shopify store using OAuth or provide an API token.');
   }
   
-  // Use GraphQL service if feature flag is enabled
-  if (process.env.USE_GRAPHQL_PRODUCTS !== 'false') {
+  // Always use GraphQL (feature flag defaults to true)
+  if (true) { // GraphQL is always enabled
     const productService = new ProductService(domain, apiKey);
     
     // Fetch all products (handles pagination automatically)
@@ -130,122 +132,32 @@ const fetchShopifyProducts = async (domain, apiKey) => {
   }
 };
 
-// Fetch orders from Shopify - Try GraphQL first, fallback to REST
+// Fetch orders from Shopify using GraphQL only
 const fetchShopifyOrders = async (domain, apiKey) => {
   if (!apiKey) {
     throw new Error('API key is required. Please connect your Shopify store using OAuth or provide an API token.');
   }
   
-  // Try GraphQL API first (often has better access in dev stores)
-  try {
-    const sinceDate = new Date();
-    sinceDate.setDate(sinceDate.getDate() - 90);
-    
-    const graphqlQuery = {
-      query: `
-        query GetOrders($first: Int!, $query: String) {
-          orders(first: $first, query: $query) {
-            edges {
-              node {
-                id
-                name
-                createdAt
-                updatedAt
-                totalPriceSet {
-                  shopMoney {
-                    amount
-                    currencyCode
-                  }
-                }
-                subtotalPriceSet {
-                  shopMoney {
-                    amount
-                  }
-                }
-                lineItems(first: 100) {
-                  edges {
-                    node {
-                      id
-                      title
-                      quantity
-                      product {
-                        id
-                      }
-                      variant {
-                        id
-                        price
-                      }
-                      originalTotalSet {
-                        shopMoney {
-                          amount
-                        }
-                      }
-                    }
-                  }
-                }
-                customer {
-                  id
-                }
-                fulfillmentStatus
-                financialStatus
-              }
-            }
-          }
-        }
-      `,
-      variables: {
-        first: 100,
-        query: `created_at:>'${sinceDate.toISOString().split('T')[0]}'`
-      }
-    };
-    
-    const url = buildShopifyUrl(domain, 'graphql.json');
-    const response = await axios.post(url, graphqlQuery, {
-      headers: {
-        'X-Shopify-Access-Token': apiKey,
-        'Content-Type': 'application/json'
-      }
-    });
-    
-    if (response.data.data && response.data.data.orders) {
-      // Transform GraphQL response to match REST format
-      const orders = response.data.data.orders.edges.map(edge => {
-        const node = edge.node;
-        return {
-          id: node.id.split('/').pop(),
-          name: node.name,
-          created_at: node.createdAt,
-          updated_at: node.updatedAt,
-          total_price: node.totalPriceSet.shopMoney.amount,
-          subtotal_price: node.subtotalPriceSet.shopMoney.amount,
-          currency: node.totalPriceSet.shopMoney.currencyCode,
-          financial_status: node.financialStatus,
-          fulfillment_status: node.fulfillmentStatus,
-          line_items: node.lineItems.edges.map(item => ({
-            id: item.node.id.split('/').pop(),
-            product_id: item.node.product ? item.node.product.id.split('/').pop() : null,
-            title: item.node.title,
-            quantity: item.node.quantity,
-            price: item.node.variant ? item.node.variant.price : '0',
-            total: item.node.originalTotalSet.shopMoney.amount
-          }))
-        };
-      });
-      
-      console.log(`Successfully fetched ${orders.length} orders via GraphQL`);
-      return orders;
-    }
-  } catch (graphqlError) {
-    console.log('GraphQL failed, trying REST API:', graphqlError.response?.data?.errors || graphqlError.message);
-  }
+  // Always use GraphQL via OrderService
+  const orderService = new OrderService(domain, apiKey);
   
-  // Fallback to REST API
+  // Fetch orders from last 90 days
   const sinceDate = new Date();
   sinceDate.setDate(sinceDate.getDate() - 90);
-  const since = sinceDate.toISOString();
   
-  const data = await shopifyRequest(domain, apiKey, `orders.json?status=any&created_at_min=${since}&limit=250`);
-  return data.orders || [];
+  try {
+    const orders = await orderService.fetchAllOrders({ 
+      sinceDate, 
+      maxOrders: 10000 
+    });
+    
+    console.log(`Successfully fetched ${orders.length} orders via GraphQL`);
+    return orders;
+  } catch (error) {
+    console.error('Failed to fetch orders via GraphQL:', error.message);
+    // Return empty array instead of throwing to allow partial sync
+    return [];
+  }
 };
 
 // Generate sample orders for development/testing when real orders are blocked
@@ -356,8 +268,8 @@ const fetchShopifyInventory = async (domain, apiKey, locationId) => {
     throw new Error('API key is required. Please connect your Shopify store using OAuth or provide an API token.');
   }
   
-  // Use GraphQL service if feature flag is enabled
-  if (process.env.USE_GRAPHQL_PRODUCTS !== 'false') {
+  // Always use GraphQL (feature flag defaults to true)
+  if (true) { // GraphQL is always enabled
     const inventoryService = new InventoryService(domain, apiKey);
     
     // Get locations if not provided
@@ -729,14 +641,9 @@ const handleShopifyCallback = async (event) => {
     
     const { access_token } = tokenResponse.data;
     
-    // Get shop info
-    const shopResponse = await axios.get(`https://${shop}/admin/api/2024-01/shop.json`, {
-      headers: {
-        'X-Shopify-Access-Token': access_token
-      }
-    });
-    
-    const shopData = shopResponse.data.shop;
+    // Get shop info using GraphQL
+    const shopService = new ShopService(shop, access_token);
+    const shopData = await shopService.fetchShopInfo();
     
     return {
       statusCode: 200,
