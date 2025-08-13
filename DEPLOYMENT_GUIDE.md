@@ -1,4 +1,32 @@
-# OrderNimbus Deployment Guide
+# 🚀 OrderNimbus Production Deployment Guide
+
+## Prerequisites
+
+- AWS CLI installed and configured (`aws configure`)
+- Node.js 18+ and npm installed
+- AWS account with appropriate permissions
+- Region: us-west-1 (default)
+
+## 🎯 Quick Production Deployment
+
+### Option 1: Full Stack Deployment (Recommended)
+```bash
+# Deploy everything with one command
+./scripts/deployment/deploy.sh production us-west-1
+```
+
+### Option 2: Frontend Only (If Backend Already Deployed)
+```bash
+cd app/frontend
+./auto-deploy.sh production us-west-1
+```
+
+## Current Production Configuration
+
+- **API Gateway**: `https://ay8k50buyd.execute-api.us-west-1.amazonaws.com/production`
+- **User Pool ID**: `us-west-1_GeV4w2rCQ`
+- **Client ID**: `2dr8p83gqu0v9iktpdq4qo2rdg`
+- **Frontend Bucket**: `ordernimbus-production-frontend-335021149718`
 
 ## Current Issues & Fixes
 
@@ -143,18 +171,91 @@ aws cloudformation delete-stack --stack-name ordernimbus-production-production -
 ### Frontend-Only Update
 ```bash
 cd app/frontend
-npm run build
+
+# IMPORTANT: Use build:production to ensure .env.production is used
+npm run build:production  # NOT just 'npm run build'
+
+# Deploy to S3
 aws s3 sync build/ s3://ordernimbus-production-frontend-335021149718/ --delete
+
+# If using CloudFront, invalidate cache
 aws cloudfront create-invalidation --distribution-id EP62VZVVDF7SQ --paths "/*"
 ```
 
-## Important Notes
+## 📋 Complete Step-by-Step Deployment
 
-1. **SSL Certificates**: Must be in `us-east-1` region for CloudFront
-2. **DNS Validation**: Required for new certificates - check Route53
-3. **CloudFront Propagation**: Takes 15-20 minutes for changes
-4. **Stack Deletion**: Can take up to 30 minutes if CloudFront is involved
-5. **Shopify Credentials**: Stored in AWS Secrets Manager
+### Step 1: Deploy Backend Infrastructure
+```bash
+cd infrastructure/cloudformation
+aws cloudformation deploy \
+  --template-file cloudformation-template.yaml \
+  --stack-name ordernimbus-production \
+  --parameter-overrides Environment=production \
+  --capabilities CAPABILITY_IAM \
+  --region us-west-1
+```
+
+### Step 2: Deploy Lambda Functions
+```bash
+cd lambda
+# Package and deploy each Lambda function
+for func in *.js; do
+  filename="${func%.*}"
+  zip -r ${filename}.zip ${func}
+  aws lambda update-function-code \
+    --function-name ordernimbus-production-${filename} \
+    --zip-file fileb://${filename}.zip \
+    --region us-west-1
+done
+```
+
+### Step 3: Deploy Frontend with Correct Environment
+```bash
+cd app/frontend
+npm install
+npm run build:production  # Uses .env.production
+./auto-deploy.sh production
+```
+
+## 🔍 Verify Deployment
+
+### Test API Endpoints
+```bash
+# Test config endpoint (should return JSON configuration)
+curl https://ay8k50buyd.execute-api.us-west-1.amazonaws.com/production/api/config
+
+# Test stores endpoint
+curl https://ay8k50buyd.execute-api.us-west-1.amazonaws.com/production/api/stores \
+  -H "userId: test-user"
+```
+
+### Check Frontend
+1. Visit your frontend URL (S3 or CloudFront)
+2. Open browser console (F12)
+3. Verify NO localhost/127.0.0.1 calls in Network tab
+4. Check that API calls go to amazonaws.com endpoints
+
+### Validate Environment Configuration
+```bash
+cd app/frontend
+./test-environments.sh
+```
+
+## ⚠️ Critical Notes for Production
+
+1. **Environment Variables**: 
+   - Frontend MUST use `.env.production` (no localhost references)
+   - Always build with `npm run build:production`, NOT `npm run build`
+
+2. **SSL Certificates**: Must be in `us-east-1` region for CloudFront
+
+3. **DNS Validation**: Required for new certificates - check Route53
+
+4. **CloudFront Propagation**: Takes 15-20 minutes for changes
+
+5. **Stack Deletion**: Can take up to 30 minutes if CloudFront is involved
+
+6. **Shopify Credentials**: Stored in AWS Secrets Manager
 
 ## Support
 

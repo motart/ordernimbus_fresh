@@ -87,14 +87,46 @@ export const isSecureContext = (): boolean => {
 
 /**
  * Get complete environment configuration
- * In cloud-native mode, this returns configuration from the cloud
- * For backward compatibility, it first tries to use cached cloud config
+ * Uses environment variables first, then falls back to cached config
  */
 export const getEnvironmentConfig = (): EnvironmentConfig => {
   const env = detectEnvironment();
   const isSecure = isSecureContext();
   
-  // Try to get configuration from sessionStorage (set by ConfigContext)
+  // First priority: Use environment variables if available
+  const apiUrl = process.env.REACT_APP_API_URL;
+  const userPoolId = process.env.REACT_APP_USER_POOL_ID;
+  const clientId = process.env.REACT_APP_CLIENT_ID;
+  const region = process.env.REACT_APP_REGION;
+  
+  if (apiUrl && userPoolId && clientId) {
+    console.log('Using environment variables configuration');
+    
+    return {
+      appUrl: window.location.origin,
+      apiUrl,
+      graphqlUrl: process.env.REACT_APP_GRAPHQL_URL || `${apiUrl}/graphql`,
+      wsUrl: process.env.REACT_APP_WS_URL || apiUrl.replace('https://', 'wss://').replace('http://', 'ws://') + '/ws',
+      
+      userPoolId,
+      clientId,
+      region: region || 'us-west-1',
+      
+      environment: env,
+      isSecure,
+      
+      shopifyRedirectUri: `${apiUrl}/api/shopify/callback`,
+      
+      features: {
+        enableDebug: process.env.REACT_APP_ENABLE_DEBUG === 'true',
+        enableAnalytics: process.env.REACT_APP_ENABLE_ANALYTICS === 'true',
+        enableMockData: process.env.REACT_APP_ENABLE_MOCK_DATA === 'true',
+        useWebCrypto: isSecure && Boolean(window.crypto?.subtle)
+      }
+    };
+  }
+  
+  // Second priority: Try to get configuration from sessionStorage (set by ConfigContext)
   const cachedConfig = sessionStorage.getItem('app-config');
   if (cachedConfig) {
     try {
@@ -102,25 +134,20 @@ export const getEnvironmentConfig = (): EnvironmentConfig => {
       console.log('Using cloud configuration from cache');
       
       return {
-        // URLs from cloud
         appUrl: window.location.origin,
-        apiUrl: cloudConfig.apiUrl || 'https://ay8k50buyd.execute-api.us-west-1.amazonaws.com/production',
+        apiUrl: cloudConfig.apiUrl,
         graphqlUrl: cloudConfig.graphqlUrl || `${cloudConfig.apiUrl}/graphql`,
         wsUrl: cloudConfig.wsUrl || cloudConfig.apiUrl.replace('https://', 'wss://').replace('http://', 'ws://') + '/ws',
         
-        // Authentication from cloud
-        userPoolId: cloudConfig.userPoolId || 'us-west-1_GeV4w2rCQ',
-        clientId: cloudConfig.clientId || '2dr8p83gqu0v9iktpdq4qo2rdg',
+        userPoolId: cloudConfig.userPoolId,
+        clientId: cloudConfig.clientId,
         region: cloudConfig.region || 'us-west-1',
         
-        // Environment
         environment: cloudConfig.environment || env,
         isSecure,
         
-        // Shopify
         shopifyRedirectUri: `${cloudConfig.apiUrl}/api/shopify/callback`,
         
-        // Features from cloud
         features: {
           enableDebug: cloudConfig.features?.enableDebug || false,
           enableAnalytics: cloudConfig.features?.enableAnalytics || true,
@@ -133,35 +160,27 @@ export const getEnvironmentConfig = (): EnvironmentConfig => {
     }
   }
   
-  // Fallback: Use hardcoded production values (cloud-native approach)
-  // These are the production defaults that will be used until ConfigContext loads
-  console.log('Using default cloud-native configuration');
+  // Last resort: Return minimal config (should not happen in production)
+  console.error('No configuration available - this should not happen in production!');
+  console.error('Make sure environment variables are set or ConfigContext has loaded');
   
+  // Return a minimal config that will at least not break the app
   return {
-    // Production API Gateway URL
     appUrl: window.location.origin,
-    apiUrl: 'https://ay8k50buyd.execute-api.us-west-1.amazonaws.com/production',
-    graphqlUrl: 'https://ay8k50buyd.execute-api.us-west-1.amazonaws.com/production/graphql',
-    wsUrl: 'wss://ay8k50buyd.execute-api.us-west-1.amazonaws.com/production/ws',
-    
-    // Production Cognito configuration
-    userPoolId: 'us-west-1_GeV4w2rCQ',
-    clientId: '2dr8p83gqu0v9iktpdq4qo2rdg',
+    apiUrl: '', // Empty will cause obvious errors if used
+    graphqlUrl: '',
+    wsUrl: '',
+    userPoolId: '',
+    clientId: '',
     region: 'us-west-1',
-    
-    // Environment
     environment: env,
     isSecure,
-    
-    // Shopify
-    shopifyRedirectUri: 'https://ay8k50buyd.execute-api.us-west-1.amazonaws.com/production/api/shopify/callback',
-    
-    // Default features
+    shopifyRedirectUri: '',
     features: {
-      enableDebug: false,
-      enableAnalytics: true,
+      enableDebug: env === 'development',
+      enableAnalytics: false,
       enableMockData: false,
-      useWebCrypto: isSecure && Boolean(window.crypto?.subtle)
+      useWebCrypto: false
     }
   };
 };

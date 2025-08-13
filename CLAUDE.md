@@ -37,7 +37,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 #### Things to Always Check
 - [ ] Check for existing CloudFormation stacks before deploying (avoid duplicate stack names)
-- [ ] Always use `deploy-fixed.sh` instead of `deploy.sh` (the original has stack naming issues)
+- [ ] Use ONLY `./deploy.sh` for deployments (consolidated master script in root)
+- [ ] Use ONLY `./teardown-production.sh` for teardowns (no variations)
 - [ ] Check for CloudFront distribution conflicts before deployment
 - [ ] Verify S3 buckets are empty before attempting stack deletion
 
@@ -46,6 +47,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Stack Naming**: The config.json STACK_PREFIX already contains "production", don't append environment again
 - **CloudFront CNAMEs**: Check for existing distributions using the same domain before deploying
 - **TypeScript Strict Mode**: Frontend uses strict TypeScript - always define return types for functions
+- **Script Issues**: ALWAYS fix in the original script, NEVER create new versions (no deploy-fixed.sh, deploy-v2.sh, etc.)
 
 #### Preferred Development Practices
 - Always build frontend with environment variables set (REACT_APP_*)
@@ -128,18 +130,27 @@ Multi-tenant, highly-scalable Sales Forecasting Platform with AWS-native infrast
 - ElastiCache Redis + DynamoDB DAX for hot-path caching
 - Tenant-aware partitioning strategy for >1M SKUs
 
+## 🚨 CRITICAL DEPLOYMENT RULES
+
+### RULE: NO SCRIPT DUPLICATION - FIX IN PLACE
+- **NEVER** create new deployment or teardown scripts to fix issues
+- **ALWAYS** fix issues within the existing scripts:
+  - `./deploy.sh` - The ONLY deployment script (root directory)
+  - `./teardown-production.sh` - The ONLY teardown script (root directory)
+- **NO EXCEPTIONS** - All deployment logic must be in these two scripts
+- If a script has an issue, fix it IN THE SCRIPT, don't create deploy-fixed.sh or similar
+- This prevents script proliferation and confusion
+
 ## Development Commands
 
 ```bash
-# Complete platform deployment
-./scripts/deployment/deploy.sh staging              # Deploy to staging
-./scripts/deployment/deploy.sh production          # Deploy to production
-./scripts/deployment/deploy.sh dev us-west-1 true  # Deploy to dev (skip tests)
+# Complete platform deployment (ONLY USE THESE)
+./deploy.sh staging              # Deploy to staging
+./deploy.sh production          # Deploy to production
+./deploy.sh local               # Setup local development
 
 # Infrastructure destruction (CAREFUL!)
-./scripts/infrastructure/destroy.sh staging            # Destroy staging environment
-./scripts/infrastructure/destroy.sh production        # Destroy production environment
-./scripts/infrastructure/destroy.sh staging us-west-1 true  # Destroy without confirmation
+./teardown-production.sh        # Destroy production environment (with confirmation)
 
 # Alternative npm commands
 npm run deploy:staging          # Deploy to staging

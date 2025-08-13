@@ -1404,6 +1404,33 @@ Resources:
         - Key: Name
           Value: !Sub 'ordernimbus-${Environment}-store-management'
 
+  # Config Lambda Function
+  ConfigFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'ordernimbus-${Environment}-config'
+      Runtime: nodejs18.x
+      Handler: config-handler.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 10
+      MemorySize: 128
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          AWS_REGION: !Ref AWS::Region
+          API_GATEWAY_ID: !Ref ApiGateway
+          USER_POOL_ID: !Ref UserPool
+          CLIENT_ID: !Ref UserPoolClient
+          VERSION: '1.0.0'
+          BUILD_TIME: !Ref AWS::StackName
+          DEPLOYMENT_ID: !Sub '${Environment}-${AWS::StackId}'
+      Code:
+        S3Bucket: !Ref DeploymentBucket
+        S3Key: lambda/config-handler.zip
+      Tags:
+        - Key: Name
+          Value: !Sub 'ordernimbus-${Environment}-config'
+
   # ==================== API GATEWAY ====================
   ApiGateway:
     Type: AWS::ApiGatewayV2::Api
@@ -1826,6 +1853,38 @@ Resources:
     Type: AWS::Lambda::Permission
     Properties:
       FunctionName: !Ref NotificationsFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'
+
+  # Config API Integration
+  ConfigIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref ApiGateway
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt ConfigFunction.Arn
+      IntegrationMethod: POST
+      PayloadFormatVersion: '2.0'
+
+  ConfigGetRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: 'GET /api/config'
+      Target: !Sub 'integrations/${ConfigIntegration}'
+
+  ConfigOptionsRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: 'OPTIONS /api/config'
+      Target: !Sub 'integrations/${ConfigIntegration}'
+
+  ConfigPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ConfigFunction
       Action: lambda:InvokeFunction
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'

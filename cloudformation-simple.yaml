@@ -436,6 +436,23 @@ Resources:
                   };
                   break;
                   
+                case 'config':
+                  // Return application configuration
+                  responseData = {
+                    environment: process.env.ENVIRONMENT || 'production',
+                    apiUrl: `https://${event.requestContext?.domainName || event.headers?.host}/${event.requestContext?.stage || 'production'}`,
+                    region: process.env.AWS_REGION || 'us-west-1',
+                    userPoolId: process.env.USER_POOL_ID,
+                    clientId: process.env.USER_POOL_CLIENT_ID,
+                    features: {
+                      enableDebug: false,
+                      enableAnalytics: true,
+                      enableMockData: false,
+                      useWebCrypto: true
+                    }
+                  };
+                  break;
+                  
                 case 'stores':
                   responseData = {
                     stores: [
