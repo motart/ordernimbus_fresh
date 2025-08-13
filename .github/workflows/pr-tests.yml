@@ -74,6 +74,9 @@ jobs:
             cd ..
           fi
           
+      - name: Install project dependencies for tests
+        run: npm ci
+        
       - name: Run Lambda unit tests
         run: |
           # Run from project root
