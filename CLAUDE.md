@@ -2,6 +2,26 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## 🔒 UNSHAKEABLE RULES - MANDATORY FOR ALL CHANGES
+
+### RULE #1: ALL CHANGES CREATE PR TO DEVELOP AUTOMATICALLY
+- **NEVER** commit directly to any protected branch
+- **ALWAYS** create feature branch from `develop`
+- **ALWAYS** create PR to `develop` branch (not main)
+- **NO EXCEPTIONS** - even for "quick fixes"
+
+### RULE #2: PR CANNOT MERGE IF ANY TEST FAILS
+- **ALL 7 test suites MUST pass**: Unit, Backend, Frontend, E2E, Integration, Security, Code Quality
+- **If ANY test fails → PR is BLOCKED**
+- **Cannot disable tests to make them pass**
+- **Cannot use admin override**
+
+### RULE #3: ENFORCEMENT IS AUTOMATIC
+- GitHub Actions run on EVERY pull request
+- Branch protection rules prevent bypassing
+- Git hooks enforce locally
+- **See [UNSHAKEABLE_RULES.md](./UNSHAKEABLE_RULES.md) for complete details**
+
 ## Custom Instructions & Observations for Claude
 
 ### CORE ARCHITECTURAL PRINCIPLE: Cloud-Native Application

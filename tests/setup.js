@@ -22,8 +22,11 @@ if (process.env.TEST_TYPE === 'e2e') {
 }
 
 // Setup for unit tests
-beforeEach(function() {
-  this.timeout(global.TEST_CONFIG.TIMEOUT);
-});
+// beforeEach is provided by Mocha when tests run
+if (typeof beforeEach !== 'undefined') {
+  beforeEach(function() {
+    this.timeout(global.TEST_CONFIG.TIMEOUT);
+  });
+}
 
 console.log('Test environment configured for OrderNimbus');

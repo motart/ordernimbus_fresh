@@ -2,7 +2,7 @@ name: PR Test Suite
 
 on:
   pull_request:
-    branches: [ main, develop, staging, production ]
+    branches: [ develop, main, staging, production ]
     types: [ opened, synchronize, reopened ]
   
   # Allow manual trigger for testing

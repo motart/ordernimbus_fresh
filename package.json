@@ -39,7 +39,11 @@
     "dev": "nodemon local-test-server.js",
     "dev:frontend": "cd app/frontend && npm start",
     "start:local": "./start-local-env.sh",
-    "stop:local": "./stop-local-env.sh"
+    "stop:local": "./stop-local-env.sh",
+    "pr": "./scripts/auto-pr.sh",
+    "pr:create": "./scripts/auto-pr.sh",
+    "pr:status": "gh pr checks",
+    "pr:view": "gh pr view --web"
   },
   "keywords": [
     "sales-forecasting",

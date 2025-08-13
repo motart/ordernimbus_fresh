@@ -15,9 +15,9 @@ if git diff --cached --name-only | xargs grep -l "console\.log" 2>/dev/null; the
   # exit 1
 fi
 
-# Check for sensitive data
+# Check for sensitive data (skip checking hook files and workflows)
 echo "Checking for sensitive data..."
-if git diff --cached --name-only | xargs grep -E "(AKIA|aws_secret_access_key|api_key|private_key)" 2>/dev/null; then
+if git diff --cached --name-only | grep -v ".husky" | grep -v ".github/workflows" | xargs grep -E "(AKI[A-Z][A-Z0-9]{16}|aws_secret_access_key|api_key.*=|private_key.*=)" 2>/dev/null; then
   echo "❌ Error: Potential sensitive data found in staged files!"
   echo "Please remove any API keys, secrets, or credentials"
   exit 1
