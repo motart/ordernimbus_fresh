@@ -13,17 +13,17 @@ process.env.USER_POOL_ID = 'test-pool-id';
 process.env.USER_POOL_CLIENT_ID = 'test-client-id';
 process.env.ENVIRONMENT = 'test';
 
-// Create stubs for AWS services
+// Create stubs for AWS services with promise support
 const cognitoStub = {
-  adminCreateUser: sinon.stub(),
-  adminSetUserPassword: sinon.stub(),
-  adminInitiateAuth: sinon.stub()
+  adminCreateUser: sinon.stub().returns({ promise: sinon.stub() }),
+  adminSetUserPassword: sinon.stub().returns({ promise: sinon.stub() }),
+  adminInitiateAuth: sinon.stub().returns({ promise: sinon.stub() })
 };
 
 const dynamodbStub = {
-  put: sinon.stub(),
-  get: sinon.stub(),
-  delete: sinon.stub()
+  put: sinon.stub().returns({ promise: sinon.stub() }),
+  get: sinon.stub().returns({ promise: sinon.stub() }),
+  delete: sinon.stub().returns({ promise: sinon.stub() })
 };
 
 // Mock AWS SDK
@@ -54,17 +54,12 @@ const { handler } = require('../../app/frontend/lambda-main-check/index');
 describe('Lambda Registration Endpoint Tests', function() {
   beforeEach(function() {
     // Reset all stubs
-    cognitoStub.adminCreateUser.resetHistory();
-    cognitoStub.adminSetUserPassword.resetHistory();
-    cognitoStub.adminInitiateAuth.resetHistory();
-    dynamodbStub.put.resetHistory();
-    dynamodbStub.get.resetHistory();
-    dynamodbStub.delete.resetHistory();
-    
-    // Reset stub behaviors
-    dynamodbStub.put.returns({ promise: () => Promise.resolve({}) });
-    dynamodbStub.get.returns({ promise: () => Promise.resolve({}) });
-    dynamodbStub.delete.returns({ promise: () => Promise.resolve({}) });
+    cognitoStub.adminCreateUser = sinon.stub().returns({ promise: sinon.stub() });
+    cognitoStub.adminSetUserPassword = sinon.stub().returns({ promise: sinon.stub() });
+    cognitoStub.adminInitiateAuth = sinon.stub().returns({ promise: sinon.stub() });
+    dynamodbStub.put = sinon.stub().returns({ promise: sinon.stub().resolves({}) });
+    dynamodbStub.get = sinon.stub().returns({ promise: sinon.stub().resolves({}) });
+    dynamodbStub.delete = sinon.stub().returns({ promise: sinon.stub().resolves({}) });
   });
 
   describe('POST /api/auth/register', function() {
@@ -89,16 +84,20 @@ describe('Lambda Registration Endpoint Tests', function() {
       };
 
       // Mock successful Cognito user creation
-      cognitoStub.adminCreateUser.resolves({
-        User: {
-          Username: 'newuser@example.com',
-          Attributes: [
-            { Name: 'email', Value: 'newuser@example.com' }
-          ]
-        }
+      cognitoStub.adminCreateUser.returns({
+        promise: sinon.stub().resolves({
+          User: {
+            Username: 'newuser@example.com',
+            Attributes: [
+              { Name: 'email', Value: 'newuser@example.com' }
+            ]
+          }
+        })
       });
 
-      cognitoStub.adminSetUserPassword.resolves({});
+      cognitoStub.adminSetUserPassword.returns({
+        promise: sinon.stub().resolves({})
+      });
 
       const response = await handler(event);
       
@@ -203,9 +202,11 @@ describe('Lambda Registration Endpoint Tests', function() {
       };
 
       // Mock user already exists error
-      cognitoStub.adminCreateUser.rejects({
-        code: 'UsernameExistsException',
-        message: 'User already exists'
+      cognitoStub.adminCreateUser.returns({
+        promise: sinon.stub().rejects({
+          code: 'UsernameExistsException',
+          message: 'User already exists'
+        })
       });
 
       const response = await handler(event);
@@ -254,10 +255,14 @@ describe('Lambda Registration Endpoint Tests', function() {
         }
       };
 
-      cognitoStub.adminCreateUser.resolves({
-        User: { Username: 'test@example.com' }
+      cognitoStub.adminCreateUser.returns({
+        promise: sinon.stub().resolves({
+          User: { Username: 'test@example.com' }
+        })
       });
-      cognitoStub.adminSetUserPassword.resolves({});
+      cognitoStub.adminSetUserPassword.returns({
+        promise: sinon.stub().resolves({})
+      });
 
       const response = await handler(event);
       const body = JSON.parse(response.body);
@@ -285,14 +290,16 @@ describe('Lambda Registration Endpoint Tests', function() {
       };
 
       // Mock successful authentication
-      cognitoStub.adminInitiateAuth.resolves({
-        AuthenticationResult: {
-          AccessToken: 'test-access-token',
-          RefreshToken: 'test-refresh-token',
-          IdToken: 'test-id-token',
-          ExpiresIn: 3600,
-          TokenType: 'Bearer'
-        }
+      cognitoStub.adminInitiateAuth.returns({
+        promise: sinon.stub().resolves({
+          AuthenticationResult: {
+            AccessToken: 'test-access-token',
+            RefreshToken: 'test-refresh-token',
+            IdToken: 'test-id-token',
+            ExpiresIn: 3600,
+            TokenType: 'Bearer'
+          }
+        })
       });
 
       const response = await handler(event);
@@ -322,9 +329,11 @@ describe('Lambda Registration Endpoint Tests', function() {
       };
 
       // Mock authentication failure
-      cognitoStub.adminInitiateAuth.rejects({
-        code: 'NotAuthorizedException',
-        message: 'Incorrect username or password'
+      cognitoStub.adminInitiateAuth.returns({
+        promise: sinon.stub().rejects({
+          code: 'NotAuthorizedException',
+          message: 'Incorrect username or password'
+        })
       });
 
       const response = await handler(event);
