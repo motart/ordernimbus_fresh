@@ -33,8 +33,8 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin }) => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Validation
-    if (!formData.email || !formData.password || !formData.companyName) {
+    // Validation - all fields are now required
+    if (!formData.email || !formData.password || !formData.companyName || !formData.firstName || !formData.lastName) {
       toast.error('Please fill in all required fields');
       return;
     }
@@ -163,7 +163,7 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin }) => {
         <form onSubmit={handleSubmit} className="auth-form">
           <div className="form-row">
             <div className="form-group">
-              <label htmlFor="firstName">First Name</label>
+              <label htmlFor="firstName">First Name *</label>
               <input
                 type="text"
                 id="firstName"
@@ -171,11 +171,12 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin }) => {
                 value={formData.firstName}
                 onChange={handleChange}
                 placeholder="Enter your first name"
+                required
                 disabled={isLoading}
               />
             </div>
             <div className="form-group">
-              <label htmlFor="lastName">Last Name</label>
+              <label htmlFor="lastName">Last Name *</label>
               <input
                 type="text"
                 id="lastName"
@@ -183,6 +184,7 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin }) => {
                 value={formData.lastName}
                 onChange={handleChange}
                 placeholder="Enter your last name"
+                required
                 disabled={isLoading}
               />
             </div>

@@ -121,7 +121,8 @@ describe('Lambda Registration Endpoint Tests - Fixed', function() {
       expect(response.statusCode).to.equal(200);
       const body = JSON.parse(response.body);
       expect(body.success).to.be.true;
-      expect(body.message).to.equal('Registration successful');
+      expect(body.message).to.include('verification code');
+      expect(body.needsVerification).to.be.true;
       expect(body.companyName).to.equal('Test Company');
       expect(body.companyId).to.match(/^company-\d+-[a-z0-9]+$/);
       
@@ -175,7 +176,9 @@ describe('Lambda Registration Endpoint Tests - Fixed', function() {
         body: JSON.stringify({
           email: 'existing@example.com',
           password: 'TestPassword123!',
-          companyName: 'Test Company'
+          companyName: 'Test Company',
+          firstName: 'John',
+          lastName: 'Doe'
         }),
         requestContext: {
           http: { method: 'POST' }
