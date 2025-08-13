@@ -250,7 +250,4 @@ export const useAuth = () => {
   return context;
 };
 
-// Export UserInfo type for backward compatibility
-export type { UserInfo };
-
 export default AuthContext;

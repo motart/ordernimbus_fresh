@@ -24,8 +24,8 @@ interface RegisterResponse {
   error?: string;
 }
 
-// Re-export UserInfo from AuthContext for backward compatibility
-export { UserInfo } from '../contexts/AuthContext';
+// UserInfo type has moved to AuthContext
+// Import from '../contexts/AuthContext' instead
 
 // Keep local interface for this file only
 interface UserInfoLocal {
