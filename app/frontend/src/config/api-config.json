@@ -1,0 +1,25 @@
+{
+  "development": {
+    "API_URL": "http://localhost:3001",
+    "APP_URL": "http://localhost:3000",
+    "REGION": "us-west-1",
+    "USER_POOL_ID": "local-pool-id",
+    "CLIENT_ID": "local-client-id"
+  },
+  "staging": {
+    "API_URL": "https://api.ordernimbus.com/staging",
+    "APP_URL": "https://staging.ordernimbus.com",
+    "REGION": "us-west-1",
+    "USER_POOL_ID": "us-west-1_staging",
+    "CLIENT_ID": "staging-client-id"
+  },
+  "production": {
+    "API_URL": "https://api.ordernimbus.com",
+    "APP_URL": "https://app.ordernimbus.com",
+    "REGION": "us-west-1",
+    "USER_POOL_ID": "us-west-1_GeV4w2rCQ",
+    "CLIENT_ID": "2dr8p83gqu0v9iktpdq4qo2rdg",
+    "_FALLBACK_API_URL": "https://ay8k50buyd.execute-api.us-west-1.amazonaws.com/production",
+    "_COMMENT": "If api.ordernimbus.com is not configured, use _FALLBACK_API_URL"
+  }
+}

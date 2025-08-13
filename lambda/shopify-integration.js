@@ -502,7 +502,22 @@ const updateStoreSyncStatus = async (userId, storeId, status, metadata = {}) => 
 const handleShopifyConnect = async (event) => {
   console.log('Handling Shopify connect request');
   
-  const { userId, storeDomain } = JSON.parse(event.body);
+  const body = JSON.parse(event.body);
+  const { storeDomain } = body;
+  
+  // Extract userId from JWT authorizer context
+  let userId;
+  if (event.requestContext?.authorizer?.lambda?.userId) {
+    userId = event.requestContext.authorizer.lambda.userId;
+  } else if (event.requestContext?.authorizer?.userId) {
+    userId = event.requestContext.authorizer.userId;
+  } else if (event.requestContext?.authorizer?.claims?.sub) {
+    userId = event.requestContext.authorizer.claims.sub;
+  } else if (body.userId) {
+    // Fallback for testing
+    console.warn('Using userId from body - should be from JWT');
+    userId = body.userId;
+  }
   
   if (!userId || !storeDomain) {
     return {
@@ -709,8 +724,27 @@ exports.handler = async (event) => {
     }
     
     // Default to sync flow
-    const { userId, storeId, shopifyDomain, apiKey, syncType = 'full', locationId } = 
-      event.body ? JSON.parse(event.body) : event;
+    const body = event.body ? JSON.parse(event.body) : event;
+    const { storeId, shopifyDomain, apiKey, syncType = 'full', locationId } = body;
+    
+    // Extract userId from JWT authorizer context
+    let userId;
+    if (event.requestContext?.authorizer?.lambda?.userId) {
+      // API Gateway v2 with Lambda authorizer
+      userId = event.requestContext.authorizer.lambda.userId;
+    } else if (event.requestContext?.authorizer?.userId) {
+      // Alternative authorizer context structure
+      userId = event.requestContext.authorizer.userId;
+    } else if (event.requestContext?.authorizer?.claims?.sub) {
+      // Direct JWT claims from Cognito authorizer
+      userId = event.requestContext.authorizer.claims.sub;
+    } else if (body.userId) {
+      // Fallback to body for backwards compatibility
+      console.warn('Using userId from body - should be from JWT');
+      userId = body.userId;
+    }
+    
+    console.log('Extracted userId:', userId);
     
     if (!userId || !storeId || !shopifyDomain) {
       return {

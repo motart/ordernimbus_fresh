@@ -8,7 +8,7 @@ interface RegisterFormProps {
 }
 
 const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin }) => {
-  const { register } = useAuth();
+  const { register, confirmRegistration, login } = useAuth();
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -20,6 +20,8 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [needsVerification, setNeedsVerification] = useState(false);
+  const [verificationCode, setVerificationCode] = useState('');
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData(prev => ({
@@ -58,8 +60,13 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin }) => {
       );
       
       if (result.success) {
-        toast.success('Account created successfully! Welcome to OrderNimbus!');
-        // Navigation will be handled by the auth context
+        if (result.needsVerification) {
+          setNeedsVerification(true);
+          toast.success('Account created! Please check your email for verification code.');
+        } else {
+          toast.success('Account created successfully! Welcome to OrderNimbus!');
+          // Navigation will be handled by the auth context
+        }
       } else {
         toast.error(result.error || 'Registration failed');
       }
@@ -69,6 +76,81 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin }) => {
       setIsLoading(false);
     }
   };
+
+  const handleVerification = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!verificationCode) {
+      toast.error('Please enter the verification code');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const result = await confirmRegistration(formData.email, verificationCode);
+      
+      if (result.success) {
+        toast.success('Email verified! Logging you in...');
+        // Try to auto-login after verification
+        await login(formData.email, formData.password);
+      } else {
+        toast.error(result.error || 'Verification failed');
+      }
+    } catch (error) {
+      toast.error('Verification failed. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Show verification form if needed
+  if (needsVerification) {
+    return (
+      <div className="register-form-container">
+        <div className="auth-card">
+          <div className="auth-header">
+            <h1>Verify Your Email</h1>
+            <p>We've sent a verification code to {formData.email}</p>
+          </div>
+          
+          <form onSubmit={handleVerification} className="auth-form">
+            <div className="form-group">
+              <label htmlFor="verificationCode">Verification Code</label>
+              <input
+                type="text"
+                id="verificationCode"
+                value={verificationCode}
+                onChange={(e) => setVerificationCode(e.target.value)}
+                placeholder="Enter 6-digit code"
+                required
+                disabled={isLoading}
+                maxLength={6}
+              />
+            </div>
+
+            <button 
+              type="submit" 
+              className="auth-submit-button"
+              disabled={isLoading}
+            >
+              {isLoading ? 'Verifying...' : 'Verify Email'}
+            </button>
+
+            <div className="auth-footer">
+              <button
+                type="button"
+                className="auth-link-button"
+                onClick={() => setNeedsVerification(false)}
+                disabled={isLoading}
+              >
+                Back to registration
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="register-form-container">

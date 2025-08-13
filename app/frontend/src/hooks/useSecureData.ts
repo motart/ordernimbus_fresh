@@ -45,9 +45,15 @@ export const useSecureData = (options: UseSecureDataOptions = {}): UseSecureData
         try {
           await dataManager.initialize();
         } catch (authError) {
-          console.warn('Normal initialization failed, trying fallback mode:', authError);
+          console.warn('Authentication failed:', authError);
           
-          // Fall back to temp mode if authentication fails
+          // In production, don't fall back - require authentication
+          if (process.env.NODE_ENV === 'production') {
+            throw new Error('Authentication required. Please log in to continue.');
+          }
+          
+          // Only fall back in development
+          console.warn('Running in development mode - using fallback');
           await (dataManager as any).initializeFallback();
         }
         
@@ -60,7 +66,7 @@ export const useSecureData = (options: UseSecureDataOptions = {}): UseSecureData
         }
 
         // Migrate legacy data if enabled (only in authenticated mode)
-        if (autoMigrate && !context?.userId.startsWith('temp-user')) {
+        if (autoMigrate && context && !context.userId.startsWith('local-dev')) {
           try {
             await dataManager.migrateLegacyData();
           } catch (migrationError) {
@@ -77,6 +83,12 @@ export const useSecureData = (options: UseSecureDataOptions = {}): UseSecureData
         
         if (onError) {
           onError(err instanceof Error ? err : new Error(errorMessage));
+        }
+        
+        // In production, if initialization fails, user needs to log in
+        if (process.env.NODE_ENV === 'production' && errorMessage.includes('Authentication')) {
+          // Redirect to login page
+          window.location.href = '/login';
         }
       }
     };

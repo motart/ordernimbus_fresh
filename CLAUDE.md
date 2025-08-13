@@ -2,6 +2,94 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Custom Instructions & Observations for Claude
+
+### CORE ARCHITECTURAL PRINCIPLE: Cloud-Native Application
+**This is a cloud-native application that must:**
+- Use as little custom code as possible
+- Leverage AWS IaaS and PaaS services directly (Amplify, Cognito, DynamoDB, Lambda, etc.)
+- Avoid custom implementations when AWS provides a service
+- Use AWS Amplify for authentication, data, and API management
+- Prefer managed services over self-managed solutions
+
+### IMPORTANT: User-Specific Working Patterns
+<!-- Add your observations below. Claude will follow these in all future conversations -->
+
+#### Things to Always Check
+- [ ] Check for existing CloudFormation stacks before deploying (avoid duplicate stack names)
+- [ ] Always use `deploy-fixed.sh` instead of `deploy.sh` (the original has stack naming issues)
+- [ ] Check for CloudFront distribution conflicts before deployment
+- [ ] Verify S3 buckets are empty before attempting stack deletion
+
+#### Known Issues & Solutions
+- **React 19 + react-icons**: Compatibility issues - use `React.createElement(IconName as any)` pattern
+- **Stack Naming**: The config.json STACK_PREFIX already contains "production", don't append environment again
+- **CloudFront CNAMEs**: Check for existing distributions using the same domain before deploying
+- **TypeScript Strict Mode**: Frontend uses strict TypeScript - always define return types for functions
+
+#### Preferred Development Practices
+- Always build frontend with environment variables set (REACT_APP_*)
+- Run builds from `/Users/rachid/workspace/ordernimbus/app/frontend` directory
+- Use AWS Secrets Manager for all credentials, never hardcode
+- When deployment fails, check CloudFormation stack events first
+- Deploy to staging first, then production after verification
+
+#### Command Shortcuts & Fixes
+```bash
+# Quick frontend rebuild and deploy (production)
+cd app/frontend && \
+export REACT_APP_API_URL="<API_URL>" && \
+export REACT_APP_ENVIRONMENT="production" && \
+export REACT_APP_USER_POOL_ID="<POOL_ID>" && \
+export REACT_APP_CLIENT_ID="<CLIENT_ID>" && \
+export REACT_APP_REGION="us-west-1" && \
+npm run build && \
+aws s3 sync build/ s3://<BUCKET_NAME>/ --delete --region us-west-1
+```
+
+#### Your Custom Notes
+<!-- Add your specific observations and preferences below this line -->
+<!-- Claude will integrate these into all future processing -->
+
+### CRITICAL RULE: NO HARDCODING ANYTHING!!!
+- **NEVER** put URLs, IDs, keys, or any configuration values directly in code
+- **ALWAYS** use environment variables, configuration files, or CloudFormation outputs
+- **ALWAYS** make everything configurable from external sources
+- Configuration should be:
+  - Read from `.env` files
+  - Passed as environment variables
+  - Retrieved from CloudFormation stack outputs
+  - Stored in AWS Parameter Store or Secrets Manager
+- Even "temporary" values must be configurable
+- This applies to ALL files: JavaScript, TypeScript, YAML, scripts, everything
+
+### Code Documentation Requirements
+- **ALWAYS** add detailed comments to code explaining:
+  - Purpose of functions/components
+  - Data flow and transformations
+  - Security considerations
+  - Error handling approach
+  - Integration points with other services
+- **ALWAYS** consult `CODE_MAP.md` before answering questions about the codebase
+- **ALWAYS** update `CODE_MAP.md` when making significant changes
+- Comments should explain "why" not just "what"
+- Use JSDoc format for JavaScript/TypeScript functions
+
+### Example Comment Style:
+```javascript
+/**
+ * Validates and processes Shopify webhook events
+ * @param {Object} event - API Gateway event containing webhook data
+ * @returns {Object} HTTP response with processing status
+ * 
+ * Security: Validates HMAC signature before processing
+ * Integration: Updates DynamoDB and triggers SNS notifications
+ * Error Handling: Returns 200 even on errors to prevent Shopify retries
+ */
+```
+
+---
+
 ## Project Overview
 
 Multi-tenant, highly-scalable Sales Forecasting Platform with AWS-native infrastructure, designed for brick-and-mortar retailers and Shopify merchants.

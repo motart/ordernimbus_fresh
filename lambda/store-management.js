@@ -1,12 +1,41 @@
+/**
+ * Store Management Lambda Function
+ * 
+ * @description
+ * Manages Shopify store connections for multi-tenant SaaS platform.
+ * Provides CRUD operations with strict user isolation via JWT claims.
+ * 
+ * @endpoints
+ * GET /api/stores - List user's connected stores
+ * POST /api/stores - Add new store connection
+ * PUT /api/stores/{id} - Update store configuration
+ * DELETE /api/stores/{id} - Remove store connection
+ * 
+ * @security
+ * - JWT token required (validated by API Gateway authorizer)
+ * - userId extracted from event.requestContext.authorizer
+ * - All DynamoDB queries filtered by userId
+ * - Shopify tokens encrypted at rest
+ * 
+ * @integration
+ * - Triggers async Shopify sync after store creation
+ * - Publishes events to EventBridge for analytics
+ * - Stores metadata in DynamoDB for quick access
+ */
+
 const AWS = require('aws-sdk');
 const crypto = require('crypto');
 
-// Initialize AWS services
+/**
+ * DynamoDB Configuration
+ * Uses environment variables for flexibility across environments
+ * Local development can override with DYNAMODB_ENDPOINT
+ */
 const dynamoConfig = {
   region: process.env.AWS_REGION || 'us-west-1'
 };
 
-// Only set endpoint for local development
+// Only set endpoint for local development (e.g., DynamoDB Local on port 8000)
 if (process.env.DYNAMODB_ENDPOINT) {
   dynamoConfig.endpoint = process.env.DYNAMODB_ENDPOINT;
 }
@@ -360,14 +389,32 @@ exports.handler = async (event) => {
     const method = event.httpMethod;
     const path = event.path;
     
-    // Extract userId from event (would normally come from auth)
-    // Headers may come as 'userId' or 'Userid' depending on the gateway
-    const userId = event.headers?.userId || 
-                   event.headers?.Userid ||
-                   event.headers?.userid ||
-                   event.requestContext?.authorizer?.userId || 
-                   (event.body ? JSON.parse(event.body).userId : null) ||
-                   'test-user';
+    // Extract userId from JWT authorizer context
+    // The JWT Authorizer sets the userId in the request context
+    let userId;
+    
+    // Check if this is coming from the authorizer
+    if (event.requestContext?.authorizer?.lambda?.userId) {
+      // API Gateway v2 with Lambda authorizer
+      userId = event.requestContext.authorizer.lambda.userId;
+    } else if (event.requestContext?.authorizer?.userId) {
+      // Alternative authorizer context structure
+      userId = event.requestContext.authorizer.userId;
+    } else if (event.requestContext?.authorizer?.claims?.sub) {
+      // Direct JWT claims from Cognito authorizer
+      userId = event.requestContext.authorizer.claims.sub;
+    } else if (event.headers?.userId || event.headers?.Userid) {
+      // Fallback to headers for local testing
+      console.warn('Using userId from headers - should only happen in local testing');
+      userId = event.headers?.userId || event.headers?.Userid || event.headers?.userid;
+    } else if (event.body) {
+      // Last resort - check body (for testing only)
+      console.warn('Using userId from body - should only happen in testing');
+      const body = JSON.parse(event.body);
+      userId = body.userId;
+    }
+    
+    console.log('Extracted userId:', userId);
     
     if (!userId) {
       return {

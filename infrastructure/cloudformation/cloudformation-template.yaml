@@ -219,6 +219,37 @@ Resources:
         - Key: Name
           Value: !Sub 'ordernimbus-${Environment}-lambda-role'
 
+  # IAM Role for Logs Reader Lambda with CloudWatch Logs permissions
+  LogsReaderRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: CloudWatchLogsReadAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:FilterLogEvents
+                  - logs:GetLogEvents
+                  - logs:DescribeLogGroups
+                  - logs:DescribeLogStreams
+                Resource:
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/ordernimbus-${Environment}-*'
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/ordernimbus-${Environment}-*:*'
+      Tags:
+        - Key: Name
+          Value: !Sub 'ordernimbus-${Environment}-logs-reader-role'
+
   # ==================== COGNITO ====================
   UserPool:
     Type: AWS::Cognito::UserPool
@@ -658,6 +689,49 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub 'ordernimbus-${Environment}-password-reset'
+
+  # JWT Authorizer Lambda for API Gateway
+  JWTAuthorizerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'ordernimbus-${Environment}-jwt-authorizer'
+      Runtime: nodejs18.x
+      Handler: jwt-authorizer.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 10
+      MemorySize: 256
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          AWS_REGION: !Ref AWS::Region
+          USER_POOL_ID: !Ref UserPool
+      Code:
+        S3Bucket: !Ref DeploymentBucket
+        S3Key: lambda/jwt-authorizer.zip
+      Tags:
+        - Key: Name
+          Value: !Sub 'ordernimbus-${Environment}-jwt-authorizer'
+
+  # Logs Reader Lambda for fetching CloudWatch logs
+  LogsReaderFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'ordernimbus-${Environment}-logs-reader'
+      Runtime: nodejs18.x
+      Handler: logs-reader.handler
+      Role: !GetAtt LogsReaderRole.Arn
+      Timeout: 30
+      MemorySize: 512
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          AWS_REGION: !Ref AWS::Region
+      Code:
+        S3Bucket: !Ref DeploymentBucket
+        S3Key: lambda/logs-reader.zip
+      Tags:
+        - Key: Name
+          Value: !Sub 'ordernimbus-${Environment}-logs-reader'
 
   ChatbotHandlerFunction:
     Type: AWS::Lambda::Function
@@ -1359,6 +1433,28 @@ Resources:
       Tags:
         Name: !Sub 'ordernimbus-${Environment}-api-stage'
 
+  # JWT Authorizer for API Gateway
+  JWTAuthorizer:
+    Type: AWS::ApiGatewayV2::Authorizer
+    Properties:
+      ApiId: !Ref ApiGateway
+      AuthorizerType: REQUEST
+      AuthorizerUri: !Sub 'arn:aws:apigatewayv2:${AWS::Region}:lambda:path/2015-03-31/functions/${JWTAuthorizerFunction.Arn}/invocations'
+      AuthorizerPayloadFormatVersion: '2.0'
+      AuthorizerResultTtlInSeconds: 300
+      EnableSimpleResponses: true
+      IdentitySource:
+        - '$request.header.Authorization'
+      Name: !Sub 'ordernimbus-${Environment}-jwt-authorizer'
+
+  JWTAuthorizerPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref JWTAuthorizerFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/authorizers/${JWTAuthorizer}'
+
   # Lambda Integrations
   PasswordResetIntegration:
     Type: AWS::ApiGatewayV2::Integration
@@ -1448,6 +1544,8 @@ Resources:
       ApiId: !Ref ApiGateway
       RouteKey: 'POST /api/shopify/connect'
       Target: !Sub 'integrations/${ShopifyIntegration}'
+      AuthorizationType: CUSTOM
+      AuthorizerId: !Ref JWTAuthorizer
 
   ShopifyOAuthRoute:
     Type: AWS::ApiGatewayV2::Route
@@ -1462,6 +1560,8 @@ Resources:
       ApiId: !Ref ApiGateway
       RouteKey: 'GET /api/shopify/stores'
       Target: !Sub 'integrations/${ShopifyIntegration}'
+      AuthorizationType: CUSTOM
+      AuthorizerId: !Ref JWTAuthorizer
 
   ShopifyOptionsRoute:
     Type: AWS::ApiGatewayV2::Route
@@ -1494,6 +1594,8 @@ Resources:
       ApiId: !Ref ApiGateway
       RouteKey: 'GET /api/stores'
       Target: !Sub 'integrations/${StoreIntegration}'
+      AuthorizationType: CUSTOM
+      AuthorizerId: !Ref JWTAuthorizer
 
   StorePermission:
     Type: AWS::Lambda::Permission
@@ -1518,6 +1620,8 @@ Resources:
       ApiId: !Ref ApiGateway
       RouteKey: 'GET /api/forecast'
       Target: !Sub 'integrations/${ForecastIntegration}'
+      AuthorizationType: CUSTOM
+      AuthorizerId: !Ref JWTAuthorizer
 
   ForecastPostRoute:
     Type: AWS::ApiGatewayV2::Route
@@ -1550,6 +1654,8 @@ Resources:
       ApiId: !Ref ApiGateway
       RouteKey: 'GET /api/products'
       Target: !Sub 'integrations/${ProductsIntegration}'
+      AuthorizationType: CUSTOM
+      AuthorizerId: !Ref JWTAuthorizer
 
   ProductsPostRoute:
     Type: AWS::ApiGatewayV2::Route
@@ -1589,6 +1695,8 @@ Resources:
       ApiId: !Ref ApiGateway
       RouteKey: 'GET /api/orders'
       Target: !Sub 'integrations/${OrdersIntegration}'
+      AuthorizationType: CUSTOM
+      AuthorizerId: !Ref JWTAuthorizer
 
   OrdersPostRoute:
     Type: AWS::ApiGatewayV2::Route
@@ -1718,6 +1826,39 @@ Resources:
     Type: AWS::Lambda::Permission
     Properties:
       FunctionName: !Ref NotificationsFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'
+
+  # Logs API Integration
+  LogsIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref ApiGateway
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub 'arn:aws:apigatewayv2:${AWS::Region}:lambda:path/2015-03-31/functions/${LogsReaderFunction.Arn}/invocations'
+      PayloadFormatVersion: '2.0'
+
+  LogsRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: 'GET /api/logs'
+      Target: !Sub 'integrations/${LogsIntegration}'
+      AuthorizationType: CUSTOM
+      AuthorizerId: !Ref JWTAuthorizer
+
+  LogsOptionsRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: 'OPTIONS /api/logs'
+      Target: !Sub 'integrations/${LogsIntegration}'
+
+  LogsPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref LogsReaderFunction
       Action: lambda:InvokeFunction
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'

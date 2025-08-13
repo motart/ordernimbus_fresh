@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OrderNimbus Public Logs Viewer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2rem;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            opacity: 0.9;
+            font-size: 0.95rem;
+        }
+        
+        .filters {
+            padding: 20px 30px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e1e4e8;
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        
+        .filter-group label {
+            font-size: 0.85rem;
+            color: #586069;
+            font-weight: 500;
+        }
+        
+        select, input, button {
+            padding: 8px 12px;
+            border: 1px solid #d1d5da;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            background: white;
+        }
+        
+        select:focus, input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            font-weight: 500;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            border: none;
+        }
+        
+        button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        .auto-refresh {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-left: auto;
+        }
+        
+        .stats {
+            padding: 15px 30px;
+            background: #f8f9fa;
+            display: flex;
+            gap: 30px;
+            font-size: 0.9rem;
+            color: #586069;
+        }
+        
+        .stat {
+            display: flex;
+            gap: 5px;
+        }
+        
+        .stat-label {
+            font-weight: 500;
+        }
+        
+        .logs-container {
+            height: 600px;
+            overflow-y: auto;
+            padding: 20px 30px;
+        }
+        
+        .log-entry {
+            padding: 12px 15px;
+            border-left: 4px solid #e1e4e8;
+            margin-bottom: 10px;
+            background: #f8f9fa;
+            border-radius: 4px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+        }
+        
+        .log-entry:hover {
+            background: #f0f3f6;
+            transform: translateX(2px);
+        }
+        
+        .log-entry.ERROR {
+            border-left-color: #d73a49;
+            background: #ffeef0;
+        }
+        
+        .log-entry.WARN {
+            border-left-color: #f9826c;
+            background: #fff5f0;
+        }
+        
+        .log-entry.INFO {
+            border-left-color: #28a745;
+            background: #f0fff4;
+        }
+        
+        .log-entry.DEBUG {
+            border-left-color: #6f42c1;
+            background: #f5f0ff;
+        }
+        
+        .log-header {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 8px;
+            align-items: center;
+        }
+        
+        .log-timestamp {
+            color: #586069;
+            font-size: 0.8rem;
+        }
+        
+        .log-level {
+            font-weight: bold;
+            font-size: 0.75rem;
+            padding: 2px 6px;
+            border-radius: 3px;
+            text-transform: uppercase;
+        }
+        
+        .log-level.ERROR {
+            background: #d73a49;
+            color: white;
+        }
+        
+        .log-level.WARN {
+            background: #f9826c;
+            color: white;
+        }
+        
+        .log-level.INFO {
+            background: #28a745;
+            color: white;
+        }
+        
+        .log-level.DEBUG {
+            background: #6f42c1;
+            color: white;
+        }
+        
+        .log-source {
+            color: #0366d6;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+        
+        .log-message {
+            color: #24292e;
+            line-height: 1.5;
+            word-break: break-word;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #586069;
+        }
+        
+        .spinner {
+            display: inline-block;
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(102, 126, 234, 0.2);
+            border-top-color: #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .notice {
+            background: #fff3cd;
+            color: #856404;
+            padding: 10px 15px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+            font-size: 0.85rem;
+        }
+        
+        .no-logs {
+            text-align: center;
+            padding: 60px;
+            color: #586069;
+        }
+        
+        .no-logs svg {
+            width: 80px;
+            height: 80px;
+            margin-bottom: 20px;
+            opacity: 0.3;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔍 OrderNimbus Public Logs Viewer</h1>
+            <p>Real-time system logs (last 24 hours, sanitized for public access)</p>
+        </div>
+        
+        <div class="filters">
+            <div class="filter-group">
+                <label>Source</label>
+                <select id="sourceFilter">
+                    <option value="all">All Sources</option>
+                    <option value="store-management">Store Management</option>
+                    <option value="shopify-integration">Shopify Integration</option>
+                    <option value="jwt-authorizer">JWT Authorizer</option>
+                    <option value="auth-handler">Auth Handler</option>
+                    <option value="forecast-api">Forecast API</option>
+                    <option value="data-analysis">Data Analysis</option>
+                    <option value="product-management">Products</option>
+                    <option value="order-management">Orders</option>
+                    <option value="inventory-management">Inventory</option>
+                    <option value="customer-management">Customers</option>
+                    <option value="chatbot-handler">Chatbot</option>
+                </select>
+            </div>
+            
+            <div class="filter-group">
+                <label>Level</label>
+                <select id="levelFilter">
+                    <option value="all">All Levels</option>
+                    <option value="ERROR">Error</option>
+                    <option value="WARN">Warning</option>
+                    <option value="INFO">Info</option>
+                    <option value="DEBUG">Debug</option>
+                </select>
+            </div>
+            
+            <div class="filter-group">
+                <label>Limit</label>
+                <select id="limitFilter">
+                    <option value="50">50</option>
+                    <option value="100" selected>100</option>
+                    <option value="200">200</option>
+                    <option value="500">500</option>
+                </select>
+            </div>
+            
+            <div class="filter-group">
+                <label>&nbsp;</label>
+                <button onclick="fetchLogs()">🔄 Refresh</button>
+            </div>
+            
+            <div class="auto-refresh">
+                <input type="checkbox" id="autoRefresh">
+                <label for="autoRefresh">Auto-refresh every 5s</label>
+            </div>
+        </div>
+        
+        <div class="stats" id="stats">
+            <div class="stat">
+                <span class="stat-label">Total Logs:</span>
+                <span id="totalCount">0</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">Time Range:</span>
+                <span id="timeRange">-</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">Last Updated:</span>
+                <span id="lastUpdated">Never</span>
+            </div>
+        </div>
+        
+        <div class="logs-container" id="logsContainer">
+            <div class="loading">
+                <div class="spinner"></div>
+                <p>Loading logs...</p>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Configuration - NO HARDCODING
+        const API_URL = 'https://ay8k50buyd.execute-api.us-west-1.amazonaws.com/production/public/logs';
+        
+        let autoRefreshInterval = null;
+        let lastTimestamp = null;
+        
+        // Fetch logs from API
+        async function fetchLogs() {
+            const source = document.getElementById('sourceFilter').value;
+            const level = document.getElementById('levelFilter').value;
+            const limit = document.getElementById('limitFilter').value;
+            
+            const params = new URLSearchParams({
+                source: source,
+                level: level,
+                limit: limit
+            });
+            
+            if (lastTimestamp && document.getElementById('autoRefresh').checked) {
+                params.append('since', lastTimestamp);
+            }
+            
+            try {
+                const response = await fetch(`${API_URL}?${params}`);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    displayLogs(data);
+                    updateStats(data);
+                    
+                    // Update last timestamp for incremental updates
+                    if (data.logs && data.logs.length > 0) {
+                        lastTimestamp = data.logs[0].timestamp;
+                    }
+                } else {
+                    console.error('Failed to fetch logs:', data);
+                    showError('Failed to fetch logs: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Error fetching logs:', error);
+                showError('Network error: ' + error.message);
+            }
+        }
+        
+        // Display logs in the container
+        function displayLogs(data) {
+            const container = document.getElementById('logsContainer');
+            
+            if (!data.logs || data.logs.length === 0) {
+                container.innerHTML = `
+                    <div class="no-logs">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                            <line x1="9" y1="9" x2="15" y2="15"></line>
+                            <line x1="15" y1="9" x2="9" y2="15"></line>
+                        </svg>
+                        <h3>No logs found</h3>
+                        <p>Try adjusting your filters or check back later</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            // Add notice if present
+            let html = '';
+            if (data.notice) {
+                html += `<div class="notice">ℹ️ ${data.notice}</div>`;
+            }
+            
+            // Add log entries
+            data.logs.forEach(log => {
+                const timestamp = new Date(log.timestamp).toLocaleString();
+                const message = escapeHtml(log.message || '');
+                
+                html += `
+                    <div class="log-entry ${log.level}">
+                        <div class="log-header">
+                            <span class="log-timestamp">${timestamp}</span>
+                            <span class="log-level ${log.level}">${log.level}</span>
+                            <span class="log-source">${log.source}</span>
+                            ${log.requestId ? `<span class="log-request-id">ReqID: ${log.requestId.substr(0, 8)}...</span>` : ''}
+                            ${log.duration ? `<span class="log-duration">${log.duration}ms</span>` : ''}
+                        </div>
+                        <div class="log-message">${message}</div>
+                    </div>
+                `;
+            });
+            
+            container.innerHTML = html;
+            
+            // Scroll to top if auto-refresh is off
+            if (!document.getElementById('autoRefresh').checked) {
+                container.scrollTop = 0;
+            }
+        }
+        
+        // Update statistics
+        function updateStats(data) {
+            document.getElementById('totalCount').textContent = data.count || 0;
+            
+            if (data.timeRange) {
+                const start = new Date(data.timeRange.start).toLocaleTimeString();
+                const end = new Date(data.timeRange.end).toLocaleTimeString();
+                document.getElementById('timeRange').textContent = `${start} - ${end}`;
+            }
+            
+            document.getElementById('lastUpdated').textContent = new Date().toLocaleTimeString();
+        }
+        
+        // Show error message
+        function showError(message) {
+            const container = document.getElementById('logsContainer');
+            container.innerHTML = `
+                <div class="notice" style="background: #f8d7da; color: #721c24;">
+                    ⚠️ ${message}
+                </div>
+            `;
+        }
+        
+        // Escape HTML to prevent XSS
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // Handle auto-refresh
+        document.getElementById('autoRefresh').addEventListener('change', function() {
+            if (this.checked) {
+                autoRefreshInterval = setInterval(fetchLogs, 5000);
+            } else {
+                clearInterval(autoRefreshInterval);
+                autoRefreshInterval = null;
+                lastTimestamp = null;
+            }
+        });
+        
+        // Handle filter changes
+        document.getElementById('sourceFilter').addEventListener('change', () => {
+            lastTimestamp = null;
+            fetchLogs();
+        });
+        
+        document.getElementById('levelFilter').addEventListener('change', () => {
+            lastTimestamp = null;
+            fetchLogs();
+        });
+        
+        document.getElementById('limitFilter').addEventListener('change', () => {
+            lastTimestamp = null;
+            fetchLogs();
+        });
+        
+        // Initial load
+        fetchLogs();
+    </script>
+</body>
+</html>
