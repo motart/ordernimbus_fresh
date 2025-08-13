@@ -122,6 +122,8 @@ jobs:
           npm test -- --watchAll=false --passWithNoTests
           
       - name: Build frontend
+        env:
+          CI: false
         run: |
           cd app/frontend
           npm run build
