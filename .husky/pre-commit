@@ -1,0 +1,33 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+# Pre-commit hook for OrderNimbus
+# Runs tests before allowing commits
+
+echo "🔍 Running pre-commit checks..."
+
+# Check for debugging statements
+echo "Checking for console.log statements..."
+if git diff --cached --name-only | xargs grep -l "console\.log" 2>/dev/null; then
+  echo "⚠️  Warning: console.log statements found in staged files"
+  echo "Remove them or use console.error/console.warn for production logs"
+  # Uncomment to block commit:
+  # exit 1
+fi
+
+# Check for sensitive data
+echo "Checking for sensitive data..."
+if git diff --cached --name-only | xargs grep -E "(AKIA|aws_secret_access_key|api_key|private_key)" 2>/dev/null; then
+  echo "❌ Error: Potential sensitive data found in staged files!"
+  echo "Please remove any API keys, secrets, or credentials"
+  exit 1
+fi
+
+# Run unit tests (fast tests only for pre-commit)
+echo "Running unit tests..."
+npm run test:unit -- --reporter min || {
+  echo "❌ Unit tests failed! Fix the tests before committing."
+  exit 1
+}
+
+echo "✅ All pre-commit checks passed!"

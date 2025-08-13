@@ -1,0 +1,68 @@
+# CODEOWNERS file for OrderNimbus
+# This file defines who should review pull requests for different parts of the codebase
+# Each line is a file pattern followed by one or more owners
+
+# Default owners for everything in the repo
+* @rachid
+
+# Frontend code
+/app/frontend/ @rachid
+/app/frontend/src/components/ @rachid
+/app/frontend/src/contexts/ @rachid
+/app/frontend/src/config/ @rachid
+
+# Backend/Lambda code  
+/lambda-main-deployment/ @rachid
+/lambda/ @rachid
+*.lambda.js @rachid
+
+# Infrastructure and DevOps
+/infrastructure/ @rachid
+/scripts/ @rachid
+/.github/ @rachid
+/cloudformation*.yaml @rachid
+/cdk/ @rachid
+*.yml @rachid
+*.yaml @rachid
+
+# Testing
+/tests/ @rachid
+*.test.js @rachid
+*.test.ts @rachid
+*.spec.js @rachid
+*.spec.ts @rachid
+
+# Documentation
+*.md @rachid
+/docs/ @rachid
+USE_CASES.md @rachid
+ARCHITECTURE_PLAN.md @rachid
+CLAUDE.md @rachid
+
+# Security-sensitive files (require multiple reviewers)
+# Uncomment and add additional reviewers when team grows
+# .env* @rachid @security-team
+# **/auth/** @rachid @security-team
+# **/security/** @rachid @security-team
+
+# AWS and deployment configurations
+/scripts/deployment/ @rachid
+/scripts/infrastructure/ @rachid
+package.json @rachid
+package-lock.json @rachid
+
+# Database and data models
+**/models/ @rachid
+**/migrations/ @rachid
+**/schemas/ @rachid
+
+# CI/CD
+.github/workflows/ @rachid
+Dockerfile @rachid
+docker-compose*.yml @rachid
+
+# Critical configuration files
+.gitignore @rachid
+.eslintrc* @rachid
+tsconfig.json @rachid
+webpack.config.js @rachid
