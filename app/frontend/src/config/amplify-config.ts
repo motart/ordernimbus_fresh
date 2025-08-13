@@ -51,8 +51,46 @@ const getAmplifyConfig = () => {
   };
 };
 
-// Configure Amplify
-export const configureAmplify = () => {
+// Configure Amplify with cloud config
+export const configureAmplify = (cloudConfig?: { userPoolId: string; clientId: string; region: string }) => {
+  // If cloud config is provided, use it directly
+  if (cloudConfig) {
+    const config = {
+      Auth: {
+        Cognito: {
+          userPoolId: cloudConfig.userPoolId,
+          userPoolClientId: cloudConfig.clientId,
+          region: cloudConfig.region,
+          loginWith: {
+            email: true,
+          },
+          signUpVerificationMethod: 'code' as const,
+          userAttributes: {
+            email: {
+              required: true,
+            },
+          },
+          passwordFormat: {
+            minLength: 8,
+            requireLowercase: true,
+            requireUppercase: true,
+            requireNumbers: true,
+          },
+        },
+      },
+    };
+    
+    try {
+      Amplify.configure(config);
+      console.log('AWS Amplify configured with cloud config successfully');
+      return true;
+    } catch (error) {
+      console.error('Failed to configure AWS Amplify with cloud config:', error);
+      return false;
+    }
+  }
+  
+  // Fallback to environment variables
   const config = getAmplifyConfig();
   
   if (config) {
