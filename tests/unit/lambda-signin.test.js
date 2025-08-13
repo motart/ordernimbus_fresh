@@ -18,7 +18,10 @@ const cognitoStub = {
   adminInitiateAuth: sinon.stub().returns({ promise: sinon.stub() }),
   adminGetUser: sinon.stub().returns({ promise: sinon.stub() }),
   adminUpdateUserAttributes: sinon.stub().returns({ promise: sinon.stub() }),
-  globalSignOut: sinon.stub().returns({ promise: sinon.stub() })
+  globalSignOut: sinon.stub().returns({ promise: sinon.stub() }),
+  forgotPassword: sinon.stub().returns({ promise: sinon.stub() }),
+  adminCreateUser: sinon.stub().returns({ promise: sinon.stub() }),
+  adminSetUserPassword: sinon.stub().returns({ promise: sinon.stub() })
 };
 
 const dynamodbStub = {
@@ -28,18 +31,10 @@ const dynamodbStub = {
   query: sinon.stub().returns({ promise: sinon.stub() })
 };
 
-// Mock AWS SDK with forgotPassword method
-const cognitoConstructor = function() {
-  const stub = Object.assign({}, cognitoStub);
-  stub.forgotPassword = sinon.stub().returns({ promise: sinon.stub() });
-  return stub;
-};
+// Mock AWS SDK - Create a constructor that returns our stub
+AWS.CognitoIdentityServiceProvider = sinon.stub().returns(cognitoStub);
 
-AWS.CognitoIdentityServiceProvider = cognitoConstructor;
-
-AWS.DynamoDB.DocumentClient = function() {
-  return dynamodbStub;
-};
+AWS.DynamoDB.DocumentClient = sinon.stub().returns(dynamodbStub);
 
 AWS.SecretsManager = function() {
   return {
@@ -66,6 +61,9 @@ describe('UC002: Sign-In Flow Tests', function() {
     cognitoStub.adminGetUser = sinon.stub().returns({ promise: sinon.stub() });
     cognitoStub.adminUpdateUserAttributes = sinon.stub().returns({ promise: sinon.stub() });
     cognitoStub.globalSignOut = sinon.stub().returns({ promise: sinon.stub() });
+    cognitoStub.forgotPassword = sinon.stub().returns({ promise: sinon.stub() });
+    cognitoStub.adminCreateUser = sinon.stub().returns({ promise: sinon.stub() });
+    cognitoStub.adminSetUserPassword = sinon.stub().returns({ promise: sinon.stub() });
     dynamodbStub.put = sinon.stub().returns({ promise: sinon.stub().resolves({}) });
     dynamodbStub.get = sinon.stub().returns({ promise: sinon.stub().resolves({}) });
     dynamodbStub.update = sinon.stub().returns({ promise: sinon.stub().resolves({}) });
@@ -235,7 +233,7 @@ describe('UC002: Sign-In Flow Tests', function() {
       expect(response.statusCode).to.equal(401);
       const body = JSON.parse(response.body);
       expect(body.success).to.be.false;
-      expect(body.error).to.equal('Invalid credentials'); // Don't reveal user doesn't exist
+      expect(body.error).to.equal('Login failed'); // Generic error for security
     });
 
     it('should handle account locked/disabled', async function() {

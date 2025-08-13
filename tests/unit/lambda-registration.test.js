@@ -17,7 +17,8 @@ process.env.ENVIRONMENT = 'test';
 const cognitoStub = {
   adminCreateUser: sinon.stub().returns({ promise: sinon.stub() }),
   adminSetUserPassword: sinon.stub().returns({ promise: sinon.stub() }),
-  adminInitiateAuth: sinon.stub().returns({ promise: sinon.stub() })
+  adminInitiateAuth: sinon.stub().returns({ promise: sinon.stub() }),
+  forgotPassword: sinon.stub().returns({ promise: sinon.stub() })
 };
 
 const dynamodbStub = {
@@ -26,14 +27,10 @@ const dynamodbStub = {
   delete: sinon.stub().returns({ promise: sinon.stub() })
 };
 
-// Mock AWS SDK
-AWS.CognitoIdentityServiceProvider = function() {
-  return cognitoStub;
-};
+// Mock AWS SDK - Create a constructor that returns our stub
+AWS.CognitoIdentityServiceProvider = sinon.stub().returns(cognitoStub);
 
-AWS.DynamoDB.DocumentClient = function() {
-  return dynamodbStub;
-};
+AWS.DynamoDB.DocumentClient = sinon.stub().returns(dynamodbStub);
 
 AWS.SecretsManager = function() {
   return {
@@ -84,8 +81,8 @@ describe('Lambda Registration Endpoint Tests', function() {
       };
 
       // Mock successful Cognito user creation
-      cognitoStub.adminCreateUser.returns({
-        promise: sinon.stub().resolves({
+      cognitoStub.adminCreateUser = sinon.stub().returns({
+        promise: () => Promise.resolve({
           User: {
             Username: 'newuser@example.com',
             Attributes: [
@@ -95,8 +92,13 @@ describe('Lambda Registration Endpoint Tests', function() {
         })
       });
 
-      cognitoStub.adminSetUserPassword.returns({
-        promise: sinon.stub().resolves({})
+      cognitoStub.adminSetUserPassword = sinon.stub().returns({
+        promise: () => Promise.resolve({})
+      });
+      
+      // Mock DynamoDB put
+      dynamodbStub.put = sinon.stub().returns({
+        promise: () => Promise.resolve({})
       });
 
       const response = await handler(event);
@@ -202,8 +204,8 @@ describe('Lambda Registration Endpoint Tests', function() {
       };
 
       // Mock user already exists error
-      cognitoStub.adminCreateUser.returns({
-        promise: sinon.stub().rejects({
+      cognitoStub.adminCreateUser = sinon.stub().returns({
+        promise: () => Promise.reject({
           code: 'UsernameExistsException',
           message: 'User already exists'
         })
@@ -255,13 +257,16 @@ describe('Lambda Registration Endpoint Tests', function() {
         }
       };
 
-      cognitoStub.adminCreateUser.returns({
-        promise: sinon.stub().resolves({
+      cognitoStub.adminCreateUser = sinon.stub().returns({
+        promise: () => Promise.resolve({
           User: { Username: 'test@example.com' }
         })
       });
-      cognitoStub.adminSetUserPassword.returns({
-        promise: sinon.stub().resolves({})
+      cognitoStub.adminSetUserPassword = sinon.stub().returns({
+        promise: () => Promise.resolve({})
+      });
+      dynamodbStub.put = sinon.stub().returns({
+        promise: () => Promise.resolve({})
       });
 
       const response = await handler(event);
@@ -290,8 +295,8 @@ describe('Lambda Registration Endpoint Tests', function() {
       };
 
       // Mock successful authentication
-      cognitoStub.adminInitiateAuth.returns({
-        promise: sinon.stub().resolves({
+      cognitoStub.adminInitiateAuth = sinon.stub().returns({
+        promise: () => Promise.resolve({
           AuthenticationResult: {
             AccessToken: 'test-access-token',
             RefreshToken: 'test-refresh-token',
@@ -329,8 +334,8 @@ describe('Lambda Registration Endpoint Tests', function() {
       };
 
       // Mock authentication failure
-      cognitoStub.adminInitiateAuth.returns({
-        promise: sinon.stub().rejects({
+      cognitoStub.adminInitiateAuth = sinon.stub().returns({
+        promise: () => Promise.reject({
           code: 'NotAuthorizedException',
           message: 'Incorrect username or password'
         })
