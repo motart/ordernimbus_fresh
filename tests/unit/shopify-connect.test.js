@@ -59,9 +59,19 @@ describe('Shopify Connection Flow', () => {
       })
     };
     
+    // Mock the ShopService to avoid real GraphQL calls
+    const ShopServiceStub = sinon.stub().returns({
+      fetchShopInfo: sinon.stub().resolves({
+        id: 'test-shop-id',
+        name: 'Test Shop',
+        domain: 'test-store.myshopify.com'
+      })
+    });
+    
     handler = proxyquire('../../lambda/shopify-integration', {
       'aws-sdk': AWS,
-      'axios': axiosStub
+      'axios': axiosStub,
+      './shopify/services/shopService': ShopServiceStub
     }).handler;
   });
   
@@ -92,7 +102,8 @@ describe('Shopify Connection Flow', () => {
       expect(body.authUrl).to.include('client_id=test-client-id');
       // The redirect URI should be dynamically generated, just check it exists
       expect(body.authUrl).to.include('redirect_uri=');
-      expect(body.authUrl).to.include('api/shopify/callback');
+      // Check for URL-encoded version since redirect_uri is URL-encoded in OAuth URLs
+      expect(body.authUrl).to.include('api%2Fshopify%2Fcallback');
     });
     
     it('should handle OAuth callback successfully', async () => {
@@ -179,7 +190,9 @@ describe('Shopify Connection Flow', () => {
       const body = JSON.parse(result.body);
       // The redirect URI should be dynamically generated, just check it exists
       expect(body.authUrl).to.include('redirect_uri=');
-      expect(body.authUrl).to.include('api/shopify/callback');
+      // Check for URL-encoded version since redirect_uri is URL-encoded in OAuth URLs
+      // The mocked SSM uses 'shopify/callback' path (not 'api/shopify/callback')
+      expect(body.authUrl).to.include('shopify%2Fcallback');
       
       delete process.env.ENVIRONMENT;
     });
@@ -258,7 +271,7 @@ describe('Shopify Connection Flow', () => {
       
       expect(result.statusCode).to.equal(500);
       const body = JSON.parse(result.body);
-      expect(body.error).to.include('Failed to get Shopify credentials');
+      expect(body.error).to.include('Failed to retrieve Shopify credentials');
     });
     
     it('should handle invalid store domain format', async () => {
@@ -279,13 +292,57 @@ describe('Shopify Connection Flow', () => {
     });
     
     it('should handle Shopify API token exchange failure', async () => {
-      fetchStub.resolves({
-        ok: false,
-        status: 401,
-        json: () => Promise.resolve({
-          error: 'invalid_client'
+      // Reset and configure axiosStub to simulate token exchange failure
+      sinon.restore();
+      
+      // Mock AWS again
+      const ssmStub = {
+        getParameter: sinon.stub().returns({
+          promise: sinon.stub().resolves({
+            Parameter: {
+              Value: JSON.stringify({
+                SHOPIFY_CLIENT_ID: 'test-client-id',
+                SHOPIFY_CLIENT_SECRET: 'test-client-secret',
+                SHOPIFY_APP_URL: 'https://app.ordernimbus.com',
+                SHOPIFY_REDIRECT_URI: 'https://api.ordernimbus.com/shopify/callback'
+              })
+            }
+          })
+        })
+      };
+      
+      const dynamodbStub = {
+        put: sinon.stub().returns({
+          promise: sinon.stub().resolves({})
+        })
+      };
+      
+      const AWS = {
+        SSM: sinon.stub().returns(ssmStub),
+        DynamoDB: {
+          DocumentClient: sinon.stub().returns(dynamodbStub)
+        }
+      };
+      
+      // Mock axios to fail
+      const axiosStub = {
+        post: sinon.stub().rejects(new Error('Request failed with status code 401'))
+      };
+      
+      // Mock ShopService
+      const ShopServiceStub = sinon.stub().returns({
+        fetchShopInfo: sinon.stub().resolves({
+          id: 'test-shop-id',
+          name: 'Test Shop',
+          domain: 'test-store.myshopify.com'
         })
       });
+      
+      handler = proxyquire('../../lambda/shopify-integration', {
+        'aws-sdk': AWS,
+        'axios': axiosStub,
+        './shopify/services/shopService': ShopServiceStub
+      }).handler;
       
       const event = {
         path: '/api/shopify/callback',

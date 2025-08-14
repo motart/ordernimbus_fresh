@@ -543,18 +543,20 @@ const handleShopifyConnect = async (event) => {
   const credentials = await getShopifyCredentials();
   const SHOPIFY_API_KEY = credentials.apiKey;
   
-  // Use redirect URI from credentials or determine based on environment
-  let redirectUri = credentials.redirectUri;
-  if (!redirectUri) {
-    // Auto-detect environment and set appropriate redirect URI
-    const environment = process.env.ENVIRONMENT || 'local';
+  // Prioritize dynamic redirect URI generation when API Gateway context is available
+  let redirectUri;
+  
+  // Get the API Gateway URL from the event context first
+  if (event.requestContext && event.requestContext.domainName) {
+    const stage = event.requestContext.stage || 'production';
+    redirectUri = `https://${event.requestContext.domainName}/${stage}/api/shopify/callback`;
+  } else {
+    // Use stored redirect URI from credentials if no context available
+    redirectUri = credentials.redirectUri;
     
-    // Get the API Gateway URL from the event context or environment
-    if (event.requestContext && event.requestContext.domainName) {
-      const stage = event.requestContext.stage || 'production';
-      redirectUri = `https://${event.requestContext.domainName}/${stage}/api/shopify/callback`;
-    } else {
+    if (!redirectUri) {
       // Fallback to environment-based URLs
+      const environment = process.env.ENVIRONMENT || 'local';
       switch (environment) {
         case 'staging':
           redirectUri = process.env.API_URL ? 
@@ -676,6 +678,26 @@ const handleShopifyCallback = async (event) => {
     const shopService = new ShopService(shop, access_token);
     const shopData = await shopService.fetchShopInfo();
     
+    // Save store credentials to DynamoDB
+    const tableName = `${process.env.TABLE_PREFIX || 'ordernimbus-local'}-stores`;
+    const storeId = shopData.domain.replace('.myshopify.com', '');
+    
+    await dynamodb.put({
+      TableName: tableName,
+      Item: {
+        userId,
+        id: storeId,
+        storeId,
+        storeName: shopData.name,
+        shopifyDomain: shopData.domain,
+        apiKey: access_token,
+        status: 'active',
+        type: 'shopify',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      }
+    }).promise();
+    
     return {
       statusCode: 200,
       headers: {
@@ -702,6 +724,15 @@ const handleShopifyCallback = async (event) => {
     };
   } catch (error) {
     console.error('Error in OAuth callback:', error);
+    
+    // Determine error message based on error type
+    let errorMessage = 'Failed to complete OAuth flow';
+    if (error.message && error.message.includes('401')) {
+      errorMessage = 'Failed to exchange code for access token';
+    } else if (error.message && error.message.includes('Request failed')) {
+      errorMessage = 'Failed to exchange code for access token';
+    }
+    
     return {
       statusCode: 500,
       headers: {
@@ -713,7 +744,7 @@ const handleShopifyCallback = async (event) => {
             <script>
               window.opener.postMessage({
                 type: 'shopify-oauth-error',
-                error: 'Failed to complete OAuth flow'
+                error: '${errorMessage}'
               }, '*');
               window.close();
             </script>
@@ -945,8 +976,8 @@ exports.handler = async (event) => {
         'Access-Control-Allow-Origin': '*'
       },
       body: JSON.stringify({
-        error: 'Failed to sync Shopify data',
-        message: error.message
+        error: error.message,
+        message: 'Failed to sync Shopify data'
       })
     };
   }
