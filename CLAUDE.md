@@ -48,6 +48,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **CloudFront CNAMEs**: Check for existing distributions using the same domain before deploying
 - **TypeScript Strict Mode**: Frontend uses strict TypeScript - always define return types for functions
 - **Script Issues**: ALWAYS fix in the original script, NEVER create new versions (no deploy-fixed.sh, deploy-v2.sh, etc.)
+- **Lambda Deployment**: If Lambda code missing, deploy.sh has fallback to use cached version from `/tmp/prod-lambda/`
+- **Shopify Redirect URI**: Must be whitelisted in Shopify Partner Dashboard - cannot be set programmatically
+- **CloudFront Deployment**: Takes 5-15 minutes to fully deploy, status changes from "InProgress" to "Deployed"
+- **Dynamic API URL**: Lambda uses `event.requestContext.domainName` to dynamically generate redirect URIs
 
 #### Preferred Development Practices
 - Always build frontend with environment variables set (REACT_APP_*)
@@ -210,12 +214,27 @@ cd app/frontend && ./auto-deploy.sh  # Auto-build and deploy frontend to AWS S3
 ./scripts/infrastructure/destroy.sh staging us-west-1 true
 ```
 
-## Current Deployment Status
+## Current Production Deployment (us-west-1)
 
-- **Frontend**: Deployed to S3 bucket `ordernimbus-staging-frontend-assets`
-- **Frontend URL**: http://ordernimbus-staging-frontend-assets.s3-website-us-west-1.amazonaws.com
-- **Chatbot**: Fixed blank page issue, now working correctly
-- **Auto-deployment**: Configured via `app/frontend/auto-deploy.sh`
+### Live URLs
+- **Frontend**: https://app.ordernimbus.com (CloudFront + S3)
+- **API Gateway**: https://tsip547ao2.execute-api.us-west-1.amazonaws.com/production
+- **API Custom Domain**: https://api.ordernimbus.com (Route53 CNAME to API Gateway)
+
+### AWS Resources
+- **CloudFormation Stack**: `ordernimbus-production`
+- **S3 Frontend Bucket**: `ordernimbus-production-frontend-335021149718`
+- **CloudFront Distribution**: `EP62VZVVDF7SQ` (serving app.ordernimbus.com)
+- **Cognito User Pool**: `us-west-1_eY0a03NVh`
+- **Cognito Client ID**: `3uis9h8ul7hqlm47vbmatsgejf`
+- **Lambda Function**: `ordernimbus-production-main` (single monolithic handler)
+- **DynamoDB Table**: `ordernimbus-production-main`
+- **Secrets Manager**: `ordernimbus/production/shopify` (Shopify OAuth credentials)
+
+### Shopify Integration
+- **Redirect URI**: `https://tsip547ao2.execute-api.us-west-1.amazonaws.com/production/api/shopify/callback`
+- **OAuth Flow**: Dynamic redirect URI generation using API Gateway context
+- **Credentials**: Stored in AWS Secrets Manager, never hardcoded
 
 ## Scalability SLOs
 
@@ -232,9 +251,42 @@ Run nightly load tests with GitHub Actions:
 - **Upload Stress**: Large file upload simulation
 - **Tenant Isolation**: Multi-tenant data isolation verification
 
+## Deployment Troubleshooting Guide
+
+### Common Deployment Issues & Fixes
+
+#### 1. Lambda Code Not Found
+**Error**: "No Lambda code found to deploy"
+**Solution**: Deploy script automatically uses cached Lambda from `/tmp/prod-lambda/` if available
+
+#### 2. CloudFormation Stack Deletion Fails
+**Error**: "Stack cannot be deleted while resources exist"
+**Solution**: 
+```bash
+# Empty S3 buckets first
+aws s3 rm s3://BUCKET_NAME --recursive
+# Then delete stack
+./teardown-production.sh
+```
+
+#### 3. Shopify OAuth Redirect Mismatch
+**Error**: "Redirect URI mismatch"
+**Solution**: Lambda now dynamically generates redirect URI using API Gateway context. Update Shopify app with: `https://YOUR_API_GATEWAY_URL/production/api/shopify/callback`
+
+#### 4. CloudFront Distribution Disabled
+**Error**: Site not accessible after teardown/redeploy
+**Solution**: Re-enable distribution:
+```bash
+aws cloudfront get-distribution-config --id DIST_ID > /tmp/cf-dist.json
+ETAG=$(jq -r '.ETag' /tmp/cf-dist.json)
+jq '.DistributionConfig.Enabled = true' /tmp/cf-dist.json > /tmp/cf-updated.json
+aws cloudfront update-distribution --id DIST_ID --distribution-config "$(jq '.DistributionConfig' /tmp/cf-updated.json)" --if-match "$ETAG"
+```
+
 ## Architecture Files
 
 - `ARCHITECTURE_PLAN.md` - Detailed 85-day implementation plan
 - `CAPACITY_PLANNING.md` - Scaling formulas and cost ceilings  
 - `tests/load/k6-suite.js` - Comprehensive load test scenarios
 - `.github/workflows/nightly-load-test.yml` - Automated performance regression testing
+- `SHOPIFY_REDIRECT_URI.md` - Current Shopify OAuth redirect configuration
