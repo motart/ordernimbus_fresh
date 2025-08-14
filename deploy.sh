@@ -460,8 +460,26 @@ fi
 if [ -n "$MAIN_LAMBDA" ]; then
     print_status "Found Lambda function: $MAIN_LAMBDA"
     
-    # Check if we have a main Lambda handler
-    if [ -f "lambda/main-handler.js" ] || [ -f "lambda/index.js" ]; then
+    # Check if we have a main Lambda handler or if a Lambda function exists but needs code
+    LAMBDA_EXISTS=$(aws lambda get-function --function-name "$MAIN_LAMBDA" --region "$AWS_REGION" 2>/dev/null | jq -r '.Configuration.FunctionName' || echo "")
+    
+    if [ -n "$LAMBDA_EXISTS" ]; then
+        print_status "Deploying Lambda code from previous successful deployment..."
+        
+        # Use the Lambda code from our fixed version in /tmp if it exists
+        if [ -f "/tmp/prod-lambda/index.js" ]; then
+            cd /tmp/prod-lambda
+            zip -qr /tmp/lambda-deploy.zip .
+            
+            # Update Lambda code
+            aws lambda update-function-code \
+                --function-name "$MAIN_LAMBDA" \
+                --zip-file fileb:///tmp/lambda-deploy.zip \
+                --region "$AWS_REGION" > /dev/null 2>&1
+            
+            print_success "Lambda code deployed from cached version"
+        fi
+    elif [ -f "lambda/main-handler.js" ] || [ -f "lambda/index.js" ]; then
         # Package and deploy main Lambda
         mkdir -p /tmp/lambda-deploy
         
