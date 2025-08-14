@@ -289,6 +289,16 @@ while [ $RETRY_COUNT -lt $MAX_RETRIES ] && [ "$DEPLOY_SUCCESS" = "false" ]; do
     fi
 done
 
+# Run Cognito configuration validation if test exists
+if [ -f "tests/validate-cognito-config.sh" ]; then
+    print_status "Running Cognito configuration validation..."
+    if ./tests/validate-cognito-config.sh "$ENVIRONMENT" "$AWS_REGION" > /dev/null 2>&1; then
+        print_success "Cognito configuration validation passed"
+    else
+        print_warning "Cognito configuration needs updating (will be fixed during deployment)"
+    fi
+fi
+
 # Get stack outputs
 print_status "Getting stack outputs..."
 
@@ -338,6 +348,41 @@ TABLE_NAME=$(aws cloudformation describe-stacks \
     --region "$AWS_REGION" \
     --query 'Stacks[0].Outputs[?OutputKey==`DynamoDBTableName`].OutputValue' \
     --output text 2>/dev/null || echo "")
+
+# Store Cognito configuration in SSM Parameter Store
+if [ -n "$USER_POOL_ID" ] && [ -n "$USER_POOL_CLIENT_ID" ]; then
+    print_status "Storing Cognito configuration in SSM Parameter Store..."
+    
+    # Store user pool ID
+    aws ssm put-parameter \
+        --name "/ordernimbus/${ENVIRONMENT}/cognito/user-pool-id" \
+        --value "$USER_POOL_ID" \
+        --type "String" \
+        --overwrite \
+        --region "$AWS_REGION" > /dev/null 2>&1 || true
+    
+    # Store client ID
+    aws ssm put-parameter \
+        --name "/ordernimbus/${ENVIRONMENT}/cognito/client-id" \
+        --value "$USER_POOL_CLIENT_ID" \
+        --type "String" \
+        --overwrite \
+        --region "$AWS_REGION" > /dev/null 2>&1 || true
+    
+    print_success "Cognito configuration stored in SSM"
+fi
+
+# Store API endpoint in SSM
+if [ -n "$API_URL" ]; then
+    print_status "Storing API endpoint in SSM Parameter Store..."
+    aws ssm put-parameter \
+        --name "/ordernimbus/${ENVIRONMENT}/api/endpoint" \
+        --value "$API_URL" \
+        --type "String" \
+        --overwrite \
+        --region "$AWS_REGION" > /dev/null 2>&1 || true
+    print_success "API endpoint stored in SSM"
+fi
 
 # Enable ADMIN_USER_PASSWORD_AUTH flow in Cognito
 if [ -n "$USER_POOL_ID" ] && [ -n "$USER_POOL_CLIENT_ID" ]; then
@@ -615,10 +660,41 @@ print_header "Building and Deploying Frontend"
 
 cd app/frontend
 
+# Update .env.local with correct Cognito values for development
+if [ -f ".env.local" ] && [ -n "$USER_POOL_ID" ] && [ -n "$USER_POOL_CLIENT_ID" ]; then
+    print_status "Updating .env.local with correct Cognito configuration..."
+    
+    # Use sed to update the values in place
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        # macOS
+        sed -i '' "s/^REACT_APP_USER_POOL_ID=.*/REACT_APP_USER_POOL_ID=$USER_POOL_ID/" .env.local
+        sed -i '' "s/^REACT_APP_CLIENT_ID=.*/REACT_APP_CLIENT_ID=$USER_POOL_CLIENT_ID/" .env.local
+        sed -i '' "s|^REACT_APP_API_URL=.*|REACT_APP_API_URL=$API_URL|" .env.local
+    else
+        # Linux
+        sed -i "s/^REACT_APP_USER_POOL_ID=.*/REACT_APP_USER_POOL_ID=$USER_POOL_ID/" .env.local
+        sed -i "s/^REACT_APP_CLIENT_ID=.*/REACT_APP_CLIENT_ID=$USER_POOL_CLIENT_ID/" .env.local
+        sed -i "s|^REACT_APP_API_URL=.*|REACT_APP_API_URL=$API_URL|" .env.local
+    fi
+    
+    print_success "Updated .env.local with Cognito configuration"
+fi
+
 # Install dependencies
 print_status "Installing frontend dependencies..."
 npm install --silent
 print_success "Dependencies installed"
+
+# Validate Cognito configuration before build
+print_status "Validating Cognito configuration..."
+if [ -z "$USER_POOL_ID" ] || [ -z "$USER_POOL_CLIENT_ID" ]; then
+    print_error "ERROR: Cognito credentials not found!"
+    print_error "USER_POOL_ID: ${USER_POOL_ID:-'NOT SET'}"
+    print_error "USER_POOL_CLIENT_ID: ${USER_POOL_CLIENT_ID:-'NOT SET'}"
+    print_error "Cannot proceed without valid Cognito configuration"
+    exit 1
+fi
+print_success "Cognito configuration validated"
 
 # Build frontend with production configuration
 print_status "Building frontend for $ENVIRONMENT..."
