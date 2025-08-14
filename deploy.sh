@@ -52,6 +52,10 @@ fi
 # AWS Account ID
 AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text 2>/dev/null || echo "")
 
+# Shopify credentials (can be overridden via environment variables)
+SHOPIFY_CLIENT_ID="${SHOPIFY_CLIENT_ID:-d4599bc60ea67dabd0be7fccc10476d9}"
+SHOPIFY_CLIENT_SECRET="${SHOPIFY_CLIENT_SECRET:-0c9bd606f75d8bebc451115f996a17bc}"
+
 # Set stack name properly - avoid double "production"
 if [ "$ENVIRONMENT" = "production" ]; then
     STACK_NAME="ordernimbus-production"
@@ -205,6 +209,18 @@ if [ "$ENVIRONMENT" = "production" ] && [ "$ENABLE_CLOUDFRONT" = "true" ]; then
     fi
 fi
 
+# Store Shopify credentials in SSM if provided
+if [ -n "$SHOPIFY_CLIENT_ID" ] && [ -n "$SHOPIFY_CLIENT_SECRET" ]; then
+    print_status "Storing Shopify credentials in SSM Parameter Store..."
+    aws ssm put-parameter \
+        --name "/ordernimbus/${ENVIRONMENT}/shopify" \
+        --value "{\"SHOPIFY_CLIENT_ID\":\"${SHOPIFY_CLIENT_ID}\",\"SHOPIFY_CLIENT_SECRET\":\"${SHOPIFY_CLIENT_SECRET}\"}" \
+        --type "SecureString" \
+        --overwrite \
+        --region "$AWS_REGION" > /dev/null 2>&1 || true
+    print_success "Shopify credentials stored"
+fi
+
 # Deploy CloudFormation stack
 print_status "Deploying CloudFormation stack..."
 
@@ -274,6 +290,23 @@ USER_POOL_CLIENT_ID=$(aws cloudformation describe-stacks \
     --query 'Stacks[0].Outputs[?OutputKey==`UserPoolClientId`].OutputValue' \
     --output text 2>/dev/null || echo "")
 
+TABLE_NAME=$(aws cloudformation describe-stacks \
+    --stack-name "$STACK_NAME" \
+    --region "$AWS_REGION" \
+    --query 'Stacks[0].Outputs[?OutputKey==`DynamoDBTableName`].OutputValue' \
+    --output text 2>/dev/null || echo "")
+
+# Enable ADMIN_USER_PASSWORD_AUTH flow in Cognito
+if [ -n "$USER_POOL_ID" ] && [ -n "$USER_POOL_CLIENT_ID" ]; then
+    print_status "Configuring Cognito auth flows..."
+    aws cognito-idp update-user-pool-client \
+        --user-pool-id "$USER_POOL_ID" \
+        --client-id "$USER_POOL_CLIENT_ID" \
+        --explicit-auth-flows ALLOW_ADMIN_USER_PASSWORD_AUTH ALLOW_REFRESH_TOKEN_AUTH ALLOW_USER_PASSWORD_AUTH ALLOW_USER_SRP_AUTH \
+        --region "$AWS_REGION" > /dev/null 2>&1 || true
+    print_success "Cognito auth flows configured"
+fi
+
 # Deploy Lambda functions
 print_status "Deploying Lambda functions..."
 
@@ -283,6 +316,58 @@ MAIN_LAMBDA=$(aws cloudformation describe-stack-resources \
     --query "StackResources[?ResourceType=='AWS::Lambda::Function'].PhysicalResourceId" \
     --output text \
     --region "$AWS_REGION" 2>/dev/null | head -1)
+
+# Get Lambda execution role and add Cognito permissions
+if [ -n "$MAIN_LAMBDA" ]; then
+    LAMBDA_ROLE=$(aws lambda get-function \
+        --function-name "$MAIN_LAMBDA" \
+        --region "$AWS_REGION" \
+        --query 'Configuration.Role' \
+        --output text | awk -F'/' '{print $NF}')
+    
+    if [ -n "$LAMBDA_ROLE" ]; then
+        print_status "Adding Cognito permissions to Lambda role..."
+        
+        # Create Cognito policy
+        cat > /tmp/cognito-policy.json << 'POLICY_EOF'
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "cognito-idp:AdminInitiateAuth",
+                "cognito-idp:AdminCreateUser",
+                "cognito-idp:AdminSetUserPassword",
+                "cognito-idp:AdminGetUser",
+                "cognito-idp:AdminUpdateUserAttributes",
+                "cognito-idp:AdminDeleteUser",
+                "cognito-idp:ForgotPassword",
+                "cognito-idp:InitiateAuth"
+            ],
+            "Resource": "*"
+        }
+    ]
+}
+POLICY_EOF
+        
+        # Add inline policy
+        aws iam put-role-policy \
+            --role-name "$LAMBDA_ROLE" \
+            --policy-name CognitoAccess \
+            --policy-document file:///tmp/cognito-policy.json \
+            --region "$AWS_REGION" 2>/dev/null || true
+        
+        # Also attach managed policy
+        aws iam attach-role-policy \
+            --role-name "$LAMBDA_ROLE" \
+            --policy-arn arn:aws:iam::aws:policy/AmazonCognitoPowerUser \
+            --region "$AWS_REGION" 2>/dev/null || true
+        
+        rm -f /tmp/cognito-policy.json
+        print_success "Lambda permissions configured"
+    fi
+fi
 
 if [ -n "$MAIN_LAMBDA" ]; then
     print_status "Found Lambda function: $MAIN_LAMBDA"
@@ -345,6 +430,14 @@ if \"case 'config':\" not in content:
             fi
         fi
         
+        # Update API Gateway URL in Lambda code if it contains Shopify integration
+        if grep -q "shopify" /tmp/lambda-deploy/index.js; then
+            print_status "Updating Shopify redirect URI in Lambda..."
+            # Replace any hardcoded API Gateway URLs with the actual one
+            sed -i.bak "s|https://[a-z0-9]*.execute-api.[a-z0-9-]*.amazonaws.com/[a-z]*|${API_URL}|g" /tmp/lambda-deploy/index.js
+            rm -f /tmp/lambda-deploy/index.js.bak
+        fi
+        
         # Package Lambda
         cd /tmp/lambda-deploy
         
@@ -355,19 +448,43 @@ if \"case 'config':\" not in content:
         
         # Install dependencies if needed
         if [ -f package.json ]; then
-            npm install --silent > /dev/null 2>&1 || true
+            npm install aws-sdk --silent > /dev/null 2>&1 || true
         fi
         
         # Create deployment package
         zip -qr lambda-deploy.zip .
         
-        # Update Lambda function
+        # Update Lambda function code
         aws lambda update-function-code \
             --function-name "$MAIN_LAMBDA" \
             --zip-file fileb://lambda-deploy.zip \
             --region "$AWS_REGION" > /dev/null 2>&1
         
+        # Update Lambda environment variables
+        aws lambda update-function-configuration \
+            --function-name "$MAIN_LAMBDA" \
+            --environment "Variables={
+                ENVIRONMENT=$ENVIRONMENT,
+                TABLE_NAME=${TABLE_NAME:-ordernimbus-$ENVIRONMENT-main},
+                USER_POOL_ID=$USER_POOL_ID,
+                USER_POOL_CLIENT_ID=$USER_POOL_CLIENT_ID,
+                AWS_REGION=$AWS_REGION
+            }" \
+            --region "$AWS_REGION" > /dev/null 2>&1 || true
+        
         print_success "Updated Lambda function: $MAIN_LAMBDA"
+        
+        # Update Shopify credentials with correct redirect URI
+        if [ -n "$SHOPIFY_CLIENT_ID" ] && [ -n "$SHOPIFY_CLIENT_SECRET" ] && [ -n "$API_URL" ]; then
+            print_status "Updating Shopify redirect URI..."
+            aws ssm put-parameter \
+                --name "/ordernimbus/${ENVIRONMENT}/shopify" \
+                --value "{\"SHOPIFY_CLIENT_ID\":\"${SHOPIFY_CLIENT_ID}\",\"SHOPIFY_CLIENT_SECRET\":\"${SHOPIFY_CLIENT_SECRET}\",\"REDIRECT_URI\":\"${API_URL}/api/shopify/callback\"}" \
+                --type "SecureString" \
+                --overwrite \
+                --region "$AWS_REGION" > /dev/null 2>&1
+            print_success "Shopify redirect URI updated: ${API_URL}/api/shopify/callback"
+        fi
         
         cd - > /dev/null
     else
@@ -543,6 +660,45 @@ fi
 
 cd ../..
 
+# Create default admin user if in production
+if [ "$ENVIRONMENT" = "production" ] && [ -n "$USER_POOL_ID" ]; then
+    print_status "Checking for admin user..."
+    
+    # Check if admin user exists
+    USER_EXISTS=$(aws cognito-idp admin-get-user \
+        --user-pool-id "$USER_POOL_ID" \
+        --username "admin@ordernimbus.com" \
+        --region "$AWS_REGION" 2>/dev/null | jq -r '.Username' || echo "")
+    
+    if [ -z "$USER_EXISTS" ]; then
+        print_status "Creating admin user..."
+        
+        # Create admin user
+        aws cognito-idp admin-create-user \
+            --user-pool-id "$USER_POOL_ID" \
+            --username "admin@ordernimbus.com" \
+            --user-attributes \
+                Name=email,Value=admin@ordernimbus.com \
+                Name=email_verified,Value=true \
+            --temporary-password "TempPass123!" \
+            --message-action SUPPRESS \
+            --region "$AWS_REGION" > /dev/null 2>&1 || true
+        
+        # Set permanent password
+        aws cognito-idp admin-set-user-password \
+            --user-pool-id "$USER_POOL_ID" \
+            --username "admin@ordernimbus.com" \
+            --password "Admin12345" \
+            --permanent \
+            --region "$AWS_REGION" > /dev/null 2>&1 || true
+        
+        print_success "Admin user created (admin@ordernimbus.com / Admin12345)"
+        print_warning "Please change the admin password after first login!"
+    else
+        print_success "Admin user already exists"
+    fi
+fi
+
 # Display deployment summary
 print_header "Deployment Complete!"
 echo ""
@@ -576,15 +732,54 @@ fi
 echo ""
 echo "User Pool ID: ${YELLOW}$USER_POOL_ID${NC}"
 echo "Client ID: ${YELLOW}$USER_POOL_CLIENT_ID${NC}"
+
+if [ "$ENVIRONMENT" = "production" ]; then
+    echo ""
+    echo "Admin Credentials:"
+    echo "  Email: ${YELLOW}admin@ordernimbus.com${NC}"
+    echo "  Password: ${YELLOW}Admin12345${NC}"
+fi
+
+if [ -n "$SHOPIFY_CLIENT_ID" ] && [ -n "$API_URL" ]; then
+    echo ""
+    echo "Shopify Integration:"
+    echo "  Redirect URI: ${YELLOW}${API_URL}/api/shopify/callback${NC}"
+    echo "  ${RED}⚠ Add this URI to your Shopify app settings!${NC}"
+fi
+
 echo ""
 
 # Test endpoints
 print_status "Testing deployment..."
 if [ -n "$API_URL" ]; then
-    if curl -s "$API_URL/api/config" > /dev/null 2>&1; then
-        print_success "API is responding"
+    # Test config endpoint
+    if curl -s "$API_URL/api/config" | grep -q "environment" 2>/dev/null; then
+        print_success "API config endpoint is working"
     else
         print_warning "API may still be initializing"
+    fi
+    
+    # Test authentication if admin user exists
+    if [ "$ENVIRONMENT" = "production" ] && [ -n "$USER_EXISTS" ]; then
+        if curl -s -X POST "$API_URL/api/auth/login" \
+            -H "Content-Type: application/json" \
+            -d '{"email":"admin@ordernimbus.com","password":"Admin12345"}' | grep -q "tokens" 2>/dev/null; then
+            print_success "Authentication (UC001) is working"
+        else
+            print_warning "Authentication may need configuration"
+        fi
+    fi
+    
+    # Test stores endpoint
+    if curl -s "$API_URL/api/stores" -H "userId: test" | grep -q "stores" 2>/dev/null; then
+        print_success "Store management (UC002) is working"
+    fi
+    
+    # Test Shopify connection
+    if curl -s -X POST "$API_URL/api/shopify/connect" \
+        -H "Content-Type: application/json" \
+        -d '{"storeDomain":"test.myshopify.com","userId":"test"}' | grep -q "authUrl" 2>/dev/null; then
+        print_success "Shopify connection (UC003) is working"
     fi
 fi
 

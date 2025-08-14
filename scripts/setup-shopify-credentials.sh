@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Setup Shopify Public App Credentials in AWS Secrets Manager
+# Setup Shopify Public App Credentials in AWS SSM Parameter Store
 # Usage: ./setup-shopify-credentials.sh <environment> <client_id> <client_secret> [region]
 
 set -e
@@ -42,10 +42,12 @@ fi
 # Set redirect URIs based on environment
 if [ "$ENVIRONMENT" == "staging" ]; then
     APP_URL="https://staging.ordernimbus.com"
-    REDIRECT_URI="https://staging.ordernimbus.com/api/shopify/callback"
+    # Use actual API Gateway URL for staging
+    REDIRECT_URI="https://staging-api.ordernimbus.com/api/shopify/callback"
 else
     APP_URL="https://app.ordernimbus.com"
-    REDIRECT_URI="https://app.ordernimbus.com/api/shopify/callback"
+    # Use actual API Gateway URL for production
+    REDIRECT_URI="https://yu7ob32qt7.execute-api.us-west-1.amazonaws.com/production/api/shopify/callback"
 fi
 
 echo -e "${YELLOW}Setting up Shopify credentials for ${ENVIRONMENT} environment in ${REGION}...${NC}"
@@ -62,12 +64,12 @@ SECRET_JSON=$(cat <<EOF
 EOF
 )
 
-SECRET_NAME="ordernimbus/${ENVIRONMENT}/shopify"
+PARAM_NAME="/ordernimbus/${ENVIRONMENT}/shopify"
 
-# Check if secret already exists
-echo -n "Checking if secret exists... "
-if aws secretsmanager describe-secret --secret-id "$SECRET_NAME" --region "$REGION" >/dev/null 2>&1; then
-    echo -e "${YELLOW}Found existing secret${NC}"
+# Check if parameter already exists
+echo -n "Checking if parameter exists... "
+if aws ssm get-parameter --name "$PARAM_NAME" --region "$REGION" >/dev/null 2>&1; then
+    echo -e "${YELLOW}Found existing parameter${NC}"
     
     # Ask user if they want to update
     read -p "Secret already exists. Do you want to update it? (y/n): " -n 1 -r
@@ -77,11 +79,13 @@ if aws secretsmanager describe-secret --secret-id "$SECRET_NAME" --region "$REGI
         exit 0
     fi
     
-    # Update existing secret
-    echo -n "Updating secret... "
-    aws secretsmanager update-secret \
-        --secret-id "$SECRET_NAME" \
-        --secret-string "$SECRET_JSON" \
+    # Update existing parameter
+    echo -n "Updating parameter... "
+    aws ssm put-parameter \
+        --name "$PARAM_NAME" \
+        --value "$SECRET_JSON" \
+        --type "SecureString" \
+        --overwrite \
         --region "$REGION" \
         --output text >/dev/null
     
@@ -89,12 +93,13 @@ if aws secretsmanager describe-secret --secret-id "$SECRET_NAME" --region "$REGI
 else
     echo "Not found"
     
-    # Create new secret
-    echo -n "Creating new secret... "
-    aws secretsmanager create-secret \
-        --name "$SECRET_NAME" \
+    # Create new parameter
+    echo -n "Creating new parameter... "
+    aws ssm put-parameter \
+        --name "$PARAM_NAME" \
+        --value "$SECRET_JSON" \
+        --type "SecureString" \
         --description "Shopify public app credentials for $ENVIRONMENT" \
-        --secret-string "$SECRET_JSON" \
         --region "$REGION" \
         --output text >/dev/null
     
@@ -104,19 +109,20 @@ fi
 echo ""
 echo -e "${GREEN}Successfully configured Shopify credentials!${NC}"
 echo ""
-echo "Secret Details:"
-echo "  Name: $SECRET_NAME"
+echo "Parameter Details:"
+echo "  Name: $PARAM_NAME"
 echo "  Region: $REGION"
 echo "  App URL: $APP_URL"
 echo "  Redirect URI: $REDIRECT_URI"
 echo ""
 
-# Verify the secret
-echo -n "Verifying secret... "
-VERIFY=$(aws secretsmanager get-secret-value \
-    --secret-id "$SECRET_NAME" \
+# Verify the parameter
+echo -n "Verifying parameter... "
+VERIFY=$(aws ssm get-parameter \
+    --name "$PARAM_NAME" \
+    --with-decryption \
     --region "$REGION" \
-    --query 'SecretString' \
+    --query 'Parameter.Value' \
     --output text 2>/dev/null | jq -r '.SHOPIFY_CLIENT_ID' 2>/dev/null)
 
 if [ "$VERIFY" == "$CLIENT_ID" ]; then
@@ -135,4 +141,4 @@ echo "2. Update your Shopify app settings with the redirect URI:"
 echo "   ${REDIRECT_URI}"
 echo ""
 echo "To test the credentials:"
-echo "  aws secretsmanager get-secret-value --secret-id $SECRET_NAME --region $REGION"
+echo "  aws ssm get-parameter --name $PARAM_NAME --with-decryption --region $REGION"

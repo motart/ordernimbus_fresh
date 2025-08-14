@@ -4,54 +4,22 @@ import './animations.css';
 import Dashboard from './components/Dashboard';
 import AuthPage from './components/AuthPage';
 import { Toaster } from 'react-hot-toast';
-import { ConfigProvider, useConfig } from './contexts/ConfigContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { configureAmplify } from './config/amplify-config';
+import { getENV_CONFIG } from './config/environment';
 
-// Configure Amplify after config is loaded (will be done in AppInitializer)
-let amplifyConfigured = false;
-
-// App initializer that configures Amplify with cloud config
-const AppInitializer: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { config, isLoading: configLoading, error: configError } = useConfig();
-
-  useEffect(() => {
-    if (config && !amplifyConfigured) {
-      console.log('Configuring Amplify with cloud configuration');
-      configureAmplify({
-        userPoolId: config.userPoolId,
-        clientId: config.clientId,
-        region: config.region
-      });
-      amplifyConfigured = true;
-    }
-  }, [config]);
-
-  if (configLoading) {
-    return (
-      <div className="loading-container">
-        <div className="loading-spinner">
-          <div className="spinner"></div>
-          <p>Initializing OrderNimbus...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (configError) {
-    return (
-      <div className="loading-container">
-        <div className="error-message">
-          <h3>Configuration Error</h3>
-          <p>{configError}</p>
-          <button onClick={() => window.location.reload()}>Retry</button>
-        </div>
-      </div>
-    );
-  }
-
-  return <>{children}</>;
-};
+// Configure Amplify on app start
+const config = getENV_CONFIG();
+if (config.userPoolId && config.clientId) {
+  console.log('Configuring Amplify with environment configuration');
+  configureAmplify({
+    userPoolId: config.userPoolId,
+    clientId: config.clientId,
+    region: config.region
+  });
+} else {
+  console.error('Missing required configuration for Amplify');
+}
 
 // App content that uses auth context
 const AppContent: React.FC = () => {
@@ -76,26 +44,37 @@ const AppContent: React.FC = () => {
 };
 
 function App() {
+  // Check if we have valid configuration
+  if (!config.apiUrl || !config.userPoolId || !config.clientId) {
+    return (
+      <div className="loading-container">
+        <div className="error-message">
+          <h3>Configuration Error</h3>
+          <p>Missing required configuration. Please check environment variables.</p>
+          <p style={{ fontSize: '14px', marginTop: '10px' }}>
+            Required: REACT_APP_API_URL, REACT_APP_USER_POOL_ID, REACT_APP_CLIENT_ID
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <ConfigProvider>
-      <AppInitializer>
-        <AuthProvider>
-          <div className="App">
-            <Toaster 
-              position="top-right"
-              toastOptions={{
-                duration: 4000,
-                style: {
-                  background: '#363636',
-                  color: '#fff',
-                },
-              }}
-            />
-            <AppContent />
-          </div>
-        </AuthProvider>
-      </AppInitializer>
-    </ConfigProvider>
+    <AuthProvider>
+      <div className="App">
+        <Toaster 
+          position="top-right"
+          toastOptions={{
+            duration: 4000,
+            style: {
+              background: '#363636',
+              color: '#fff',
+            },
+          }}
+        />
+        <AppContent />
+      </div>
+    </AuthProvider>
   );
 }
 
