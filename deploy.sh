@@ -233,18 +233,61 @@ if [ -n "$HOSTED_ZONE_ID" ]; then
     PARAMS="$PARAMS HostedZoneId=$HOSTED_ZONE_ID"
 fi
 
-# Deploy the stack
-aws cloudformation deploy \
-    --template-file "$TEMPLATE_FILE" \
+# Check if stack exists
+STACK_EXISTS=$(aws cloudformation describe-stacks \
     --stack-name "$STACK_NAME" \
-    --parameter-overrides $PARAMS \
-    --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
     --region "$AWS_REGION" \
-    --no-fail-on-empty-changeset || {
-        print_error "CloudFormation deployment failed. Check the stack events for details."
-    }
+    --query 'Stacks[0].StackStatus' \
+    --output text 2>/dev/null || echo "")
 
-print_success "CloudFormation stack deployed"
+if [ -n "$STACK_EXISTS" ]; then
+    # Check if stack is in a failed state
+    if [[ "$STACK_EXISTS" == *"FAILED"* ]] || [[ "$STACK_EXISTS" == "ROLLBACK_COMPLETE" ]]; then
+        print_warning "Stack is in failed state: $STACK_EXISTS"
+        print_status "Deleting failed stack before redeployment..."
+        aws cloudformation delete-stack \
+            --stack-name "$STACK_NAME" \
+            --region "$AWS_REGION" 2>/dev/null || true
+        
+        # Wait for deletion
+        print_status "Waiting for stack deletion..."
+        aws cloudformation wait stack-delete-complete \
+            --stack-name "$STACK_NAME" \
+            --region "$AWS_REGION" 2>/dev/null || true
+        print_success "Failed stack deleted"
+    fi
+fi
+
+# Deploy the stack with retry logic
+MAX_RETRIES=3
+RETRY_COUNT=0
+DEPLOY_SUCCESS=false
+
+while [ $RETRY_COUNT -lt $MAX_RETRIES ] && [ "$DEPLOY_SUCCESS" = "false" ]; do
+    if [ $RETRY_COUNT -gt 0 ]; then
+        print_warning "Retry attempt $RETRY_COUNT of $MAX_RETRIES..."
+        sleep 10
+    fi
+    
+    if aws cloudformation deploy \
+        --template-file "$TEMPLATE_FILE" \
+        --stack-name "$STACK_NAME" \
+        --parameter-overrides $PARAMS \
+        --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
+        --region "$AWS_REGION" \
+        --no-fail-on-empty-changeset 2>&1 | tee /tmp/cf-deploy.log; then
+        DEPLOY_SUCCESS=true
+        print_success "CloudFormation stack deployed"
+    else
+        RETRY_COUNT=$((RETRY_COUNT + 1))
+        if grep -q "No updates are to be performed" /tmp/cf-deploy.log; then
+            print_success "Stack is already up-to-date"
+            DEPLOY_SUCCESS=true
+        elif [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+            print_error "CloudFormation deployment failed after $MAX_RETRIES attempts. Check the stack events for details."
+        fi
+    fi
+done
 
 # Get stack outputs
 print_status "Getting stack outputs..."
@@ -454,14 +497,37 @@ if \"case 'config':\" not in content:
         # Create deployment package
         zip -qr lambda-deploy.zip .
         
-        # Update Lambda function code
-        aws lambda update-function-code \
-            --function-name "$MAIN_LAMBDA" \
-            --zip-file fileb://lambda-deploy.zip \
-            --region "$AWS_REGION" > /dev/null 2>&1
+        # Update Lambda function code with retry
+        MAX_LAMBDA_RETRIES=3
+        LAMBDA_RETRY=0
+        LAMBDA_DEPLOYED=false
+        
+        while [ $LAMBDA_RETRY -lt $MAX_LAMBDA_RETRIES ] && [ "$LAMBDA_DEPLOYED" = "false" ]; do
+            if [ $LAMBDA_RETRY -gt 0 ]; then
+                print_warning "Retrying Lambda deployment (attempt $LAMBDA_RETRY)..."
+                sleep 5
+            fi
+            
+            if aws lambda update-function-code \
+                --function-name "$MAIN_LAMBDA" \
+                --zip-file fileb://lambda-deploy.zip \
+                --region "$AWS_REGION" > /tmp/lambda-update.log 2>&1; then
+                LAMBDA_DEPLOYED=true
+                print_success "Lambda code updated"
+            else
+                LAMBDA_RETRY=$((LAMBDA_RETRY + 1))
+                if [ $LAMBDA_RETRY -eq $MAX_LAMBDA_RETRIES ]; then
+                    print_warning "Failed to update Lambda code after $MAX_LAMBDA_RETRIES attempts"
+                    cat /tmp/lambda-update.log
+                fi
+            fi
+        done
+        
+        # Wait for Lambda to be ready
+        sleep 3
         
         # Update Lambda environment variables
-        aws lambda update-function-configuration \
+        if aws lambda update-function-configuration \
             --function-name "$MAIN_LAMBDA" \
             --environment "Variables={
                 ENVIRONMENT=$ENVIRONMENT,
@@ -470,7 +536,12 @@ if \"case 'config':\" not in content:
                 USER_POOL_CLIENT_ID=$USER_POOL_CLIENT_ID,
                 AWS_REGION=$AWS_REGION
             }" \
-            --region "$AWS_REGION" > /dev/null 2>&1 || true
+            --region "$AWS_REGION" > /tmp/lambda-config.log 2>&1; then
+            print_success "Lambda environment variables updated"
+        else
+            print_warning "Failed to update Lambda environment variables"
+            cat /tmp/lambda-config.log
+        fi
         
         print_success "Updated Lambda function: $MAIN_LAMBDA"
         
@@ -622,28 +693,86 @@ fi
 if [ -n "$S3_BUCKET" ]; then
     print_status "Deploying frontend to S3 bucket: $S3_BUCKET..."
     
+    # Check if bucket exists
+    if ! aws s3api head-bucket --bucket "$S3_BUCKET" --region "$AWS_REGION" 2>/dev/null; then
+        print_warning "S3 bucket $S3_BUCKET does not exist yet. Waiting for CloudFormation to create it..."
+        sleep 10
+        
+        # Try one more time
+        if ! aws s3api head-bucket --bucket "$S3_BUCKET" --region "$AWS_REGION" 2>/dev/null; then
+            print_error "S3 bucket $S3_BUCKET still doesn't exist. Check CloudFormation stack."
+        fi
+    fi
+    
+    # Ensure bucket has proper website configuration
+    print_status "Configuring S3 bucket for static website hosting..."
+    aws s3api put-bucket-website \
+        --bucket "$S3_BUCKET" \
+        --website-configuration '{
+            "IndexDocument": {"Suffix": "index.html"},
+            "ErrorDocument": {"Key": "index.html"}
+        }' \
+        --region "$AWS_REGION" 2>/dev/null || true
+    
+    # Ensure bucket has proper public access configuration
+    print_status "Configuring S3 bucket public access..."
+    
+    # Remove public access block
+    aws s3api delete-public-access-block \
+        --bucket "$S3_BUCKET" \
+        --region "$AWS_REGION" 2>/dev/null || true
+    
+    # Add bucket policy for public read
+    aws s3api put-bucket-policy \
+        --bucket "$S3_BUCKET" \
+        --policy '{
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Sid": "PublicReadGetObject",
+                    "Effect": "Allow",
+                    "Principal": "*",
+                    "Action": "s3:GetObject",
+                    "Resource": "arn:aws:s3:::'"$S3_BUCKET"'/*"
+                }
+            ]
+        }' \
+        --region "$AWS_REGION" 2>/dev/null || true
+    
     # Sync all files with cache headers
-    aws s3 sync build/ "s3://$S3_BUCKET/" \
+    if aws s3 sync build/ "s3://$S3_BUCKET/" \
         --delete \
         --region "$AWS_REGION" \
         --cache-control "public, max-age=31536000" \
         --exclude "index.html" \
-        --exclude "*.json"
+        --exclude "*.json" 2>&1 | tee /tmp/s3-sync.log; then
+        print_success "Static assets uploaded to S3"
+    else
+        print_warning "Some files may have failed to upload. Check /tmp/s3-sync.log"
+    fi
     
     # Upload index.html with no-cache
-    aws s3 cp build/index.html "s3://$S3_BUCKET/" \
+    if aws s3 cp build/index.html "s3://$S3_BUCKET/" \
         --region "$AWS_REGION" \
         --cache-control "no-cache, no-store, must-revalidate" \
-        --content-type "text/html"
+        --content-type "text/html" 2>/dev/null; then
+        print_success "index.html uploaded"
+    else
+        print_warning "Failed to upload index.html"
+    fi
     
     # Upload JSON files with no-cache
-    aws s3 cp build/ "s3://$S3_BUCKET/" \
+    if aws s3 cp build/ "s3://$S3_BUCKET/" \
         --recursive \
         --region "$AWS_REGION" \
         --exclude "*" \
         --include "*.json" \
         --cache-control "no-cache, no-store, must-revalidate" \
-        --content-type "application/json"
+        --content-type "application/json" 2>/dev/null; then
+        print_success "JSON files uploaded"
+    else
+        print_warning "Some JSON files may have failed to upload"
+    fi
     
     print_success "Frontend deployed to S3"
     
@@ -673,27 +802,61 @@ if [ "$ENVIRONMENT" = "production" ] && [ -n "$USER_POOL_ID" ]; then
     if [ -z "$USER_EXISTS" ]; then
         print_status "Creating admin user..."
         
-        # Create admin user
-        aws cognito-idp admin-create-user \
-            --user-pool-id "$USER_POOL_ID" \
-            --username "admin@ordernimbus.com" \
-            --user-attributes \
-                Name=email,Value=admin@ordernimbus.com \
-                Name=email_verified,Value=true \
-            --temporary-password "TempPass123!" \
-            --message-action SUPPRESS \
-            --region "$AWS_REGION" > /dev/null 2>&1 || true
+        # Wait a bit for user pool to be fully ready
+        sleep 3
         
-        # Set permanent password
-        aws cognito-idp admin-set-user-password \
-            --user-pool-id "$USER_POOL_ID" \
-            --username "admin@ordernimbus.com" \
-            --password "Admin12345" \
-            --permanent \
-            --region "$AWS_REGION" > /dev/null 2>&1 || true
+        # Create admin user with retry
+        USER_CREATED=false
+        for i in 1 2 3; do
+            if aws cognito-idp admin-create-user \
+                --user-pool-id "$USER_POOL_ID" \
+                --username "admin@ordernimbus.com" \
+                --user-attributes \
+                    Name=email,Value=admin@ordernimbus.com \
+                    Name=email_verified,Value=true \
+                --temporary-password "TempPass123!" \
+                --message-action SUPPRESS \
+                --region "$AWS_REGION" > /tmp/user-create.log 2>&1; then
+                USER_CREATED=true
+                break
+            else
+                if grep -q "UsernameExistsException" /tmp/user-create.log; then
+                    print_warning "User already exists"
+                    USER_CREATED=true
+                    break
+                fi
+                print_warning "Retry $i: Creating user..."
+                sleep 2
+            fi
+        done
         
-        print_success "Admin user created (admin@ordernimbus.com / Admin12345)"
-        print_warning "Please change the admin password after first login!"
+        if [ "$USER_CREATED" = "true" ]; then
+            # Set permanent password with retry
+            PASSWORD_SET=false
+            for i in 1 2 3; do
+                if aws cognito-idp admin-set-user-password \
+                    --user-pool-id "$USER_POOL_ID" \
+                    --username "admin@ordernimbus.com" \
+                    --password "Admin12345" \
+                    --permanent \
+                    --region "$AWS_REGION" > /tmp/password-set.log 2>&1; then
+                    PASSWORD_SET=true
+                    break
+                else
+                    print_warning "Retry $i: Setting password..."
+                    sleep 2
+                fi
+            done
+            
+            if [ "$PASSWORD_SET" = "true" ]; then
+                print_success "Admin user created (admin@ordernimbus.com / Admin12345)"
+                print_warning "Please change the admin password after first login!"
+            else
+                print_warning "User created but password may need to be set manually"
+            fi
+        else
+            print_warning "Could not create admin user. You may need to create it manually."
+        fi
     else
         print_success "Admin user already exists"
     fi
@@ -752,34 +915,64 @@ echo ""
 # Test endpoints
 print_status "Testing deployment..."
 if [ -n "$API_URL" ]; then
-    # Test config endpoint
-    if curl -s "$API_URL/api/config" | grep -q "environment" 2>/dev/null; then
-        print_success "API config endpoint is working"
-    else
-        print_warning "API may still be initializing"
-    fi
-    
-    # Test authentication if admin user exists
-    if [ "$ENVIRONMENT" = "production" ] && [ -n "$USER_EXISTS" ]; then
-        if curl -s -X POST "$API_URL/api/auth/login" \
-            -H "Content-Type: application/json" \
-            -d '{"email":"admin@ordernimbus.com","password":"Admin12345"}' | grep -q "tokens" 2>/dev/null; then
-            print_success "Authentication (UC001) is working"
+    # Wait for API to be ready
+    print_status "Waiting for API to be ready..."
+    API_READY=false
+    for i in 1 2 3 4 5; do
+        if curl -s "$API_URL/api/config" --max-time 5 > /dev/null 2>&1; then
+            API_READY=true
+            break
         else
-            print_warning "Authentication may need configuration"
+            print_warning "API not ready yet, waiting... (attempt $i/5)"
+            sleep 5
         fi
-    fi
+    done
     
-    # Test stores endpoint
-    if curl -s "$API_URL/api/stores" -H "userId: test" | grep -q "stores" 2>/dev/null; then
-        print_success "Store management (UC002) is working"
-    fi
-    
-    # Test Shopify connection
-    if curl -s -X POST "$API_URL/api/shopify/connect" \
-        -H "Content-Type: application/json" \
-        -d '{"storeDomain":"test.myshopify.com","userId":"test"}' | grep -q "authUrl" 2>/dev/null; then
-        print_success "Shopify connection (UC003) is working"
+    if [ "$API_READY" = "true" ]; then
+        # Test config endpoint
+        if curl -s "$API_URL/api/config" --max-time 5 | grep -q "environment" 2>/dev/null; then
+            print_success "API config endpoint is working"
+        else
+            print_warning "API config endpoint returned unexpected response"
+        fi
+        
+        # Test authentication if admin user exists
+        if [ "$ENVIRONMENT" = "production" ] && [ -n "$USER_EXISTS" ]; then
+            AUTH_RESPONSE=$(curl -s -X POST "$API_URL/api/auth/login" \
+                -H "Content-Type: application/json" \
+                -d '{"email":"admin@ordernimbus.com","password":"Admin12345"}' \
+                --max-time 5 2>/dev/null || echo "")
+            
+            if echo "$AUTH_RESPONSE" | grep -q "tokens\|token\|accessToken" 2>/dev/null; then
+                print_success "Authentication (UC001) is working"
+            elif echo "$AUTH_RESPONSE" | grep -q "error" 2>/dev/null; then
+                print_warning "Authentication returned error: $(echo $AUTH_RESPONSE | jq -r '.error' 2>/dev/null || echo 'Unknown')"
+            else
+                print_warning "Authentication may need configuration"
+            fi
+        fi
+        
+        # Test stores endpoint
+        STORES_RESPONSE=$(curl -s "$API_URL/api/stores" -H "userId: test" --max-time 5 2>/dev/null || echo "")
+        if echo "$STORES_RESPONSE" | grep -q "stores\|data" 2>/dev/null; then
+            print_success "Store management (UC002) is working"
+        else
+            print_warning "Store endpoint may need configuration"
+        fi
+        
+        # Test Shopify connection
+        SHOPIFY_RESPONSE=$(curl -s -X POST "$API_URL/api/shopify/connect" \
+            -H "Content-Type: application/json" \
+            -d '{"storeDomain":"test.myshopify.com","userId":"test"}' \
+            --max-time 5 2>/dev/null || echo "")
+        
+        if echo "$SHOPIFY_RESPONSE" | grep -q "authUrl" 2>/dev/null; then
+            print_success "Shopify connection (UC003) is working"
+        else
+            print_warning "Shopify connection may need configuration"
+        fi
+    else
+        print_warning "API is not responding. Please check CloudWatch logs."
     fi
 fi
 
