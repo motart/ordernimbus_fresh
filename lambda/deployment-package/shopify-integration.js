@@ -564,7 +564,7 @@ const handleShopifyConnect = async (event) => {
         case 'production':
           redirectUri = process.env.API_URL ? 
             `${process.env.API_URL}/api/shopify/callback` : 
-            'https://yu7ob32qt7.execute-api.us-west-1.amazonaws.com/production/api/shopify/callback';
+            'https://7tdwngcc30.execute-api.us-west-1.amazonaws.com/production/api/shopify/callback';
           break;
         default:
           redirectUri = 'http://localhost:3001/api/shopify/callback';
