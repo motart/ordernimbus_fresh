@@ -79,7 +79,7 @@ describe('Shopify Connection Flow', () => {
           storeDomain: 'test-store.myshopify.com'
         }),
         requestContext: {
-          domainName: 'yu7ob32qt7.execute-api.us-west-1.amazonaws.com',
+          domainName: '7tdwngcc30.execute-api.us-west-1.amazonaws.com',
           stage: 'production'
         }
       };
