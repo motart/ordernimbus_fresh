@@ -32,7 +32,7 @@ const AppInitializer: React.FC<{ children: React.ReactNode }> = ({ children }) =
       <div className="loading-container">
         <div className="loading-spinner">
           <div className="spinner"></div>
-          <p>Loading configuration...</p>
+          <p>Initializing OrderNimbus...</p>
         </div>
       </div>
     );
@@ -44,7 +44,7 @@ const AppInitializer: React.FC<{ children: React.ReactNode }> = ({ children }) =
         <div className="error-message">
           <h3>Configuration Error</h3>
           <p>{configError}</p>
-          <p>Please refresh the page to try again.</p>
+          <button onClick={() => window.location.reload()}>Retry</button>
         </div>
       </div>
     );

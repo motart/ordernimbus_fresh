@@ -57,6 +57,16 @@ Resources:
                   - 'secretsmanager:GetSecretValue'
                   - 'secretsmanager:DescribeSecret'
                 Resource: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:ordernimbus/*'
+        - PolicyName: SSMParameterAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'ssm:GetParameter'
+                  - 'ssm:GetParameters'
+                  - 'ssm:GetParametersByPath'
+                Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/ordernimbus/*'
         - PolicyName: CognitoAccess
           PolicyDocument:
             Version: '2012-10-17'
@@ -1013,6 +1023,39 @@ Resources:
       ApiId: !Ref ApiGateway
       RouteKey: 'ANY /api/auth/{proxy+}'
       Target: !Sub 'integrations/${LambdaIntegration}'
+
+  # ==================== SSM PARAMETERS FOR CONFIGURATION ====================
+  UserPoolIdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /ordernimbus/production/cognito/user-pool-id
+      Type: String
+      Value: !Ref UserPool
+      Description: Cognito User Pool ID for OrderNimbus
+      
+  UserPoolClientIdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /ordernimbus/production/cognito/client-id
+      Type: String
+      Value: !Ref UserPoolClient
+      Description: Cognito Client ID for OrderNimbus
+      
+  ApiEndpointParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /ordernimbus/production/api/endpoint
+      Type: String
+      Value: !Sub '${ApiGateway.ApiEndpoint}/production'
+      Description: API Gateway endpoint for OrderNimbus
+      
+  FrontendDomainParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /ordernimbus/production/frontend/cloudfront-domain
+      Type: String
+      Value: app.ordernimbus.com
+      Description: CloudFront domain for OrderNimbus frontend
 
 Outputs:
   FrontendURL:
