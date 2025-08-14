@@ -3,7 +3,7 @@ import { SiShopify } from 'react-icons/si';
 import { FiCheck, FiLoader, FiAlertCircle } from 'react-icons/fi';
 import toast from 'react-hot-toast';
 import './ShopifyConnect.css';
-import { ENV_CONFIG, debugLog } from '../config/environment';
+import { getApiUrl, debugLog } from '../config/environment';
 
 interface ShopifyConnectProps {
   userId: string;
@@ -63,8 +63,8 @@ const ShopifyConnect: React.FC<ShopifyConnectProps> = ({ userId, onSuccess, onCa
     setError('');
 
     try {
-      const apiUrl = ENV_CONFIG.apiUrl;
-      console.log('Connecting to:', cleanDomain, 'via API:', apiUrl);
+      const apiUrl = getApiUrl();
+      debugLog('Connecting to:', cleanDomain, 'via API:', apiUrl);
       
       // Always use OAuth mode (no dev/custom app logic)
       const response = await fetch(`${apiUrl}/api/shopify/connect`, {

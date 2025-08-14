@@ -51,27 +51,28 @@ interface ConfigContextType {
 
 const ConfigContext = createContext<ConfigContextType | undefined>(undefined);
 
-// Determine API URL based on environment configuration
+// Determine config endpoint URL - this is the ONLY URL we need to know
+// Everything else comes from the config endpoint
 const getConfigUrl = (): string => {
-  // Always prefer environment variable if set
-  const apiUrl = process.env.REACT_APP_API_URL;
+  // The config endpoint URL must be provided via environment variable
+  // This is the bootstrap URL that provides all other configuration
+  const configEndpoint = process.env.REACT_APP_CONFIG_ENDPOINT;
   
-  if (apiUrl) {
-    // Use the configured API URL from environment
-    return `${apiUrl}/api/config`;
+  if (configEndpoint) {
+    // Using config endpoint from environment
+    return configEndpoint;
   }
   
-  // Fallback: detect based on hostname (should not happen in proper setup)
+  // For local development only - this is the only acceptable fallback
   const hostname = window.location.hostname;
-  console.warn('REACT_APP_API_URL not set, falling back to hostname detection');
-  
-  // Local development
   if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    // Local development mode - using local config endpoint
     return 'http://localhost:3001/api/config';
   }
   
-  // Production fallback - use the API Gateway URL directly
-  return 'https://ay8k50buyd.execute-api.us-west-1.amazonaws.com/production/api/config';
+  // In production, config endpoint MUST be provided
+  console.error('CRITICAL: No config endpoint provided! Set REACT_APP_CONFIG_ENDPOINT environment variable.');
+  throw new Error('Configuration endpoint not provided. Application cannot start without configuration.');
 };
 
 export const ConfigProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -85,7 +86,7 @@ export const ConfigProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setError(null);
       
       const configUrl = getConfigUrl();
-      console.log('Fetching configuration from:', configUrl);
+      // Fetching configuration from config endpoint
       
       const response = await fetch(configUrl, {
         method: 'GET',
@@ -99,11 +100,7 @@ export const ConfigProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
       
       const data = await response.json();
-      console.log('Configuration loaded successfully:', {
-        environment: data.environment,
-        apiUrl: data.apiUrl,
-        region: data.region,
-      });
+      // Configuration loaded successfully
       
       setConfig(data);
       

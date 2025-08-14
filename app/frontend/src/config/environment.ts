@@ -212,57 +212,112 @@ const getDevConfig = (): EnvironmentConfig => {
 };
 
 /**
- * Export singleton configuration
+ * Dynamic configuration getter
+ * Always fetches the latest configuration from sessionStorage or environment
  */
 let _config: EnvironmentConfig | null = null;
+let _configTimestamp: number = 0;
+const CONFIG_CACHE_TTL = 1000; // 1 second cache to avoid excessive parsing
 
-export const ENV_CONFIG = (() => {
-  if (!_config) {
-    try {
-      _config = getEnvironmentConfig();
-      
-      // Log configuration in development
-      if (_config.features.enableDebug) {
-        console.log('OrderNimbus Configuration:', {
-          environment: _config.environment,
-          appUrl: _config.appUrl,
-          apiUrl: _config.apiUrl,
-          graphqlUrl: _config.graphqlUrl,
-          region: _config.region
-        });
-      }
-    } catch (error) {
-      console.error('Failed to initialize environment configuration:', error);
-      
-      // In development, use fallback
-      if (process.env.NODE_ENV === 'development') {
-        _config = getDevConfig();
-      } else {
-        throw error;
-      }
+export const getENV_CONFIG = (): EnvironmentConfig => {
+  const now = Date.now();
+  
+  // Return cached config if still fresh
+  if (_config && (now - _configTimestamp) < CONFIG_CACHE_TTL) {
+    return _config;
+  }
+  
+  try {
+    _config = getEnvironmentConfig();
+    _configTimestamp = now;
+    
+    // Configuration updated (logged only in debug mode via debugLog)
+  } catch (error) {
+    console.error('Failed to get environment configuration:', error);
+    
+    // In development, use fallback
+    if (process.env.NODE_ENV === 'development') {
+      _config = getDevConfig();
+      _configTimestamp = now;
+    } else if (!_config) {
+      // In production, if we have no config at all, return minimal config
+      _config = {
+        appUrl: window.location.origin,
+        apiUrl: '', // Empty will cause obvious errors
+        graphqlUrl: '',
+        wsUrl: '',
+        userPoolId: '',
+        clientId: '',
+        region: 'us-west-1',
+        environment: detectEnvironment(),
+        isSecure: isSecureContext(),
+        shopifyRedirectUri: '',
+        features: {
+          enableDebug: false,
+          enableAnalytics: false,
+          enableMockData: false,
+          useWebCrypto: false
+        }
+      };
+      _configTimestamp = now;
     }
   }
-  return _config;
-})();
+  
+  return _config!;
+};
+
+// For backward compatibility, export ENV_CONFIG as a getter
+export const ENV_CONFIG = getENV_CONFIG();
 
 /**
- * Utility functions for easy access
+ * Utility functions for easy access - now dynamic
  */
-export const getApiUrl = (): string => ENV_CONFIG.apiUrl;
-export const getAppUrl = (): string => ENV_CONFIG.appUrl;
-export const getGraphQLUrl = (): string => ENV_CONFIG.graphqlUrl || `${ENV_CONFIG.apiUrl}/graphql`;
-export const getWebSocketUrl = (): string => ENV_CONFIG.wsUrl || ENV_CONFIG.apiUrl.replace('http', 'ws') + '/ws';
-export const getShopifyRedirectUri = (): string => ENV_CONFIG.shopifyRedirectUri;
+export const getApiUrl = (): string => {
+  const config = getENV_CONFIG();
+  return config.apiUrl;
+};
 
-export const isDevelopment = () => ENV_CONFIG.environment === 'development';
-export const isStaging = () => ENV_CONFIG.environment === 'staging';
-export const isProduction = () => ENV_CONFIG.environment === 'production';
+export const getAppUrl = (): string => {
+  const config = getENV_CONFIG();
+  return config.appUrl;
+};
+
+export const getGraphQLUrl = (): string => {
+  const config = getENV_CONFIG();
+  return config.graphqlUrl || `${config.apiUrl}/graphql`;
+};
+
+export const getWebSocketUrl = (): string => {
+  const config = getENV_CONFIG();
+  return config.wsUrl || config.apiUrl.replace('http', 'ws') + '/ws';
+};
+
+export const getShopifyRedirectUri = (): string => {
+  const config = getENV_CONFIG();
+  return config.shopifyRedirectUri;
+};
+
+export const isDevelopment = () => {
+  const config = getENV_CONFIG();
+  return config.environment === 'development';
+};
+
+export const isStaging = () => {
+  const config = getENV_CONFIG();
+  return config.environment === 'staging';
+};
+
+export const isProduction = () => {
+  const config = getENV_CONFIG();
+  return config.environment === 'production';
+};
 
 /**
  * Debug logging utility
  */
 export const debugLog = (...args: any[]) => {
-  if (ENV_CONFIG.features.enableDebug) {
+  const config = getENV_CONFIG();
+  if (config.features.enableDebug) {
     console.log('[OrderNimbus Debug]', ...args);
   }
 };
@@ -271,16 +326,17 @@ export const debugLog = (...args: any[]) => {
  * Get complete environment info for debugging
  */
 export const getEnvironmentInfo = () => {
+  const config = getENV_CONFIG();
   return {
-    environment: ENV_CONFIG.environment,
+    environment: config.environment,
     hostname: window.location.hostname,
     protocol: window.location.protocol,
-    appUrl: ENV_CONFIG.appUrl,
-    apiUrl: ENV_CONFIG.apiUrl,
-    graphqlUrl: ENV_CONFIG.graphqlUrl,
-    wsUrl: ENV_CONFIG.wsUrl,
-    isSecure: ENV_CONFIG.isSecure,
-    webCryptoAvailable: ENV_CONFIG.features.useWebCrypto,
+    appUrl: config.appUrl,
+    apiUrl: config.apiUrl,
+    graphqlUrl: config.graphqlUrl,
+    wsUrl: config.wsUrl,
+    isSecure: config.isSecure,
+    webCryptoAvailable: config.features.useWebCrypto,
     userAgent: navigator.userAgent,
     buildTime: process.env.REACT_APP_BUILD_TIME || 'unknown'
   };

@@ -11,30 +11,22 @@ let cachedConfig: any = null;
 // Fetch configuration from API
 const fetchConfigFromAPI = async () => {
   try {
-    // Determine API URL based on environment
-    let apiUrl = process.env.REACT_APP_API_URL;
+    // Get config endpoint from environment or use local for development
+    const configEndpoint = process.env.REACT_APP_CONFIG_ENDPOINT || 
+      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
+        ? 'http://localhost:3001/api/config' 
+        : null);
     
-    // If no API URL in env, determine based on hostname
-    if (!apiUrl) {
-      const hostname = window.location.hostname;
-      if (hostname === 'app.ordernimbus.com' || hostname.includes('cloudfront.net')) {
-        // Production
-        apiUrl = 'https://bggexzhlwb.execute-api.us-west-1.amazonaws.com/production';
-      } else if (hostname.includes('staging')) {
-        // Staging
-        apiUrl = 'https://staging-api.ordernimbus.com';
-      } else {
-        // Local development
-        apiUrl = 'http://localhost:3001';
-      }
+    if (!configEndpoint) {
+      throw new Error('No configuration endpoint available');
     }
     
-    console.log('Fetching configuration from:', `${apiUrl}/api/config`);
-    const response = await fetch(`${apiUrl}/api/config`);
+    // Fetching configuration from config endpoint
+    const response = await fetch(configEndpoint);
     
     if (response.ok) {
       const config = await response.json();
-      console.log('Configuration loaded successfully:', config);
+      // Configuration loaded successfully
       
       // Store in session storage for quick access
       sessionStorage.setItem('app-config', JSON.stringify(config));
