@@ -12,7 +12,7 @@ if (process.env.DYNAMODB_ENDPOINT) {
 }
 
 const dynamodb = new AWS.DynamoDB.DocumentClient(dynamoConfig);
-const secretsManager = new AWS.SecretsManager({ region: process.env.AWS_REGION || 'us-west-1' });
+const ssm = new AWS.SSM({ region: process.env.AWS_REGION || 'us-west-1' });
 
 // Import new GraphQL services
 const ProductService = require('./shopify/services/productService');
@@ -26,7 +26,7 @@ let shopifyCredentials = null;
 // Use latest API version
 const SHOPIFY_API_VERSION = '2024-07';
 
-// Helper function to get Shopify credentials from AWS Secrets Manager
+// Helper function to get Shopify credentials from AWS SSM Parameter Store
 const getShopifyCredentials = async () => {
   if (shopifyCredentials) {
     return shopifyCredentials;
@@ -34,15 +34,19 @@ const getShopifyCredentials = async () => {
 
   try {
     const environment = process.env.ENVIRONMENT || 'staging';
-    const secretName = `ordernimbus/${environment}/shopify`;
+    const parameterName = `/ordernimbus/${environment}/shopify`;
     
-    console.log(`Fetching Shopify credentials from Secrets Manager: ${secretName}`);
+    // Fetching Shopify credentials from SSM Parameter Store
     
-    const secret = await secretsManager.getSecretValue({ SecretId: secretName }).promise();
-    const credentials = JSON.parse(secret.SecretString);
+    const result = await ssm.getParameter({
+      Name: parameterName,
+      WithDecryption: true
+    }).promise();
+    
+    const credentials = JSON.parse(result.Parameter.Value);
     
     if (!credentials.SHOPIFY_CLIENT_ID || !credentials.SHOPIFY_CLIENT_SECRET) {
-      throw new Error('Invalid Shopify credentials in Secrets Manager');
+      throw new Error('Invalid Shopify credentials in SSM Parameter Store');
     }
 
     // Cache credentials for the duration of this Lambda execution
@@ -53,15 +57,15 @@ const getShopifyCredentials = async () => {
       redirectUri: credentials.SHOPIFY_REDIRECT_URI || ''
     };
     
-    console.log('Successfully retrieved Shopify credentials');
+    // Successfully retrieved Shopify credentials
     return shopifyCredentials;
     
   } catch (error) {
-    console.error('Error fetching Shopify credentials from Secrets Manager:', error);
+    console.error('Error fetching Shopify credentials from SSM Parameter Store:', error);
     
     // Fallback to environment variables for local development
     if (process.env.SHOPIFY_CLIENT_ID && process.env.SHOPIFY_CLIENT_SECRET) {
-      console.log('Using fallback environment variables for local development');
+      // Using fallback environment variables for local development
       return {
         apiKey: process.env.SHOPIFY_CLIENT_ID,
         apiSecret: process.env.SHOPIFY_CLIENT_SECRET,
@@ -70,7 +74,7 @@ const getShopifyCredentials = async () => {
       };
     }
     
-    throw new Error('Failed to retrieve Shopify credentials. Ensure they are stored in AWS Secrets Manager.');
+    throw new Error('Failed to retrieve Shopify credentials. Ensure they are stored in AWS SSM Parameter Store.');
   }
 };
 
@@ -544,19 +548,31 @@ const handleShopifyConnect = async (event) => {
   if (!redirectUri) {
     // Auto-detect environment and set appropriate redirect URI
     const environment = process.env.ENVIRONMENT || 'local';
-    switch (environment) {
-      case 'staging':
-        redirectUri = 'https://staging.ordernimbus.com/api/shopify/callback';
-        break;
-      case 'production':
-        redirectUri = 'https://app.ordernimbus.com/api/shopify/callback';
-        break;
-      default:
-        redirectUri = 'http://localhost:3001/api/shopify/callback';
+    
+    // Get the API Gateway URL from the event context or environment
+    if (event.requestContext && event.requestContext.domainName) {
+      const stage = event.requestContext.stage || 'production';
+      redirectUri = `https://${event.requestContext.domainName}/${stage}/api/shopify/callback`;
+    } else {
+      // Fallback to environment-based URLs
+      switch (environment) {
+        case 'staging':
+          redirectUri = process.env.API_URL ? 
+            `${process.env.API_URL}/api/shopify/callback` : 
+            'https://staging.ordernimbus.com/api/shopify/callback';
+          break;
+        case 'production':
+          redirectUri = process.env.API_URL ? 
+            `${process.env.API_URL}/api/shopify/callback` : 
+            'https://yu7ob32qt7.execute-api.us-west-1.amazonaws.com/production/api/shopify/callback';
+          break;
+        default:
+          redirectUri = 'http://localhost:3001/api/shopify/callback';
+      }
     }
   }
   
-  console.log('Using Shopify redirect URI:', redirectUri);
+  // Using the computed Shopify redirect URI
   
   // Required Shopify OAuth scopes
   const scopes = [
