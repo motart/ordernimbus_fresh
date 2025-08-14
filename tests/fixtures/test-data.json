@@ -1,0 +1,35 @@
+{
+  "users": {
+    "validUser": {
+      "firstName": "Test",
+      "lastName": "User",
+      "email": "test@ordernimbus.com",
+      "companyName": "Test Company",
+      "password": "TestPassword123!"
+    },
+    "invalidUsers": [
+      {
+        "email": "",
+        "password": "test",
+        "companyName": "Test"
+      },
+      {
+        "email": "test@test.com",
+        "password": "",
+        "companyName": "Test"
+      },
+      {
+        "email": "test@test.com",
+        "password": "test",
+        "companyName": ""
+      }
+    ]
+  },
+  "api": {
+    "endpoints": {
+      "register": "/api/auth/register",
+      "login": "/api/auth/login",
+      "config": "/api/config"
+    }
+  }
+}

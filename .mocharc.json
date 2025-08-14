@@ -1,0 +1,9 @@
+{
+  "recursive": true,
+  "timeout": 30000,
+  "reporter": "spec",
+  "ui": "bdd",
+  "require": [
+    "./tests/setup.js"
+  ]
+}

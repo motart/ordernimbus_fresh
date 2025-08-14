@@ -1,4 +1,6 @@
 // Authentication service for OrderNimbus
+// DEPRECATED: This service is being replaced by AWS Amplify Auth
+// Use AuthContext instead which now uses Amplify directly
 import { getApiUrl } from '../config/environment';
 
 interface LoginResponse {
@@ -22,7 +24,11 @@ interface RegisterResponse {
   error?: string;
 }
 
-interface UserInfo {
+// UserInfo type has moved to AuthContext
+// Import from '../contexts/AuthContext' instead
+
+// Keep local interface for this file only
+interface UserInfoLocal {
   userId: string;
   email: string;
   companyId: string;
@@ -33,7 +39,7 @@ interface UserInfo {
 class AuthService {
   private apiUrl: string;
   private accessToken: string | null = null;
-  private userInfo: UserInfo | null = null;
+  private userInfo: UserInfoLocal | null = null;
 
   constructor() {
     // Use dynamic API URL based on environment
@@ -158,7 +164,7 @@ class AuthService {
     return this.accessToken;
   }
 
-  getUserInfo(): UserInfo | null {
+  getUserInfo(): UserInfoLocal | null {
     return this.userInfo;
   }
 
@@ -168,14 +174,16 @@ class AuthService {
 
   // Create authenticated API call helper
   async authenticatedRequest(endpoint: string, options: RequestInit = {}) {
-    // For now, we'll use the userId from userInfo or fallback
-    // In production, the Lambda should validate the Bearer token
-    const userId = this.userInfo?.userId || 'e85183d0-3061-70b8-25f5-171fd848ac9d';
+    // Check if we have a valid access token
+    if (!this.accessToken || !this.userInfo) {
+      // No valid authentication - redirect to login
+      this.clearAuth();
+      throw new Error('Authentication required. Please log in.');
+    }
 
     const headers = {
       'Content-Type': 'application/json',
-      'userId': userId, // Lambda expects this header
-      ...(this.accessToken ? { 'Authorization': `Bearer ${this.accessToken}` } : {}),
+      'Authorization': `Bearer ${this.accessToken}`, // JWT token for API Gateway Authorizer
       ...options.headers
     };
 
@@ -195,4 +203,4 @@ class AuthService {
 }
 
 export const authService = new AuthService();
-export type { LoginResponse, RegisterResponse, UserInfo };
+export type { LoginResponse, RegisterResponse };

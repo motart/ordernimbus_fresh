@@ -36,7 +36,8 @@ async function getConfiguration() {
     // Build configuration object
     const config = {
       environment: process.env.ENVIRONMENT || 'production',
-      region: process.env.AWS_REGION || 'us-west-1'
+      region: process.env.AWS_REGION || 'us-west-1',
+      version: process.env.VERSION || '1.0.0'
     };
     
     // Map parameters to config
@@ -67,8 +68,18 @@ async function getConfiguration() {
       enableDebug: config.environment !== 'production',
       enableAnalytics: config.environment === 'production',
       enableMockData: false,
-      useWebCrypto: true
+      useWebCrypto: true,
+      shopifyIntegration: true,
+      csvUpload: true,
+      multiTenant: true
     };
+    
+    // Additional settings
+    config.maxFileUploadSize = 52428800; // 50MB
+    config.supportedFileTypes = ['.csv', '.xlsx', '.xls'];
+    config.sessionTimeout = 3600000; // 1 hour
+    config.buildTime = process.env.BUILD_TIME || new Date().toISOString();
+    config.deploymentId = process.env.DEPLOYMENT_ID || `${config.environment}-${Date.now()}`;
     
     // Cache the configuration
     configCache = config;
@@ -79,18 +90,34 @@ async function getConfiguration() {
     console.error('Failed to fetch configuration from SSM:', error);
     
     // Fallback to environment variables if SSM fails
+    const apiGatewayId = process.env.API_GATEWAY_ID || 'bggexzhlwb';
+    const environment = process.env.ENVIRONMENT || 'production';
+    const region = process.env.AWS_REGION || 'us-west-1';
+    const apiUrl = `https://${apiGatewayId}.execute-api.${region}.amazonaws.com/${environment}`;
+    
     return {
-      environment: process.env.ENVIRONMENT || 'production',
-      apiUrl: process.env.API_URL || `https://${process.env.API_GATEWAY_ID}.execute-api.${process.env.AWS_REGION}.amazonaws.com/production`,
-      region: process.env.AWS_REGION || 'us-west-1',
-      userPoolId: process.env.USER_POOL_ID,
-      clientId: process.env.USER_POOL_CLIENT_ID,
+      environment,
+      apiUrl,
+      graphqlUrl: `${apiUrl}/graphql`,
+      wsUrl: apiUrl.replace('https://', 'wss://').replace('http://', 'ws://') + '/ws',
+      region,
+      userPoolId: process.env.USER_POOL_ID || 'us-west-1_A59siBuVM',
+      clientId: process.env.USER_POOL_CLIENT_ID || process.env.CLIENT_ID || '1fan0b8etrqi40gb7hgmvvea58',
+      version: process.env.VERSION || '1.0.0',
       features: {
-        enableDebug: false,
-        enableAnalytics: true,
+        enableDebug: environment !== 'production',
+        enableAnalytics: environment === 'production',
         enableMockData: false,
-        useWebCrypto: true
-      }
+        useWebCrypto: true,
+        shopifyIntegration: true,
+        csvUpload: true,
+        multiTenant: true
+      },
+      maxFileUploadSize: 52428800,
+      supportedFileTypes: ['.csv', '.xlsx', '.xls'],
+      sessionTimeout: 3600000,
+      buildTime: process.env.BUILD_TIME || new Date().toISOString(),
+      deploymentId: process.env.DEPLOYMENT_ID || `${environment}-${Date.now()}`
     };
   }
 }

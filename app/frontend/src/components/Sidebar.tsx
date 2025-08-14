@@ -9,7 +9,8 @@ import {
   FiLogOut,
   FiChevronLeft,
   FiFileText,
-  FiPackage
+  FiPackage,
+  FiTerminal
 } from 'react-icons/fi';
 import { 
   MdDashboard, 
@@ -83,6 +84,7 @@ const Sidebar: React.FC<SidebarProps> = ({ userEmail, onLogout, onNavigate, acti
     { id: 'customers', label: 'Customers', icon: FiUsers, section: 'top' },
     { id: 'analytics', label: 'Analytics', icon: MdAnalytics, section: 'top' },
     { id: 'reports', label: 'Reports', icon: FiFileText, section: 'top' },
+    { id: 'logs', label: 'Backend Logs', icon: FiTerminal, section: 'top' },
   ];
 
 

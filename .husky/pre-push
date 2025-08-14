@@ -1,0 +1,51 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+# Pre-push hook for OrderNimbus
+# Runs comprehensive tests before pushing to remote
+
+echo "🚀 Running pre-push checks..."
+
+# Get the branch being pushed to
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+echo "Pushing to branch: $BRANCH"
+
+# Run different test suites based on branch
+if [[ "$BRANCH" == "main" ]] || [[ "$BRANCH" == "production" ]]; then
+  echo "🔒 Pushing to protected branch - running all tests..."
+  
+  # Run all tests
+  npm run test:all || {
+    echo "❌ Tests failed! Cannot push to $BRANCH"
+    echo "Fix all failing tests before pushing to protected branches"
+    exit 1
+  }
+  
+  # Build check
+  echo "Building frontend..."
+  cd app/frontend && npm run build || {
+    echo "❌ Frontend build failed!"
+    exit 1
+  }
+  cd ../..
+  
+elif [[ "$BRANCH" == "staging" ]] || [[ "$BRANCH" == "develop" ]]; then
+  echo "Running standard test suite..."
+  
+  # Run unit and integration tests
+  npm run test:unit || {
+    echo "❌ Unit tests failed!"
+    exit 1
+  }
+  
+else
+  echo "Feature branch - running quick tests..."
+  
+  # Just run unit tests for feature branches
+  npm run test:unit -- --reporter min || {
+    echo "⚠️  Unit tests failed - consider fixing before pushing"
+    # Don't block push for feature branches, just warn
+  }
+fi
+
+echo "✅ Pre-push checks completed!"

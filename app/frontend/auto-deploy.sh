@@ -48,11 +48,11 @@ export NODE_ENV=$BUILD_ENV
 
 # Build the app with environment-specific settings
 if [ "$BUILD_ENV" = "production" ]; then
-  # Production build with optimizations
-  npm run build
+  # Production build with optimizations - uses .env.production
+  npm run build:production
 else
-  # Staging build
-  npm run build
+  # Staging build - also uses production settings for AWS deployment
+  npm run build:production
 fi
 
 # Verify build completed

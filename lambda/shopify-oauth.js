@@ -2,6 +2,10 @@ const AWS = require('aws-sdk');
 const crypto = require('crypto');
 const axios = require('axios');
 
+// Import GraphQL services
+const ShopService = require('./shopify/services/shopService');
+const InventoryService = require('./shopify/services/inventoryService');
+
 // Initialize AWS services
 const dynamoConfig = {
   region: process.env.AWS_REGION || 'us-west-1'
@@ -154,28 +158,19 @@ const handleOAuthCallback = async (code, shop, state, hmac) => {
     
     const { access_token, scope } = tokenResponse.data;
     
-    // Get shop information
-    const shopInfoResponse = await axios.get(`https://${shop}/admin/api/2024-07/shop.json`, {
-      headers: {
-        'X-Shopify-Access-Token': access_token
-      }
-    });
+    // Get shop information using GraphQL
+    const shopService = new ShopService(shop, access_token);
+    const shopInfo = await shopService.fetchShopInfo();
     
-    const shopInfo = shopInfoResponse.data.shop;
-    
-    // Get additional shop details
+    // Get locations using GraphQL
     let locationId = null;
     try {
-      // Get primary location for inventory tracking
-      const locationsResponse = await axios.get(`https://${shop}/admin/api/2024-07/locations.json`, {
-        headers: {
-          'X-Shopify-Access-Token': access_token
-        }
-      });
+      const inventoryService = new InventoryService(shop, access_token);
+      const locations = await inventoryService.fetchLocations();
       
-      if (locationsResponse.data.locations && locationsResponse.data.locations.length > 0) {
+      if (locations && locations.length > 0) {
         // Find primary location or use first one
-        const primaryLocation = locationsResponse.data.locations.find(loc => loc.active) || locationsResponse.data.locations[0];
+        const primaryLocation = locations.find(loc => loc.active) || locations[0];
         locationId = primaryLocation.id;
       }
     } catch (locError) {

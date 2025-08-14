@@ -50,65 +50,16 @@ const fetchConfigFromAPI = async () => {
   return null;
 };
 
-// Get configuration from environment variables or API
-const getAmplifyConfig = async () => {
-  // For production, always fetch from API to ensure latest config
-  const hostname = window.location.hostname;
-  const isProduction = hostname === 'app.ordernimbus.com' || hostname.includes('cloudfront.net') || hostname.includes('s3-website');
-  
-  let region = 'us-west-1';
-  let userPoolId: string | undefined;
-  let userPoolClientId: string | undefined;
-  
-  if (isProduction) {
-    console.log('Production environment detected, fetching config from API...');
-    
-    // Check session storage first for cached config
-    const storedConfig = sessionStorage.getItem('app-config');
-    if (storedConfig) {
-      try {
-        const config = JSON.parse(storedConfig);
-        // Only use cached config if it has all required fields
-        if (config.userPoolId && config.clientId) {
-          userPoolId = config.userPoolId;
-          userPoolClientId = config.clientId;
-          region = config.region || region;
-          console.log('Using cached configuration');
-        }
-      } catch (e) {
-        console.error('Failed to parse stored config:', e);
-      }
-    }
-    
-    // Always fetch fresh config from API in production
-    if (!userPoolId || !userPoolClientId) {
-      const apiConfig = await fetchConfigFromAPI();
-      if (apiConfig) {
-        userPoolId = apiConfig.userPoolId;
-        userPoolClientId = apiConfig.clientId;
-        region = apiConfig.region || region;
-      }
-    }
-  } else {
-    // Development: use environment variables
-    region = process.env.REACT_APP_REGION || 'us-west-1';
-    userPoolId = process.env.REACT_APP_USER_POOL_ID;
-    userPoolClientId = process.env.REACT_APP_CLIENT_ID;
-    
-    if (!userPoolId || !userPoolClientId) {
-      console.log('Development: env vars missing, fetching from API...');
-      const apiConfig = await fetchConfigFromAPI();
-      if (apiConfig) {
-        userPoolId = apiConfig.userPoolId;
-        userPoolClientId = apiConfig.clientId;
-        region = apiConfig.region || region;
-      }
-    }
-  }
+// Get configuration from environment variables
+const getAmplifyConfig = () => {
+  // Check environment variables
+  const region = process.env.REACT_APP_REGION || 'us-west-1';
+  const userPoolId = process.env.REACT_APP_USER_POOL_ID;
+  const userPoolClientId = process.env.REACT_APP_CLIENT_ID;
   
   // Check if we have the required Cognito configuration
   if (!userPoolId || !userPoolClientId) {
-    console.warn('AWS Cognito configuration not found. Authentication features will be limited.');
+    console.warn('AWS Cognito configuration not found in environment variables.');
     return null;
   }
 
@@ -138,14 +89,53 @@ const getAmplifyConfig = async () => {
   };
 };
 
-// Configure Amplify
-export const configureAmplify = async () => {
-  const config = await getAmplifyConfig();
+// Configure Amplify with cloud config (preferred) or environment variables
+export const configureAmplify = (cloudConfig?: { userPoolId: string; clientId: string; region: string }) => {
+  // If cloud config is provided, use it directly
+  if (cloudConfig) {
+    const config = {
+      Auth: {
+        Cognito: {
+          userPoolId: cloudConfig.userPoolId,
+          userPoolClientId: cloudConfig.clientId,
+          region: cloudConfig.region,
+          loginWith: {
+            email: true,
+          },
+          signUpVerificationMethod: 'code' as const,
+          userAttributes: {
+            email: {
+              required: true,
+            },
+          },
+          passwordFormat: {
+            minLength: 8,
+            requireLowercase: true,
+            requireUppercase: true,
+            requireNumbers: true,
+          },
+        },
+      },
+    };
+    
+    try {
+      Amplify.configure(config);
+      console.log('AWS Amplify configured with cloud config successfully');
+      cachedConfig = config;
+      return true;
+    } catch (error) {
+      console.error('Failed to configure AWS Amplify with cloud config:', error);
+      return false;
+    }
+  }
+  
+  // Fallback to environment variables
+  const config = getAmplifyConfig();
   
   if (config) {
     try {
       Amplify.configure(config);
-      console.log('AWS Amplify configured successfully');
+      console.log('AWS Amplify configured with environment variables');
       cachedConfig = config;
       return true;
     } catch (error) {
@@ -162,3 +152,6 @@ export const configureAmplify = async () => {
 export const isAmplifyConfigured = () => {
   return cachedConfig !== null;
 };
+
+// Export fetch config function for use in ConfigContext
+export { fetchConfigFromAPI };

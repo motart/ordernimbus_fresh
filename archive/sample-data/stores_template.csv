@@ -1,6 +1,0 @@
-name,type,address,city,state,zip,country,phone,email,manager,timezone,currency
-Downtown Store,physical,123 Main Street,New York,NY,10001,US,212-555-0100,downtown@ordernimbus.com,John Smith,America/New_York,USD
-Westside Store,physical,456 Oak Avenue,Los Angeles,CA,90001,US,310-555-0200,westside@ordernimbus.com,Jane Doe,America/Los_Angeles,USD
-Online Shop,shopify,https://shop.ordernimbus.com,San Francisco,CA,94102,US,415-555-0300,online@ordernimbus.com,Bob Johnson,America/Los_Angeles,USD
-Airport Kiosk,physical,Terminal 2 Gate 15,Chicago,IL,60601,US,312-555-0400,airport@ordernimbus.com,Alice Brown,America/Chicago,USD
-Mall Location,physical,789 Shopping Plaza,Houston,TX,77001,US,713-555-0500,mall@ordernimbus.com,Charlie Wilson,America/Chicago,USD

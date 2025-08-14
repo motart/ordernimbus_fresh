@@ -80,18 +80,18 @@ class SecureDataManager {
 
   /**
    * Initialize with fallback (non-authenticated) mode
+   * This should only be used for local development, never in production
    */
   async initializeFallback(fallbackEmail: string = 'temp@example.com'): Promise<void> {
+    // In production, we should never use fallback mode
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('Authentication required. Please log in to continue.');
+    }
+    
     try {
-      // Use a consistent userId for local development
-      // For development, use a fixed userId to ensure consistency
-      let tempUserId = localStorage.getItem('ordernimbus_local_userId');
-      
-      if (!tempUserId) {
-        // For development, use the existing connected user's ID
-        tempUserId = 'e85183d0-3061-70b8-25f5-171fd848ac9d';
-        localStorage.setItem('ordernimbus_local_userId', tempUserId);
-      }
+      // Only for local development - generate a temporary userId
+      const tempUserId = `local-dev-${Date.now()}`;
+      console.warn('SecureDataManager running in LOCAL DEVELOPMENT mode with temporary userId:', tempUserId);
       
       const keyMaterial = await this.deriveKeyFromUser(tempUserId, fallbackEmail);
       const encryptionKey = await this.generateEncryptionKey(keyMaterial);
@@ -102,7 +102,7 @@ class SecureDataManager {
         encryptionKey
       };
       
-      console.log('SecureDataManager initialized in fallback mode');
+      console.log('SecureDataManager initialized in development fallback mode');
     } catch (error) {
       console.error('Failed to initialize SecureDataManager in fallback mode:', error);
       throw error;

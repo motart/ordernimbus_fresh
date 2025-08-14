@@ -11,6 +11,7 @@ import OrderPage from './OrderPage';
 import ProductsPage from './ProductsPage';
 import CustomersPage from './CustomersPage';
 import NotificationsPage from './NotificationsPage';
+import LogsPage from './LogsPage';
 import SecureDataManager from '../utils/SecureDataManager';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -112,6 +113,7 @@ const Dashboard: React.FC = () => {
       case 'analytics': return 'Analytics';
       case 'reports': return 'Reports';
       case 'notifications': return 'Notifications';
+      case 'logs': return 'Backend Logs';
       case 'help': return 'Help & Support';
       case 'settings': return 'Settings';
       default: return activePage.charAt(0).toUpperCase() + activePage.slice(1);
@@ -165,6 +167,8 @@ const Dashboard: React.FC = () => {
           <CustomersPage />
         ) : activePage === 'notifications' ? (
           <NotificationsPage />
+        ) : activePage === 'logs' ? (
+          <LogsPage />
         ) : (
           <div className="dashboard-content">
               {!hasData && activePage === 'dashboard' ? (

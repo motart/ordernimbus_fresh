@@ -1,0 +1,19 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "cognito-idp:AdminInitiateAuth",
+        "cognito-idp:AdminCreateUser",
+        "cognito-idp:AdminSetUserPassword",
+        "cognito-idp:AdminGetUser",
+        "cognito-idp:AdminUpdateUserAttributes",
+        "cognito-idp:AdminDeleteUser",
+        "cognito-idp:ForgotPassword",
+        "cognito-idp:ConfirmForgotPassword"
+      ],
+      "Resource": "arn:aws:cognito-idp:us-west-1:335021149718:userpool/us-west-1_GeV4w2rCQ"
+    }
+  ]
+}
