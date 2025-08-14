@@ -5,8 +5,15 @@
 https://tsip547ao2.execute-api.us-west-1.amazonaws.com/production/api/shopify/callback
 ```
 
-### Previous Redirect URIs (after teardown/redeploys)
-- `https://tvaog6ef2f.execute-api.us-west-1.amazonaws.com/production/api/shopify/callback` (previous deployment)
+**Last Updated**: 2025-08-14  
+**API Gateway ID**: tsip547ao2  
+**Region**: us-west-1  
+**Stack**: ordernimbus-production
+
+### Previous Redirect URIs (Historical Reference)
+- `https://tvaog6ef2f.execute-api.us-west-1.amazonaws.com/production/api/shopify/callback`
+- `https://7tdwngcc30.execute-api.us-west-1.amazonaws.com/production/api/shopify/callback`
+- `https://v59jrtezd4.execute-api.us-west-1.amazonaws.com/production/api/shopify/callback`
 
 ## How It Works
 The Lambda function now dynamically generates the redirect URI based on the API Gateway context. This ensures the redirect URI always matches the current API Gateway URL, even after stack teardowns and redeployments.
