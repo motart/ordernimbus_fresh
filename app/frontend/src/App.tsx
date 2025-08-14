@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import './App.css';
 import './animations.css';
 import Dashboard from './components/Dashboard';
@@ -6,9 +6,6 @@ import AuthPage from './components/AuthPage';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { configureAmplify } from './config/amplify-config';
-
-// Configure Amplify on app initialization
-const amplifyConfigured = configureAmplify();
 
 // App content that uses auth context
 const AppContent: React.FC = () => {
@@ -33,6 +30,49 @@ const AppContent: React.FC = () => {
 };
 
 function App() {
+  const [configLoading, setConfigLoading] = useState(true);
+  const [configError, setConfigError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const initializeApp = async () => {
+      try {
+        console.log('Initializing OrderNimbus...');
+        await configureAmplify();
+        console.log('Configuration loaded successfully');
+        setConfigLoading(false);
+      } catch (error) {
+        console.error('Failed to initialize app:', error);
+        setConfigError('Failed to load configuration. Please refresh the page.');
+        setConfigLoading(false);
+      }
+    };
+
+    initializeApp();
+  }, []);
+
+  if (configLoading) {
+    return (
+      <div className="loading-container">
+        <div className="loading-spinner">
+          <div className="spinner"></div>
+          <p>Initializing OrderNimbus...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (configError) {
+    return (
+      <div className="loading-container">
+        <div className="error-message">
+          <h2>Configuration Error</h2>
+          <p>{configError}</p>
+          <button onClick={() => window.location.reload()}>Retry</button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <AuthProvider>
       <div className="App">
