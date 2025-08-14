@@ -1044,6 +1044,30 @@ if [ -n "$API_URL" ]; then
         
         if echo "$SHOPIFY_RESPONSE" | grep -q "authUrl" 2>/dev/null; then
             print_success "Shopify connection (UC003) is working"
+            
+            # Extract and validate redirect URI
+            AUTH_URL=$(echo "$SHOPIFY_RESPONSE" | jq -r '.authUrl' 2>/dev/null || echo "")
+            if [ -n "$AUTH_URL" ]; then
+                REDIRECT_URI=$(echo "$AUTH_URL" | python3 -c "
+import sys, urllib.parse
+url = sys.stdin.read().strip()
+if 'redirect_uri=' in url:
+    redirect_uri = url.split('redirect_uri=')[1].split('&')[0]
+    print(urllib.parse.unquote(redirect_uri))
+" 2>/dev/null || echo "")
+                
+                if [ -n "$REDIRECT_URI" ]; then
+                    print_success "Shopify redirect URI: $REDIRECT_URI"
+                    
+                    # Check if it matches the expected format
+                    EXPECTED_REDIRECT="${API_URL}/api/shopify/callback"
+                    if [ "$REDIRECT_URI" = "$EXPECTED_REDIRECT" ]; then
+                        print_success "Redirect URI is correctly configured for dynamic resolution"
+                    else
+                        print_warning "Redirect URI mismatch - Expected: $EXPECTED_REDIRECT"
+                    fi
+                fi
+            fi
         else
             print_warning "Shopify connection may need configuration"
         fi
@@ -1190,4 +1214,25 @@ echo "Next steps:"
 echo "  1. Visit the frontend URL to test the application"
 echo "  2. Check CloudWatch logs if any issues occur"
 echo "  3. Run './teardown-production.sh' to remove all resources"
+
+# Shopify configuration reminder
+if [ -n "$API_URL" ]; then
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "${YELLOW}IMPORTANT: Shopify App Configuration${NC}"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "Add this redirect URI to your Shopify Partners Dashboard:"
+    echo "  ${CYAN}${API_URL}/api/shopify/callback${NC}"
+    echo ""
+    echo "Steps:"
+    echo "  1. Go to ${CYAN}https://partners.shopify.com${NC}"
+    echo "  2. Navigate to Apps → Your App → App Setup"
+    echo "  3. In 'App URLs' section, add the redirect URI above"
+    echo "  4. Save changes"
+    echo ""
+    echo "For validation, run:"
+    echo "  ${GREEN}./tests/validate-shopify-redirect.sh $ENVIRONMENT $AWS_REGION${NC}"
+fi
+
 echo ""
