@@ -271,6 +271,66 @@ class TestAuthConfiguration(unittest.TestCase):
             # Fallback to log checks
             self.assertTrue(has_user_pool or has_client_id,
                           "Could not verify Cognito configuration")
+    
+    def test_loading_spinner_has_no_text(self):
+        """Test that the loading spinner element itself contains no text"""
+        production_url = "https://app.ordernimbus.com"
+        
+        print(f"Testing loading spinner for text content...")
+        
+        # Navigate to the page
+        self.driver.get(production_url)
+        
+        # Immediately check for spinner before config loads
+        try:
+            # Look for the spinner element (div with class 'spinner')
+            spinner_element = self.driver.find_element(By.CLASS_NAME, 'spinner')
+            
+            # Get the text content of the spinner element itself
+            spinner_text = spinner_element.text.strip()
+            
+            # Assert that the spinner element has no text
+            self.assertEqual(spinner_text, '', 
+                           f"Spinner element should have no text, but found: '{spinner_text}'")
+            
+            # Also check via JavaScript to ensure no text nodes
+            spinner_inner_text = self.driver.execute_script("""
+                const spinner = document.querySelector('.spinner');
+                return spinner ? spinner.innerText : null;
+            """)
+            
+            if spinner_inner_text is not None:
+                self.assertEqual(spinner_inner_text.strip(), '', 
+                               f"Spinner innerText should be empty, but found: '{spinner_inner_text}'")
+            
+            print("✅ Loading spinner contains no text")
+            
+        except TimeoutException:
+            # If spinner is not found quickly, it might have already loaded
+            print("⚠️ Spinner not found - page may have loaded too quickly")
+            
+            # Try to check if there's a loading container with proper structure
+            loading_container = self.driver.execute_script("""
+                const container = document.querySelector('.loading-container');
+                if (container) {
+                    const spinner = container.querySelector('.spinner');
+                    const text = container.querySelector('p');
+                    return {
+                        hasSpinner: !!spinner,
+                        spinnerText: spinner ? spinner.innerText : null,
+                        hasText: !!text,
+                        textContent: text ? text.innerText : null
+                    };
+                }
+                return null;
+            """)
+            
+            if loading_container:
+                # Verify spinner has no text even if container has text
+                if loading_container['hasSpinner']:
+                    self.assertEqual(loading_container['spinnerText'] or '', '', 
+                                   "Spinner element should not contain text")
+                print(f"✅ Loading structure verified: spinner={loading_container['hasSpinner']}, separate text={loading_container['hasText']}")
 
 
 def run_tests():

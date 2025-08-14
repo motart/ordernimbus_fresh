@@ -4,6 +4,6 @@ import App from './App';
 
 test('renders loading state initially', () => {
   render(<App />);
-  const loadingElement = screen.getByText(/Loading configuration.../i);
+  const loadingElement = screen.getByText(/Initializing OrderNimbus.../i);
   expect(loadingElement).toBeInTheDocument();
 });
