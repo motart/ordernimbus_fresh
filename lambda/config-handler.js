@@ -13,7 +13,7 @@ const ssm = new AWS.SSM();
 // Cache configuration for 5 minutes
 let configCache = null;
 let cacheTimestamp = 0;
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const CACHE_TTL = process.env.NODE_ENV === 'test' ? 0 : 5 * 60 * 1000; // No cache in tests
 
 async function getConfiguration(event) {
   const now = Date.now();
@@ -111,6 +111,12 @@ async function getConfiguration(event) {
     throw new Error(`Configuration not available for environment: ${environment}`);
   }
 }
+
+// Export for testing
+exports.clearCache = () => {
+  configCache = null;
+  cacheTimestamp = 0;
+};
 
 exports.handler = async (event) => {
   // Processing config request

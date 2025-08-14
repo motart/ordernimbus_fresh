@@ -7,29 +7,43 @@
 
 const { expect } = require('chai');
 const sinon = require('sinon');
-const AWS = require('aws-sdk');
-
-// Mock AWS SSM
-const mockSSM = {
-  getParameters: sinon.stub()
-};
-
-// Replace AWS SSM with mock
-AWS.SSM = function() {
-  return mockSSM;
-};
-
-// Import the handler after mocking AWS
-const { handler } = require('../../lambda/config-handler');
+const proxyquire = require('proxyquire');
 
 describe('Configuration Retrieval Tests', () => {
   
+  let handler, clearCache, mockSSM;
+  
   beforeEach(() => {
-    // Reset stubs
-    mockSSM.getParameters.reset();
+    // Create fresh mock for SSM
+    mockSSM = {
+      getParameters: sinon.stub()
+    };
     
-    // Clear module cache to reset config cache
-    delete require.cache[require.resolve('../../lambda/config-handler')];
+    // Create AWS mock
+    const awsMock = {
+      config: {
+        update: sinon.stub()
+      },
+      SSM: sinon.stub().returns(mockSSM)
+    };
+    
+    // Load handler with mocked AWS
+    const configModule = proxyquire('../../lambda/config-handler', {
+      'aws-sdk': awsMock
+    });
+    
+    handler = configModule.handler;
+    clearCache = configModule.clearCache;
+    
+    // Clear the cache
+    if (clearCache) {
+      clearCache();
+    }
+  });
+  
+  afterEach(() => {
+    // Clean up
+    sinon.restore();
   });
   
   describe('Environment Detection', () => {
