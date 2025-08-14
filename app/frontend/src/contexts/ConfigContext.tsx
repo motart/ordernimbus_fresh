@@ -51,27 +51,26 @@ interface ConfigContextType {
 
 const ConfigContext = createContext<ConfigContextType | undefined>(undefined);
 
-// Determine API URL based on current domain
+// Determine API URL based on environment configuration
 const getConfigUrl = (): string => {
+  // Always prefer environment variable if set
+  const apiUrl = process.env.REACT_APP_API_URL;
+  
+  if (apiUrl) {
+    // Use the configured API URL from environment
+    return `${apiUrl}/api/config`;
+  }
+  
+  // Fallback: detect based on hostname (should not happen in proper setup)
   const hostname = window.location.hostname;
-  const protocol = window.location.protocol;
+  console.warn('REACT_APP_API_URL not set, falling back to hostname detection');
   
   // Local development
   if (hostname === 'localhost' || hostname === '127.0.0.1') {
     return 'http://localhost:3001/api/config';
   }
   
-  // S3 static hosting - use the API Gateway URL directly
-  if (hostname.includes('s3-website') || hostname.includes('s3.amazonaws.com')) {
-    return 'https://ay8k50buyd.execute-api.us-west-1.amazonaws.com/production/api/config';
-  }
-  
-  // CloudFront or custom domain
-  if (hostname === 'app.ordernimbus.com') {
-    return 'https://ay8k50buyd.execute-api.us-west-1.amazonaws.com/production/api/config';
-  }
-  
-  // Fallback - use production API
+  // Production fallback - use the API Gateway URL directly
   return 'https://ay8k50buyd.execute-api.us-west-1.amazonaws.com/production/api/config';
 };
 

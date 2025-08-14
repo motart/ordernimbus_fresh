@@ -83,6 +83,34 @@ app.put('/api/notifications/read-all', expressToLambda(notificationHandler));
 app.post('/api/notifications/check-inventory', expressToLambda(notificationHandler));
 app.post('/api/notifications/check-order', expressToLambda(notificationHandler));
 
+// Config endpoint for local development
+app.get('/api/config', (req, res) => {
+  const config = {
+    apiUrl: 'http://localhost:3001',
+    wsUrl: 'ws://localhost:3001/ws',
+    graphqlUrl: 'http://localhost:3001/graphql',
+    userPoolId: 'local-user-pool',
+    clientId: 'local-client-id',
+    region: 'us-west-1',
+    environment: 'development',
+    version: '1.0.0-local',
+    features: {
+      enableDebug: true,
+      enableAnalytics: false,
+      enableMockData: true,
+      shopifyIntegration: true,
+      csvUpload: true,
+      multiTenant: true
+    },
+    maxFileUploadSize: 52428800,
+    supportedFileTypes: ['.csv', '.xlsx', '.xls'],
+    sessionTimeout: 3600000,
+    buildTime: new Date().toISOString(),
+    deploymentId: 'local-dev'
+  };
+  res.json(config);
+});
+
 const PORT = 3001;
 app.listen(PORT, () => {
   console.log(`Local test server running on http://localhost:${PORT}`);

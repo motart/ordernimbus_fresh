@@ -24,9 +24,15 @@
   },
   "scripts": {
     "start": "react-scripts start",
+    "start:local": "REACT_APP_ENV_FILE=.env.local react-scripts start",
+    "start:production": "REACT_APP_ENV_FILE=.env.production react-scripts start",
     "build": "react-scripts build",
+    "build:local": "REACT_APP_ENV_FILE=.env.local react-scripts build",
+    "build:production": "REACT_APP_ENV_FILE=.env.production react-scripts build",
     "test": "react-scripts test",
-    "eject": "react-scripts eject"
+    "test:local": "REACT_APP_ENV_FILE=.env.local react-scripts test",
+    "eject": "react-scripts eject",
+    "serve:local": "node ../../local-test-server.js"
   },
   "eslintConfig": {
     "extends": [

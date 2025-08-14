@@ -425,6 +425,7 @@ exports.handler = async (event) => {
           try {
             const { email, password, companyName, firstName, lastName } = body;
             
+            // Validate required fields
             if (!email || !password || !companyName) {
               return {
                 statusCode: 400,
@@ -436,22 +437,36 @@ exports.handler = async (event) => {
               };
             }
             
+            // Validate first and last name are provided
+            if (!firstName || !lastName) {
+              return {
+                statusCode: 400,
+                headers: corsHeaders,
+                body: JSON.stringify({ 
+                  success: false, 
+                  error: 'First name and last name are required' 
+                })
+              };
+            }
+            
             // Generate unique company ID
             const companyId = 'company-' + Date.now() + '-' + Math.random().toString(36).substring(7);
             
-            // Create user in Cognito
+            // Create user in Cognito with email_verified set to false for verification flow
             const createUserResult = await cognito.adminCreateUser({
               UserPoolId: process.env.USER_POOL_ID,
               Username: email,
               UserAttributes: [
                 { Name: 'email', Value: email },
-                { Name: 'email_verified', Value: 'true' },
+                { Name: 'email_verified', Value: 'false' }, // Set to false to require verification
+                { Name: 'given_name', Value: firstName },
+                { Name: 'family_name', Value: lastName },
                 { Name: 'custom:company_id', Value: companyId },
                 { Name: 'custom:company_name', Value: companyName },
                 { Name: 'custom:role', Value: 'admin' }
               ],
-              TemporaryPassword: password,
-              MessageAction: 'SUPPRESS'
+              DesiredDeliveryMediums: ['EMAIL'], // Send verification code via email
+              MessageAction: 'RESEND' // Send verification email
             }).promise();
             
             // Set permanent password
@@ -470,13 +485,17 @@ exports.handler = async (event) => {
                 sk: 'metadata',
                 companyName: companyName,
                 adminEmail: email,
-                createdAt: new Date().toISOString()
+                firstName: firstName,
+                lastName: lastName,
+                createdAt: new Date().toISOString(),
+                emailVerified: false
               }
             }).promise();
             
             responseData = {
               success: true,
-              message: 'Registration successful',
+              message: 'Registration successful. Please check your email for verification code.',
+              needsVerification: true,
               userId: createUserResult.User.Username,
               companyId: companyId,
               companyName: companyName
@@ -489,6 +508,78 @@ exports.handler = async (event) => {
               body: JSON.stringify({ 
                 success: false, 
                 error: error.code === 'UsernameExistsException' ? 'User already exists' : 'Registration failed'
+              })
+            };
+          }
+        } else if (authPath === 'verify' && method === 'POST') {
+          // Handle email verification
+          try {
+            const { email, code } = body;
+            
+            if (!email || !code) {
+              return {
+                statusCode: 400,
+                headers: corsHeaders,
+                body: JSON.stringify({ 
+                  success: false, 
+                  error: 'Email and verification code required' 
+                })
+              };
+            }
+            
+            // Confirm the user's email with the verification code
+            await cognito.confirmSignUp({
+              ClientId: process.env.USER_POOL_CLIENT_ID,
+              Username: email,
+              ConfirmationCode: code
+            }).promise();
+            
+            // Update user's email_verified attribute
+            await cognito.adminUpdateUserAttributes({
+              UserPoolId: process.env.USER_POOL_ID,
+              Username: email,
+              UserAttributes: [
+                { Name: 'email_verified', Value: 'true' }
+              ]
+            }).promise();
+            
+            // Update DynamoDB to mark email as verified
+            const userResult = await dynamodb.query({
+              TableName: process.env.TABLE_NAME,
+              IndexName: 'email-index',
+              KeyConditionExpression: 'adminEmail = :email',
+              ExpressionAttributeValues: {
+                ':email': email
+              }
+            }).promise();
+            
+            if (userResult.Items && userResult.Items.length > 0) {
+              const companyData = userResult.Items[0];
+              await dynamodb.update({
+                TableName: process.env.TABLE_NAME,
+                Key: {
+                  pk: companyData.pk,
+                  sk: 'metadata'
+                },
+                UpdateExpression: 'SET emailVerified = :verified',
+                ExpressionAttributeValues: {
+                  ':verified': true
+                }
+              }).promise();
+            }
+            
+            responseData = {
+              success: true,
+              message: 'Email verified successfully'
+            };
+          } catch (error) {
+            console.error('Verification error:', error);
+            return {
+              statusCode: 400,
+              headers: corsHeaders,
+              body: JSON.stringify({ 
+                success: false, 
+                error: error.code === 'CodeMismatchException' ? 'Invalid verification code' : 'Verification failed'
               })
             };
           }
@@ -545,7 +636,7 @@ exports.handler = async (event) => {
         } else {
           responseData = {
             message: 'Authentication endpoint',
-            availableEndpoints: ['/api/auth/login', '/api/auth/register', '/api/auth/forgot-password', '/api/auth/refresh']
+            availableEndpoints: ['/api/auth/login', '/api/auth/register', '/api/auth/verify', '/api/auth/forgot-password', '/api/auth/refresh']
           };
         }
         break;
