@@ -10,7 +10,7 @@
  */
 
 import { getCurrentUser } from 'aws-amplify/auth';
-import { ENV_CONFIG, debugLog } from '../config/environment';
+import { getENV_CONFIG, debugLog } from '../config/environment';
 
 interface EncryptedData {
   encryptedData: string;
@@ -114,9 +114,10 @@ class SecureDataManager {
    */
   private async deriveKeyFromUser(userId: string, email: string): Promise<ArrayBuffer> {
     const input = `${userId}:${email}:ordernimbus_salt_2024`;
+    const config = getENV_CONFIG();
     
     // Use Web Crypto API if available and environment supports it
-    if (ENV_CONFIG.features.useWebCrypto) {
+    if (config.features.useWebCrypto) {
       try {
         const encoder = new TextEncoder();
         const data = encoder.encode(input);
@@ -129,7 +130,7 @@ class SecureDataManager {
     }
     
     // Fallback for HTTP environments or when Web Crypto API is unavailable
-    debugLog('Using fallback hash for key derivation (environment:', ENV_CONFIG.environment, ')');
+    debugLog('Using fallback hash for key derivation (environment:', config.environment, ')');
     return this.fallbackHash(input);
   }
 
@@ -137,8 +138,10 @@ class SecureDataManager {
    * Generate encryption key from key material
    */
   private async generateEncryptionKey(keyMaterial: ArrayBuffer): Promise<CryptoKey> {
+    const config = getENV_CONFIG();
+    
     // Use Web Crypto API if available and environment supports it
-    if (ENV_CONFIG.features.useWebCrypto) {
+    if (config.features.useWebCrypto) {
       try {
         const key = await crypto.subtle.importKey(
           'raw',
@@ -155,7 +158,7 @@ class SecureDataManager {
     }
     
     // Fallback for HTTP environments
-    debugLog('Using mock encryption key for environment:', ENV_CONFIG.environment);
+    debugLog('Using mock encryption key for environment:', config.environment);
     return this.createMockCryptoKey(keyMaterial);
   }
 

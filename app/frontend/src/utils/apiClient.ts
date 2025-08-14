@@ -1,5 +1,5 @@
 // Centralized API client with environment-aware configuration
-import { ENV_CONFIG, debugLog } from '../config/environment';
+import { getENV_CONFIG, debugLog, getApiUrl } from '../config/environment';
 
 export interface ApiResponse<T = any> {
   success: boolean;
@@ -9,18 +9,22 @@ export interface ApiResponse<T = any> {
 }
 
 export class ApiClient {
-  private baseUrl: string;
+  private getBaseUrl(): string {
+    // Always get the latest API URL dynamically
+    return getApiUrl();
+  }
   
   constructor() {
-    this.baseUrl = ENV_CONFIG.apiUrl;
-    debugLog('ApiClient initialized with baseUrl:', this.baseUrl);
+    // Don't cache the base URL - get it dynamically
+    debugLog('ApiClient initialized');
   }
   
   private async makeRequest<T>(
     endpoint: string, 
     options: RequestInit = {}
   ): Promise<ApiResponse<T>> {
-    const url = `${this.baseUrl}${endpoint}`;
+    const baseUrl = this.getBaseUrl();
+    const url = `${baseUrl}${endpoint}`;
     
     const defaultHeaders = {
       'Content-Type': 'application/json',
@@ -32,10 +36,11 @@ export class ApiClient {
       headers: defaultHeaders
     };
     
+    const config = getENV_CONFIG();
     debugLog('Making API request:', {
       url,
       method: options.method || 'GET',
-      environment: ENV_CONFIG.environment
+      environment: config.environment
     });
     
     try {
