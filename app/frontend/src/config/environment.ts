@@ -87,17 +87,17 @@ export const isSecureContext = (): boolean => {
 
 /**
  * Get complete environment configuration
- * Uses environment variables first, then falls back to cached config
+ * Simple approach: Just use environment variables directly
  */
 export const getEnvironmentConfig = (): EnvironmentConfig => {
   const env = detectEnvironment();
   const isSecure = isSecureContext();
   
-  // First priority: Use environment variables if available
-  const apiUrl = process.env.REACT_APP_API_URL;
-  const userPoolId = process.env.REACT_APP_USER_POOL_ID;
-  const clientId = process.env.REACT_APP_CLIENT_ID;
-  const region = process.env.REACT_APP_REGION;
+  // Use environment variables directly - no complex config fetching
+  const apiUrl = process.env.REACT_APP_API_URL || (env === 'development' ? 'http://localhost:3001' : '');
+  const userPoolId = process.env.REACT_APP_USER_POOL_ID || '';
+  const clientId = process.env.REACT_APP_CLIENT_ID || '';
+  const region = process.env.REACT_APP_REGION || 'us-west-1';
   
   if (apiUrl && userPoolId && clientId) {
     console.log('Using environment variables configuration');
@@ -126,48 +126,37 @@ export const getEnvironmentConfig = (): EnvironmentConfig => {
     };
   }
   
-  // Second priority: Try to get configuration from sessionStorage (set by ConfigContext)
-  const cachedConfig = sessionStorage.getItem('app-config');
-  if (cachedConfig) {
-    try {
-      const cloudConfig = JSON.parse(cachedConfig);
-      console.log('Using cloud configuration from cache');
-      
-      return {
-        appUrl: window.location.origin,
-        apiUrl: cloudConfig.apiUrl,
-        graphqlUrl: cloudConfig.graphqlUrl || `${cloudConfig.apiUrl}/graphql`,
-        wsUrl: cloudConfig.wsUrl || cloudConfig.apiUrl.replace('https://', 'wss://').replace('http://', 'ws://') + '/ws',
-        
-        userPoolId: cloudConfig.userPoolId,
-        clientId: cloudConfig.clientId,
-        region: cloudConfig.region || 'us-west-1',
-        
-        environment: cloudConfig.environment || env,
-        isSecure,
-        
-        shopifyRedirectUri: `${cloudConfig.apiUrl}/api/shopify/callback`,
-        
-        features: {
-          enableDebug: cloudConfig.features?.enableDebug || false,
-          enableAnalytics: cloudConfig.features?.enableAnalytics || true,
-          enableMockData: cloudConfig.features?.enableMockData || false,
-          useWebCrypto: isSecure && Boolean(window.crypto?.subtle)
-        }
-      };
-    } catch (error) {
-      console.warn('Failed to parse cached cloud config:', error);
-    }
+  // For development without env vars, use defaults
+  if (env === 'development' && !apiUrl) {
+    console.log('Using development defaults');
+    return {
+      appUrl: 'http://localhost:3000',
+      apiUrl: 'http://localhost:3001',
+      graphqlUrl: 'http://localhost:3001/graphql',
+      wsUrl: 'ws://localhost:3001/ws',
+      userPoolId: 'dev-pool-id',
+      clientId: 'dev-client-id',
+      region: 'us-west-1',
+      environment: 'development',
+      isSecure: false,
+      shopifyRedirectUri: 'http://localhost:3001/api/shopify/callback',
+      features: {
+        enableDebug: true,
+        enableAnalytics: false,
+        enableMockData: false,
+        useWebCrypto: false
+      }
+    };
   }
   
-  // Last resort: Return minimal config (should not happen in production)
-  console.error('No configuration available - this should not happen in production!');
-  console.error('Make sure environment variables are set or ConfigContext has loaded');
+  // Production must have env vars set
+  console.error('Configuration error: Environment variables not set!');
+  console.error('Required: REACT_APP_API_URL, REACT_APP_USER_POOL_ID, REACT_APP_CLIENT_ID');
   
-  // Return a minimal config that will at least not break the app
+  // Return empty config that will show error
   return {
     appUrl: window.location.origin,
-    apiUrl: '', // Empty will cause obvious errors if used
+    apiUrl: '',
     graphqlUrl: '',
     wsUrl: '',
     userPoolId: '',
@@ -177,7 +166,7 @@ export const getEnvironmentConfig = (): EnvironmentConfig => {
     isSecure,
     shopifyRedirectUri: '',
     features: {
-      enableDebug: env === 'development',
+      enableDebug: false,
       enableAnalytics: false,
       enableMockData: false,
       useWebCrypto: false
