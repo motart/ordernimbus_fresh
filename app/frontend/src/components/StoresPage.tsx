@@ -303,7 +303,10 @@ const StoresPage: React.FC = () => {
         },
         body: JSON.stringify({
           userId: user?.userId || 'test-user',
-          storeDomain: storeData.storeDomain || storeData.shop
+          storeId: storeData.storeId || storeData.id,
+          shopifyDomain: storeData.shopifyDomain || storeData.storeDomain || storeData.shop,
+          apiKey: storeData.apiKey || storeData.accessToken,
+          syncType: 'full'
         })
       });
       

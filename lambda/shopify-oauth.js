@@ -299,6 +299,8 @@ const handleOAuthCallback = async (code, shop, state, hmac) => {
       success: true,
       storeId,
       storeName: shopInfo.name,
+      shopifyDomain: shop,
+      apiKey: accessToken,
       userId
     };
     
