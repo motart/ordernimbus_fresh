@@ -9,10 +9,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 1. **CREATE** new branch from `develop` branch
 2. **IMPLEMENT** all changes in the feature branch
 3. **DEPLOY** to production to verify it works
-4. **CREATE** automergeable PR to `develop`
+4. **CREATE** automergeable PR to `develop` with `gh pr merge <PR> --auto --squash`
 5. **IF TESTS FAIL**: Find what broke → Fix it → Start loop again
 6. **LOOP** until all tests pass and PR is ready to merge
 - **NO EXCEPTIONS** - This workflow is MANDATORY for ALL tasks
+- **CRITICAL**: All PRs MUST have auto-merge enabled immediately after creation!
 
 ### RULE #2: ALL CHANGES CREATE PR TO DEVELOP AUTOMATICALLY
 - **NEVER** commit directly to any protected branch
