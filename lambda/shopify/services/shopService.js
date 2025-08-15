@@ -7,7 +7,7 @@ const ShopifyGraphQLClient = require('../gqlClient');
 const queries = require('../queries');
 const { extractNumericId } = require('../mappers/productMapper');
 
-const SHOPIFY_API_VERSION = '2024-10'; // Updated for new Product APIs
+const SHOPIFY_API_VERSION = '2024-10';
 
 class ShopService {
   constructor(shop, accessToken) {

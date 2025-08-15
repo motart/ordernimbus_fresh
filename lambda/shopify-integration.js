@@ -23,7 +23,7 @@ const ShopService = require('./shopify/services/shopService');
 // Cache for Shopify credentials to avoid repeated calls
 let shopifyCredentials = null;
 
-// Use latest API version (Updated for new Product APIs)
+// Use latest API version
 const SHOPIFY_API_VERSION = '2024-10';
 
 // Helper function to get Shopify credentials from AWS SSM Parameter Store

@@ -11,7 +11,7 @@ const axios = require('axios');
 
 // Feature flag - set to true to always use GraphQL
 const USE_GRAPHQL = true; // Always use GraphQL, can be overridden only by explicitly setting process.env.USE_GRAPHQL_PRODUCTS to 'false'
-const SHOPIFY_API_VERSION = '2024-10'; // Updated to support new Product APIs
+const SHOPIFY_API_VERSION = '2024-10';
 
 class ProductService {
   constructor(shop, accessToken) {

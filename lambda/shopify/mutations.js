@@ -1,8 +1,6 @@
 /**
  * Shopify GraphQL Mutations
  * API Version: 2024-10 (Updated for new Product APIs)
- * Note: inventoryQuantity is still accepted in input for backwards compatibility
- * but removed from output queries as it's deprecated
  */
 
 const PRODUCT_CREATE_MUTATION = `

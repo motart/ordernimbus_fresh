@@ -1,7 +1,6 @@
 /**
  * Shopify GraphQL Queries
  * API Version: 2024-10 (Updated to support new Product APIs)
- * Updated: December 2024 - Removed deprecated fields per Shopify's deprecation timeline
  */
 
 const PRODUCTS_QUERY = `
@@ -64,22 +63,22 @@ const PRODUCTS_QUERY = `
                   url
                   altText
                 }
-                inventoryItem {
-                  id
-                  tracked
-                  inventoryLevels(first: 10) {
-                    edges {
-                      node {
-                        id
-                        available
-                        location {
-                          id
-                          name
-                        }
-                      }
+            inventoryItem {
+              id
+              tracked
+              inventoryLevels(first: 10) {
+                edges {
+                  node {
+                    id
+                    available
+                    location {
+                      id
+                      name
                     }
                   }
                 }
+              }
+            }
                 createdAt
                 updatedAt
               }
@@ -137,8 +136,7 @@ const PRODUCT_BY_ID_QUERY = `
             compareAtPrice
             barcode
             weight
-            weightUnit
-            inventoryPolicy
+            weightUnit            inventoryPolicy
             inventoryManagement
             fulfillmentService
             taxable
@@ -222,8 +220,7 @@ const PRODUCT_BY_HANDLE_QUERY = `
             compareAtPrice
             barcode
             weight
-            weightUnit
-            inventoryPolicy
+            weightUnit            inventoryPolicy
             inventoryManagement
             fulfillmentService
             taxable
