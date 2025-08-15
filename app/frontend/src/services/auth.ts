@@ -184,6 +184,7 @@ class AuthService {
     const headers = {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${this.accessToken}`, // JWT token for API Gateway Authorizer
+      'userId': this.userInfo.userId, // Add userId header for Lambda
       ...options.headers
     };
 
