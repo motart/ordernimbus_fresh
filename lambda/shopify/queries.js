@@ -1,6 +1,6 @@
 /**
  * Shopify GraphQL Queries
- * API Version: 2024-07
+ * API Version: 2024-10 (Updated to support new Product APIs)
  */
 
 const PRODUCTS_QUERY = `
@@ -50,7 +50,6 @@ const PRODUCTS_QUERY = `
                 barcode
                 weight
                 weightUnit
-                inventoryQuantity
                 inventoryPolicy
                 inventoryManagement
                 fulfillmentService
@@ -64,6 +63,22 @@ const PRODUCTS_QUERY = `
                   url
                   altText
                 }
+            inventoryItem {
+              id
+              tracked
+              inventoryLevels(first: 10) {
+                edges {
+                  node {
+                    id
+                    available
+                    location {
+                      id
+                      name
+                    }
+                  }
+                }
+              }
+            }
                 createdAt
                 updatedAt
               }
@@ -121,9 +136,7 @@ const PRODUCT_BY_ID_QUERY = `
             compareAtPrice
             barcode
             weight
-            weightUnit
-            inventoryQuantity
-            inventoryPolicy
+            weightUnit            inventoryPolicy
             inventoryManagement
             fulfillmentService
             taxable
@@ -135,6 +148,22 @@ const PRODUCT_BY_ID_QUERY = `
             image {
               url
               altText
+            }
+            inventoryItem {
+              id
+              tracked
+              inventoryLevels(first: 10) {
+                edges {
+                  node {
+                    id
+                    available
+                    location {
+                      id
+                      name
+                    }
+                  }
+                }
+              }
             }
             createdAt
             updatedAt
@@ -191,9 +220,7 @@ const PRODUCT_BY_HANDLE_QUERY = `
             compareAtPrice
             barcode
             weight
-            weightUnit
-            inventoryQuantity
-            inventoryPolicy
+            weightUnit            inventoryPolicy
             inventoryManagement
             fulfillmentService
             taxable
@@ -205,6 +232,22 @@ const PRODUCT_BY_HANDLE_QUERY = `
             image {
               url
               altText
+            }
+            inventoryItem {
+              id
+              tracked
+              inventoryLevels(first: 10) {
+                edges {
+                  node {
+                    id
+                    available
+                    location {
+                      id
+                      name
+                    }
+                  }
+                }
+              }
             }
             createdAt
             updatedAt

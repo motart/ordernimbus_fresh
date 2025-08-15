@@ -24,7 +24,7 @@ const ShopService = require('./shopify/services/shopService');
 let shopifyCredentials = null;
 
 // Use latest API version
-const SHOPIFY_API_VERSION = '2024-07';
+const SHOPIFY_API_VERSION = '2024-10';
 
 // Helper function to get Shopify credentials from AWS SSM Parameter Store
 const getShopifyCredentials = async () => {

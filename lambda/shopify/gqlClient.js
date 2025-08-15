@@ -8,7 +8,7 @@
 
 const axios = require('axios');
 
-const SHOPIFY_API_VERSION = '2024-07';
+const SHOPIFY_API_VERSION = '2024-10';
 const THROTTLE_THRESHOLD = 50; // Back off when available points drop below this
 const MAX_RETRIES = 3;
 const INITIAL_BACKOFF = 1000; // 1 second
