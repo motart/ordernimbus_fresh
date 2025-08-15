@@ -24,6 +24,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Custom Instructions & Observations for Claude
 
+### 🎨 CRITICAL PRIORITY: UI/UX Excellence
+**UI/UX must be the top consideration in all development.** Always ensure:
+- **Immediate Visual Feedback**: Every user action must have instant visual response
+- **Smooth Animations**: State changes should use transitions (slideInScale, fadeIn, etc.)
+- **Clear Loading States**: Show spinners/progress bars for all async operations
+- **Toast Notifications**: Use react-hot-toast for all success/error/info messages
+- **No UI Bugs**: Prevent overlapping elements, stuck modals, frozen overlays
+- **Responsive Design**: Test on multiple screen sizes
+- **Visual Hierarchy**: New content should stand out (badges, animations, highlights)
+- **Error Recovery**: Guide users to fix issues, never leave them stuck
+- **Accessibility**: Proper ARIA labels, keyboard navigation, color contrast
+
 ### CORE ARCHITECTURAL PRINCIPLE: Cloud-Native Application
 **This is a cloud-native application that must:**
 - Use as little custom code as possible

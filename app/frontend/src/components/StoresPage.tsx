@@ -88,6 +88,7 @@ const StoresPage: React.FC = () => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [showCSVUpload, setShowCSVUpload] = useState(false);
   const [selectedStoreForCSV, setSelectedStoreForCSV] = useState<Store | null>(null);
+  const [newStoreIds, setNewStoreIds] = useState<Set<string>>(new Set()); // Track newly added stores
   const [formData, setFormData] = useState({
     name: '',
     type: 'brick-and-mortar' as Store['type'],
@@ -283,37 +284,84 @@ const StoresPage: React.FC = () => {
 
   // Poll for Shopify sync status
   const handleShopifyConnectSuccess = async (storeData: any) => {
-    // Store has been created via OAuth, fetch the full store data
+    console.log('Shopify connection successful, handling store data:', storeData);
+    
+    // Close the modal immediately for better UX
+    setShowShopifyConnect(false);
+    
+    // Show loading toast
+    toast.loading('Importing your Shopify store data...', { id: 'shopify-sync' });
+    
     try {
+      // First, trigger the sync endpoint to start importing data
       const apiUrl = getApiUrl();
-      const response = await fetch(`${apiUrl}/api/stores`, {
+      const syncResponse = await fetch(`${apiUrl}/api/shopify/sync`, {
+        method: 'POST',
         headers: {
+          'Content-Type': 'application/json',
           'userId': user?.userId || 'test-user'
-        }
+        },
+        body: JSON.stringify({
+          userId: user?.userId || 'test-user',
+          storeDomain: storeData.storeDomain || storeData.shop
+        })
       });
       
-      if (response.ok) {
-        const result = await response.json();
-        const newStore = result.stores.find((s: Store) => s.id === storeData.storeId);
+      if (syncResponse.ok) {
+        const syncResult = await syncResponse.json();
+        console.log('Sync initiated:', syncResult);
         
-        if (newStore) {
-          // Update stores list with the new store
-          const updatedStores = [...stores, newStore];
-          setStores(updatedStores);
-          await setData('stores', updatedStores);
+        // Update the toast with progress
+        toast.success(`✅ Connected! Imported ${syncResult.data?.products || 0} products, ${syncResult.data?.orders || 0} orders`, { 
+          id: 'shopify-sync',
+          duration: 5000 
+        });
+        
+        // Store the previous store IDs before reloading
+        const previousStoreIds = new Set(stores.map(s => s.id));
+        
+        // Reload stores to show the new store
+        await loadStores();
+        
+        // Find the newly added store
+        setStores(prevStores => {
+          const newStore = prevStores.find((s: Store) => 
+            !previousStoreIds.has(s.id) && (
+              s.shopifyDomain === storeData.storeDomain || 
+              s.myshopifyDomain === storeData.storeDomain
+            )
+          );
           
-          toast.success(`✅ ${newStore.name} connected! Syncing data...`);
+          if (newStore) {
+            // Mark this store as new for animation
+            setNewStoreIds(prev => new Set(prev).add(newStore.id));
+            
+            // Remove the "new" status after animation completes
+            setTimeout(() => {
+              setNewStoreIds(prev => {
+                const updated = new Set(prev);
+                updated.delete(newStore.id);
+                return updated;
+              });
+            }, 5000); // Keep "new" badge for 5 seconds
+            
+            toast.success(`🎉 ${newStore.name || 'Your Shopify store'} is ready to use!`, { duration: 4000 });
+          }
           
-          // Start polling for sync status
-          setTimeout(() => pollSyncStatus(storeData.storeId), 3000);
-        }
+          return prevStores;
+        });
+      } else {
+        // Even if sync fails, try to load the stores
+        await loadStores();
+        toast.error('Store connected but data sync failed. Try manual sync.', { id: 'shopify-sync' });
       }
     } catch (error) {
-      console.error('Failed to fetch store after OAuth:', error);
-      toast.error('Store connected but failed to load details');
+      console.error('Failed to sync Shopify store:', error);
+      toast.error('Connection successful but sync failed. Please try manual sync.', { id: 'shopify-sync' });
+      
+      // Still reload stores even if sync failed
+      await loadStores();
     }
-    
-    setShowShopifyConnect(false);
   };
 
   const pollSyncStatus = async (storeId: string) => {
@@ -707,7 +755,7 @@ const StoresPage: React.FC = () => {
 
       <div className="stores-grid">
         {stores.map(store => (
-          <div key={store.id} className="store-card">
+          <div key={store.id} className={`store-card ${newStoreIds.has(store.id) ? 'new-store' : ''}`}>
             <div className="store-header">
               <div className="store-icon">
                 {getStoreIcon(store.type)}
