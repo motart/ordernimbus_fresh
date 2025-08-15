@@ -181,9 +181,13 @@ class AuthService {
       throw new Error('Authentication required. Please log in.');
     }
 
+    // Get the actual userId from localStorage (set by AuthContext from Amplify)
+    const currentUserId = localStorage.getItem('currentUserId');
+    
     const headers = {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${this.accessToken}`, // JWT token for API Gateway Authorizer
+      'userId': currentUserId || this.userInfo?.userId, // Use currentUserId from localStorage first
       ...options.headers
     };
 
