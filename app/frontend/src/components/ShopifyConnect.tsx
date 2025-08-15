@@ -32,14 +32,24 @@ const ShopifyConnect: React.FC<ShopifyConnectProps> = ({ userId, onSuccess, onCa
         // Trigger sync immediately after connection
         setTimeout(() => {
           // Use storeData from the OAuth callback if available
-          const storeData = event.data.storeData || event.data.data || { 
-            success: event.data.success, 
-            storeId: event.data.storeId,
-            storeDomain: event.data.storeDomain,
-            userId: event.data.userId,
-            apiKey: event.data.apiKey,
-            accessToken: event.data.apiKey // Also set as accessToken for compatibility
-          };
+          let storeData: any;
+          
+          // If we have storeData from OAuth callback, use it directly
+          if (event.data.storeData) {
+            storeData = { ...event.data.storeData };
+          } else if (event.data.data) {
+            storeData = { ...event.data.data };
+          } else {
+            // Fallback to constructing from individual fields
+            storeData = { 
+              success: event.data.success, 
+              storeId: event.data.storeId,
+              storeDomain: event.data.storeDomain,
+              userId: event.data.userId,
+              apiKey: event.data.apiKey,
+              accessToken: event.data.apiKey // Also set as accessToken for compatibility
+            };
+          }
           
           // Add the store domain we started with if not present
           if (!storeData.storeDomain && !storeData.shopifyDomain && storeDomain) {
@@ -56,8 +66,8 @@ const ShopifyConnect: React.FC<ShopifyConnectProps> = ({ userId, onSuccess, onCa
             storeData.storeDomain = storeData.shopifyDomain;
           }
           
-          // Ensure API key is included
-          if (event.data.apiKey) {
+          // Ensure API key is included if passed separately
+          if (event.data.apiKey && !storeData.apiKey) {
             storeData.apiKey = event.data.apiKey;
             storeData.accessToken = event.data.apiKey;
           }
