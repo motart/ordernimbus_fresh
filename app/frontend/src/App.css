@@ -14,7 +14,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 20px;
+  justify-content: center;
 }
 
 .spinner {
@@ -26,11 +26,7 @@
   animation: spin 1s linear infinite;
 }
 
-.loading-spinner p {
-  color: white;
-  font-size: 16px;
-  margin: 0;
-}
+/* Removed .loading-spinner p rule to prevent any text styling */
 
 @keyframes spin {
   0% { transform: rotate(0deg); }
