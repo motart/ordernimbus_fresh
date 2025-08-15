@@ -26,11 +26,12 @@ const AppContent: React.FC = () => {
   const { isAuthenticated, isLoading } = useAuth();
 
   if (isLoading) {
+    // IMPORTANT: Only show spinner, no text - this prevents text overlapping the spinner
+    // DO NOT add any <p> or text elements here - recurring bug fixed
     return (
       <div className="loading-container">
         <div className="loading-spinner">
           <div className="spinner"></div>
-          <p>Loading OrderNimbus...</p>
         </div>
       </div>
     );
