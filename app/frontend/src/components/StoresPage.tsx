@@ -297,6 +297,15 @@ const StoresPage: React.FC = () => {
       const storeDomain = storeData.storeDomain || storeData.shopifyDomain || storeData.shop || '';
       const userId = user?.userId || storeData.userId || 'test-user';
       
+      // Validate we have required data
+      if (!storeDomain) {
+        throw new Error('Store domain is missing from OAuth callback');
+      }
+      
+      if (!userId) {
+        throw new Error('User ID is missing');
+      }
+      
       console.log('Syncing with store:', { storeDomain, userId });
       
       // First, trigger the sync endpoint to start importing data
@@ -358,13 +367,26 @@ const StoresPage: React.FC = () => {
           return prevStores;
         });
       } else {
+        // Handle non-ok response
+        const errorText = await syncResponse.text();
+        let errorMessage = 'Store connected but data sync failed';
+        
+        try {
+          const errorData = JSON.parse(errorText);
+          errorMessage = errorData.error || errorMessage;
+          console.error('Sync error:', errorData);
+        } catch {
+          console.error('Sync error (non-JSON):', errorText);
+        }
+        
         // Even if sync fails, try to load the stores
         await loadStores();
-        toast.error('Store connected but data sync failed. Try manual sync.', { id: 'shopify-sync' });
+        toast.error(`${errorMessage}. Try manual sync.`, { id: 'shopify-sync' });
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to sync Shopify store:', error);
-      toast.error('Connection successful but sync failed. Please try manual sync.', { id: 'shopify-sync' });
+      const errorMessage = error.message || 'Connection successful but sync failed';
+      toast.error(`${errorMessage}. Please try manual sync.`, { id: 'shopify-sync' });
       
       // Still reload stores even if sync failed
       await loadStores();
