@@ -293,19 +293,23 @@ const StoresPage: React.FC = () => {
     toast.loading('Importing your Shopify store data...', { id: 'shopify-sync' });
     
     try {
+      // Extract the store domain from the storeData passed from OAuth callback
+      const storeDomain = storeData.storeDomain || storeData.shopifyDomain || storeData.shop || '';
+      const userId = user?.userId || storeData.userId || 'test-user';
+      
+      console.log('Syncing with store:', { storeDomain, userId });
+      
       // First, trigger the sync endpoint to start importing data
       const apiUrl = getApiUrl();
       const syncResponse = await fetch(`${apiUrl}/api/shopify/sync`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'userId': user?.userId || 'test-user'
+          'userId': userId
         },
         body: JSON.stringify({
-          userId: user?.userId || 'test-user',
-          storeId: storeData.storeId || storeData.id,
-          shopifyDomain: storeData.shopifyDomain || storeData.storeDomain || storeData.shop,
-          apiKey: storeData.apiKey || storeData.accessToken,
+          userId: userId,
+          shopifyDomain: storeDomain,
           syncType: 'full'
         })
       });
