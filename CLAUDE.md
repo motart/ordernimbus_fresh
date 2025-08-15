@@ -240,21 +240,21 @@ cd app/frontend && ./auto-deploy.sh  # Auto-build and deploy frontend to AWS S3
 
 ### Live URLs
 - **Frontend**: https://app.ordernimbus.com (CloudFront + S3)
-- **API Gateway**: https://tsip547ao2.execute-api.us-west-1.amazonaws.com/production
+- **API Gateway**: https://p12brily0d.execute-api.us-west-1.amazonaws.com/production
 - **API Custom Domain**: https://api.ordernimbus.com (Route53 CNAME to API Gateway)
 
 ### AWS Resources
 - **CloudFormation Stack**: `ordernimbus-production`
 - **S3 Frontend Bucket**: `ordernimbus-production-frontend-335021149718`
 - **CloudFront Distribution**: `EP62VZVVDF7SQ` (serving app.ordernimbus.com)
-- **Cognito User Pool**: `us-west-1_eY0a03NVh`
-- **Cognito Client ID**: `3uis9h8ul7hqlm47vbmatsgejf`
+- **Cognito User Pool**: `us-west-1_Ht3X0tii8`
+- **Cognito Client ID**: `29ebgu8c8tit6aftprjgfmf4p4`
 - **Lambda Function**: `ordernimbus-production-main` (single monolithic handler)
 - **DynamoDB Table**: `ordernimbus-production-main`
 - **Secrets Manager**: `ordernimbus/production/shopify` (Shopify OAuth credentials)
 
 ### Shopify Integration
-- **Redirect URI**: `https://tsip547ao2.execute-api.us-west-1.amazonaws.com/production/api/shopify/callback`
+- **Redirect URI**: `https://p12brily0d.execute-api.us-west-1.amazonaws.com/production/api/shopify/callback`
 - **OAuth Flow**: Dynamic redirect URI generation using API Gateway context
 - **Credentials**: Stored in AWS Secrets Manager, never hardcoded
 
