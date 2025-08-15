@@ -62,16 +62,23 @@ const getEnvVar = (key: string, defaultValue?: string): string | undefined => {
  * Detect current environment based on hostname and env variables
  */
 export const detectEnvironment = (): 'development' | 'staging' | 'production' => {
+  // Test environment should be treated as development
+  if (process.env.NODE_ENV === 'test') {
+    return 'development';
+  }
+  
   // Explicit environment variable takes precedence
   const envVar = getEnvVar('REACT_APP_ENVIRONMENT');
   if (envVar === 'development' || envVar === 'local') return 'development';
   if (envVar === 'staging') return 'staging';
   if (envVar === 'production') return 'production';
   
-  // Fallback to hostname detection
-  const hostname = window.location.hostname;
-  if (hostname === 'localhost' || hostname === '127.0.0.1') return 'development';
-  if (hostname.includes('staging')) return 'staging';
+  // Fallback to hostname detection (only if window is available)
+  if (typeof window !== 'undefined') {
+    const hostname = window.location.hostname;
+    if (hostname === 'localhost' || hostname === '127.0.0.1') return 'development';
+    if (hostname.includes('staging')) return 'staging';
+  }
   
   return 'production';
 };
@@ -80,6 +87,11 @@ export const detectEnvironment = (): 'development' | 'staging' | 'production' =>
  * Check if running in secure context (HTTPS)
  */
 export const isSecureContext = (): boolean => {
+  // In test environment, return false for simplicity
+  if (process.env.NODE_ENV === 'test' || typeof window === 'undefined') {
+    return false;
+  }
+  
   return window.location.protocol === 'https:' || 
          window.location.hostname === 'localhost' ||
          window.location.hostname === '127.0.0.1';
@@ -94,12 +106,12 @@ export const getEnvironmentConfig = (): EnvironmentConfig => {
   const isSecure = isSecureContext();
   
   // First try to use runtime config from env.js (loaded by CloudFormation)
-  const runtimeConfig = (window as any).RUNTIME_CONFIG;
+  const runtimeConfig = typeof window !== 'undefined' ? (window as any).RUNTIME_CONFIG : undefined;
   
   // Use runtime config if available, then environment variables, then defaults
   const apiUrl = runtimeConfig?.REACT_APP_API_URL || process.env.REACT_APP_API_URL || (env === 'development' ? 'http://localhost:3001' : '');
-  const userPoolId = runtimeConfig?.REACT_APP_USER_POOL_ID || process.env.REACT_APP_USER_POOL_ID || '';
-  const clientId = runtimeConfig?.REACT_APP_CLIENT_ID || process.env.REACT_APP_CLIENT_ID || '';
+  const userPoolId = runtimeConfig?.REACT_APP_USER_POOL_ID || process.env.REACT_APP_USER_POOL_ID || (env === 'development' ? 'dev-pool-id' : '');
+  const clientId = runtimeConfig?.REACT_APP_CLIENT_ID || process.env.REACT_APP_CLIENT_ID || (env === 'development' ? 'dev-client-id' : '');
   const region = runtimeConfig?.REACT_APP_REGION || process.env.REACT_APP_REGION || 'us-west-1';
   
   if (apiUrl && userPoolId && clientId) {
@@ -110,7 +122,7 @@ export const getEnvironmentConfig = (): EnvironmentConfig => {
     }
     
     return {
-      appUrl: window.location.origin,
+      appUrl: typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000',
       apiUrl,
       graphqlUrl: process.env.REACT_APP_GRAPHQL_URL || `${apiUrl}/graphql`,
       wsUrl: process.env.REACT_APP_WS_URL || apiUrl.replace('https://', 'wss://').replace('http://', 'ws://') + '/ws',
@@ -162,7 +174,7 @@ export const getEnvironmentConfig = (): EnvironmentConfig => {
   
   // Return empty config that will show error
   return {
-    appUrl: window.location.origin,
+    appUrl: typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000',
     apiUrl: '',
     graphqlUrl: '',
     wsUrl: '',
@@ -231,14 +243,14 @@ export const getENV_CONFIG = (): EnvironmentConfig => {
   } catch (error) {
     console.error('Failed to get environment configuration:', error);
     
-    // In development, use fallback
-    if (process.env.NODE_ENV === 'development') {
+    // In development or test environment, use fallback
+    if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test') {
       _config = getDevConfig();
       _configTimestamp = now;
     } else if (!_config) {
       // In production, if we have no config at all, return minimal config
       _config = {
-        appUrl: window.location.origin,
+        appUrl: typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000',
         apiUrl: '', // Empty will cause obvious errors
         graphqlUrl: '',
         wsUrl: '',
