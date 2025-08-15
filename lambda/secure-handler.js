@@ -111,8 +111,8 @@ exports.handler = async (event) => {
   const userId = event.requestContext?.authorizer?.claims?.sub || 
                  event.requestContext?.authorizer?.jwt?.claims?.sub;
   
-  // For public endpoints (login, register), userId is not required
-  const publicEndpoints = ['/api/auth/login', '/api/auth/register', '/api/shopify/connect'];
+  // For public endpoints (login, register, shopify callback), userId is not required
+  const publicEndpoints = ['/api/auth/login', '/api/auth/register', '/api/shopify/connect', '/api/shopify/callback'];
   const isPublicEndpoint = publicEndpoints.some(endpoint => path.includes(endpoint));
   
   if (!isPublicEndpoint && !userId) {
