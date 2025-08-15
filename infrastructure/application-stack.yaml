@@ -1,0 +1,681 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'OrderNimbus Application Infrastructure - Fast Deploy/Redeploy'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: production
+    Description: Environment name (production, staging, development)
+    AllowedValues:
+      - production
+      - staging
+      - development
+
+  ImmutableStackName:
+    Type: String
+    Default: ordernimbus-immutable
+    Description: Name of the immutable infrastructure stack
+
+  ApiDomainName:
+    Type: String
+    Default: api.ordernimbus.com
+    Description: Custom domain for API Gateway (from immutable stack)
+
+  HostedZoneId:
+    Type: String
+    Default: Z03623712FIVU7Z4CJ949
+    Description: Route 53 Hosted Zone ID
+
+Conditions:
+  CreateApiDNS: !And
+    - !Equals [!Ref Environment, 'production']
+    - !Not [!Equals [!Ref HostedZoneId, '']]
+
+Resources:
+  # ==================== IAM ROLE FOR LAMBDA ====================
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'ordernimbus-${Environment}-lambda-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: 'dynamodb:*'
+                Resource: !GetAtt MainTable.Arn
+        - PolicyName: SecretsManagerAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'secretsmanager:GetSecretValue'
+                  - 'secretsmanager:DescribeSecret'
+                Resource: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:ordernimbus/*'
+        - PolicyName: SSMParameterAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'ssm:GetParameter'
+                  - 'ssm:GetParameters'
+                  - 'ssm:GetParametersByPath'
+                Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/ordernimbus/*'
+        - PolicyName: CognitoAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'cognito-idp:AdminCreateUser'
+                  - 'cognito-idp:AdminGetUser'
+                  - 'cognito-idp:AdminUpdateUserAttributes'
+                  - 'cognito-idp:AdminInitiateAuth'
+                  - 'cognito-idp:AdminSetUserPassword'
+                  - 'cognito-idp:ListUsers'
+                  - 'cognito-idp:ForgotPassword'
+                  - 'cognito-idp:InitiateAuth'
+                Resource: !Sub 
+                  - 'arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${UserPoolId}'
+                  - UserPoolId: 
+                      Fn::ImportValue: !Sub '${ImmutableStackName}-UserPoolId'
+
+  # ==================== DYNAMODB TABLE ====================
+  MainTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'ordernimbus-${Environment}-main'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ordernimbus-main-table'
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ==================== MAIN LAMBDA FUNCTION ====================
+  MainLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'ordernimbus-${Environment}-main'
+      Runtime: nodejs18.x
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 30
+      MemorySize: 512
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref MainTable
+          ENVIRONMENT: !Ref Environment
+          USER_POOL_ID: 
+            Fn::ImportValue: !Sub '${ImmutableStackName}-UserPoolId'
+          USER_POOL_CLIENT_ID: 
+            Fn::ImportValue: !Sub '${ImmutableStackName}-UserPoolClientId'
+          AWS_REGION: !Ref AWS::Region
+          S3_BUCKET_NAME:
+            Fn::ImportValue: !Sub '${ImmutableStackName}-S3BucketName'
+          CLOUDFRONT_DISTRIBUTION_ID:
+            Fn::ImportValue: !Sub '${ImmutableStackName}-CloudFrontDistributionId'
+      Code:
+        ZipFile: |
+          const AWS = require('aws-sdk');
+          const https = require('https');
+          const querystring = require('querystring');
+          
+          const ssm = new AWS.SSM();
+          const secretsManager = new AWS.SecretsManager();
+          const dynamodb = new AWS.DynamoDB.DocumentClient();
+          const cognito = new AWS.CognitoIdentityServiceProvider();
+          
+          // Cache for configurations
+          let shopifyCredentials = null;
+          let immutableConfig = null;
+          
+          // Get immutable configuration from SSM
+          const getImmutableConfig = async () => {
+            if (immutableConfig) return immutableConfig;
+            
+            try {
+              const params = {
+                Path: `/ordernimbus/${process.env.ENVIRONMENT}/immutable/`,
+                Recursive: true
+              };
+              
+              const result = await ssm.getParametersByPath(params).promise();
+              const config = {};
+              
+              result.Parameters.forEach(param => {
+                const key = param.Name.split('/').pop();
+                config[key] = param.Value;
+              });
+              
+              immutableConfig = config;
+              console.log('Retrieved immutable configuration from SSM');
+              return immutableConfig;
+            } catch (error) {
+              console.error('Error getting immutable configuration:', error);
+              return {};
+            }
+          };
+          
+          // Get Shopify credentials from Secrets Manager
+          const getShopifyCredentials = async () => {
+            if (shopifyCredentials) return shopifyCredentials;
+            
+            try {
+              const secret = await secretsManager.getSecretValue({ 
+                SecretId: `ordernimbus/${process.env.ENVIRONMENT}/shopify` 
+              }).promise();
+              
+              shopifyCredentials = JSON.parse(secret.SecretString);
+              console.log('Retrieved Shopify credentials from Secrets Manager');
+              return shopifyCredentials;
+            } catch (error) {
+              console.error('Error getting Shopify credentials:', error);
+              return { SHOPIFY_CLIENT_ID: '', SHOPIFY_CLIENT_SECRET: '' };
+            }
+          };
+          
+          exports.handler = async (event) => {
+            console.log('Event:', JSON.stringify(event));
+            
+            // CORS headers for all responses
+            const corsHeaders = {
+              'Access-Control-Allow-Origin': '*',
+              'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,userId',
+              'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS,HEAD,PATCH',
+              'Access-Control-Allow-Credentials': 'true',
+              'Access-Control-Max-Age': '86400',
+              'Content-Type': 'application/json'
+            };
+            
+            // Handle OPTIONS for CORS preflight
+            if (event.requestContext?.http?.method === 'OPTIONS' || event.httpMethod === 'OPTIONS') {
+              return { 
+                statusCode: 200, 
+                headers: corsHeaders, 
+                body: JSON.stringify({ message: 'CORS preflight successful' }) 
+              };
+            }
+            
+            // Extract path and method
+            let path = event.rawPath || event.path || '/';
+            const method = event.requestContext?.http?.method || event.httpMethod || 'GET';
+            
+            // Remove stage from path if present
+            if (path.startsWith(`/${process.env.ENVIRONMENT}`)) {
+              path = path.substring(`/${process.env.ENVIRONMENT}`.length);
+            }
+            
+            const pathParts = path.split('/').filter(p => p);
+            const resource = pathParts[1]; // api/resource -> resource
+            
+            try {
+              let responseData = {};
+              
+              switch(resource) {
+                case 'config':
+                  // Return static application configuration
+                  const immutableConfig = await getImmutableConfig();
+                  
+                  responseData = {
+                    environment: process.env.ENVIRONMENT,
+                    region: process.env.AWS_REGION,
+                    immutable: {
+                      userPoolId: process.env.USER_POOL_ID,
+                      clientId: process.env.USER_POOL_CLIENT_ID,
+                      frontendDomain: immutableConfig['frontend/domain'],
+                      cloudfrontId: immutableConfig['cloudfront/distribution-id'],
+                      s3BucketName: immutableConfig['s3/bucket-name']
+                    },
+                    application: {
+                      tableName: process.env.TABLE_NAME,
+                      lambdaVersion: process.env.AWS_LAMBDA_FUNCTION_VERSION
+                    },
+                    features: {
+                      enableDebug: process.env.ENVIRONMENT !== 'production',
+                      enableAnalytics: process.env.ENVIRONMENT === 'production',
+                      enableMockData: false,
+                      useWebCrypto: true
+                    }
+                  };
+                  break;
+                  
+                case 'health':
+                  responseData = {
+                    status: 'healthy',
+                    timestamp: new Date().toISOString(),
+                    environment: process.env.ENVIRONMENT,
+                    version: process.env.AWS_LAMBDA_FUNCTION_VERSION || '1.0.0'
+                  };
+                  break;
+                  
+                case 'products':
+                  responseData = {
+                    products: [
+                      { id: '1', name: 'Product 1', price: 99.99, inventory: 100 },
+                      { id: '2', name: 'Product 2', price: 149.99, inventory: 50 }
+                    ],
+                    count: 2,
+                    generated_at: new Date().toISOString()
+                  };
+                  break;
+                  
+                case 'orders':
+                  responseData = {
+                    orders: [
+                      { id: '1', customerName: 'John Doe', total: 299.99, status: 'completed' },
+                      { id: '2', customerName: 'Jane Smith', total: 149.99, status: 'pending' }
+                    ],
+                    count: 2,
+                    generated_at: new Date().toISOString()
+                  };
+                  break;
+                  
+                case 'inventory':
+                  responseData = {
+                    inventory: [
+                      { productId: '1', quantity: 100, location: 'Warehouse A' },
+                      { productId: '2', quantity: 50, location: 'Warehouse B' }
+                    ],
+                    count: 2,
+                    generated_at: new Date().toISOString()
+                  };
+                  break;
+                  
+                case 'customers':
+                  responseData = {
+                    customers: [
+                      { id: '1', name: 'John Doe', email: 'john@example.com', orders: 5 },
+                      { id: '2', name: 'Jane Smith', email: 'jane@example.com', orders: 3 }
+                    ],
+                    count: 2,
+                    generated_at: new Date().toISOString()
+                  };
+                  break;
+                  
+                case 'notifications':
+                  responseData = {
+                    notifications: [
+                      { id: '1', type: 'info', message: 'System update completed' },
+                      { id: '2', type: 'warning', message: 'Low inventory alert' }
+                    ],
+                    count: 2,
+                    generated_at: new Date().toISOString()
+                  };
+                  break;
+                  
+                case 'stores':
+                  responseData = {
+                    stores: [
+                      { id: '1', name: 'Main Store', domain: 'main.myshopify.com' },
+                      { id: '2', name: 'Secondary Store', domain: 'secondary.myshopify.com' }
+                    ],
+                    count: 2,
+                    generated_at: new Date().toISOString()
+                  };
+                  break;
+                  
+                case 'shopify':
+                  // Handle Shopify OAuth integration
+                  if (path.includes('/shopify/connect')) {
+                    const body = JSON.parse(event.body || '{}');
+                    const { storeDomain, userId } = body;
+                    
+                    if (!storeDomain) {
+                      return {
+                        statusCode: 400,
+                        headers: corsHeaders,
+                        body: JSON.stringify({ error: 'Store domain is required' })
+                      };
+                    }
+                    
+                    const credentials = await getShopifyCredentials();
+                    if (!credentials.SHOPIFY_CLIENT_ID) {
+                      return {
+                        statusCode: 500,
+                        headers: corsHeaders,
+                        body: JSON.stringify({ error: 'Shopify integration not configured' })
+                      };
+                    }
+                    
+                    // Generate static redirect URI using known API domain
+                    const API_DOMAIN = 'api.ordernimbus.com';
+                    const REDIRECT_URI = `https://${API_DOMAIN}/api/shopify/callback`;
+                    const SCOPES = 'read_products,read_orders,read_inventory,read_customers,read_analytics';
+                    
+                    const cleanDomain = storeDomain.replace(/^https?:\/\//, '').replace(/\/$/, '').replace(/\.myshopify\.com.*$/, '') + '.myshopify.com';
+                    const state = Math.random().toString(36).substring(7);
+                    
+                    // Store state in DynamoDB
+                    await dynamodb.put({
+                      TableName: process.env.TABLE_NAME,
+                      Item: {
+                        pk: `oauth_state_${state}`,
+                        sk: 'shopify',
+                        userId: userId || 'unknown',
+                        storeDomain: cleanDomain,
+                        createdAt: new Date().toISOString(),
+                        ttl: Math.floor(Date.now() / 1000) + 600
+                      }
+                    }).promise();
+                    
+                    const authUrl = `https://${cleanDomain}/admin/oauth/authorize?` +
+                      `client_id=${credentials.SHOPIFY_CLIENT_ID}&` +
+                      `scope=${SCOPES}&` +
+                      `redirect_uri=${encodeURIComponent(REDIRECT_URI)}&` +
+                      `state=${state}`;
+                    
+                    responseData = {
+                      authUrl: authUrl,
+                      message: 'Redirect user to Shopify OAuth',
+                      redirectUri: REDIRECT_URI
+                    };
+                  } else {
+                    responseData = {
+                      message: 'Shopify integration endpoint',
+                      endpoints: ['/api/shopify/connect', '/api/shopify/callback', '/api/shopify/sync']
+                    };
+                  }
+                  break;
+                  
+                case 'auth':
+                  const authPath = pathParts[2];
+                  const body = JSON.parse(event.body || '{}');
+                  
+                  if (authPath === 'login' && method === 'POST') {
+                    const { email, password } = body;
+                    
+                    if (!email || !password) {
+                      return {
+                        statusCode: 400,
+                        headers: corsHeaders,
+                        body: JSON.stringify({ success: false, error: 'Email and password required' })
+                      };
+                    }
+                    
+                    try {
+                      const authResult = await cognito.adminInitiateAuth({
+                        UserPoolId: process.env.USER_POOL_ID,
+                        ClientId: process.env.USER_POOL_CLIENT_ID,
+                        AuthFlow: 'ADMIN_USER_PASSWORD_AUTH',
+                        AuthParameters: {
+                          USERNAME: email,
+                          PASSWORD: password
+                        }
+                      }).promise();
+                      
+                      responseData = {
+                        success: true,
+                        tokens: {
+                          AccessToken: authResult.AuthenticationResult.AccessToken,
+                          RefreshToken: authResult.AuthenticationResult.RefreshToken,
+                          IdToken: authResult.AuthenticationResult.IdToken,
+                          ExpiresIn: authResult.AuthenticationResult.ExpiresIn,
+                          TokenType: authResult.AuthenticationResult.TokenType
+                        }
+                      };
+                    } catch (error) {
+                      console.error('Login error:', error);
+                      return {
+                        statusCode: 401,
+                        headers: corsHeaders,
+                        body: JSON.stringify({ 
+                          success: false, 
+                          error: error.code === 'NotAuthorizedException' ? 'Invalid credentials' : 'Login failed'
+                        })
+                      };
+                    }
+                  } else {
+                    responseData = {
+                      message: 'Authentication endpoint',
+                      availableEndpoints: ['/api/auth/login', '/api/auth/register', '/api/auth/forgot-password']
+                    };
+                  }
+                  break;
+                  
+                default:
+                  responseData = {
+                    message: 'OrderNimbus Application API',
+                    version: '2.0.0-immutable',
+                    environment: process.env.ENVIRONMENT,
+                    path: path,
+                    method: method,
+                    timestamp: new Date().toISOString()
+                  };
+              }
+              
+              return {
+                statusCode: 200,
+                headers: corsHeaders,
+                body: JSON.stringify(responseData)
+              };
+              
+            } catch (error) {
+              console.error('Error:', error);
+              return {
+                statusCode: 500,
+                headers: corsHeaders,
+                body: JSON.stringify({ error: 'Internal server error', timestamp: new Date().toISOString() })
+              };
+            }
+          };
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ordernimbus-main-lambda'
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ==================== API GATEWAY ====================
+  ApiGateway:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub 'ordernimbus-${Environment}-api'
+      ProtocolType: HTTP
+      Description: 'OrderNimbus Application API Gateway'
+      CorsConfiguration:
+        AllowOrigins:
+          - 'https://app.ordernimbus.com'
+          - 'http://localhost:3000'
+          - 'http://127.0.0.1:3000'
+          - Fn::ImportValue: !Sub '${ImmutableStackName}-FrontendURL'
+        AllowHeaders: 
+          - '*'
+        AllowMethods: 
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+          - HEAD
+          - PATCH
+        AllowCredentials: true
+        ExposeHeaders:
+          - '*'
+        MaxAge: 86400
+      Tags:
+        Environment: !Ref Environment
+
+  ApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref ApiGateway
+      StageName: !Ref Environment
+      AutoDeploy: true
+      Description: !Sub 'OrderNimbus ${Environment} stage'
+
+  # Lambda Integration
+  LambdaIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref ApiGateway
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${MainLambda}'
+      IntegrationMethod: POST
+      PayloadFormatVersion: '2.0'
+
+  # Catch-all route
+  CatchAllRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: '$default'
+      Target: !Sub 'integrations/${LambdaIntegration}'
+
+  # Lambda Permission
+  LambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref MainLambda
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'
+
+  # ==================== API DOMAIN NAME (Production Only) ====================
+  ApiDomain:
+    Type: AWS::ApiGatewayV2::DomainName
+    Condition: CreateApiDNS
+    Properties:
+      DomainName: !Ref ApiDomainName
+      DomainNameConfigurations:
+        - CertificateArn: 
+            Fn::ImportValue: !Sub '${ImmutableStackName}-SSLCertificateArn'
+          SecurityPolicy: TLS_1_2
+          EndpointType: REGIONAL
+      Tags:
+        Environment: !Ref Environment
+
+  ApiMapping:
+    Type: AWS::ApiGatewayV2::ApiMapping
+    Condition: CreateApiDNS
+    Properties:
+      DomainName: !Ref ApiDomainName
+      ApiId: !Ref ApiGateway
+      Stage: !Ref ApiStage
+
+  # API DNS Record (api.ordernimbus.com -> API Gateway)
+  ApiDNSRecord:
+    Type: AWS::Route53::RecordSet
+    Condition: CreateApiDNS
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref ApiDomainName
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt ApiDomain.RegionalDomainName
+        HostedZoneId: !GetAtt ApiDomain.RegionalHostedZoneId
+        EvaluateTargetHealth: false
+
+  # ==================== SSM PARAMETERS FOR APPLICATION CONFIG ====================
+  SSMApiEndpoint:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/ordernimbus/${Environment}/application/api/endpoint'
+      Type: String
+      Value: !If
+        - CreateApiDNS
+        - !Sub 'https://${ApiDomainName}'
+        - !Sub 'https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${Environment}'
+      Description: 'Application API Gateway endpoint'
+      Tags:
+        Environment: !Ref Environment
+
+  SSMTableName:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/ordernimbus/${Environment}/application/dynamodb/table-name'
+      Type: String
+      Value: !Ref MainTable
+      Description: 'Application DynamoDB table name'
+      Tags:
+        Environment: !Ref Environment
+
+Outputs:
+  # API Gateway
+  ApiEndpoint:
+    Description: API Gateway endpoint URL
+    Value: !If
+      - CreateApiDNS
+      - !Sub 'https://${ApiDomainName}'
+      - !Sub 'https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${Environment}'
+    Export:
+      Name: !Sub '${AWS::StackName}-ApiEndpoint'
+
+  ApiGatewayId:
+    Description: API Gateway ID
+    Value: !Ref ApiGateway
+    Export:
+      Name: !Sub '${AWS::StackName}-ApiGatewayId'
+
+  # Lambda
+  MainLambdaArn:
+    Description: Main Lambda function ARN
+    Value: !GetAtt MainLambda.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-MainLambdaArn'
+
+  MainLambdaName:
+    Description: Main Lambda function name
+    Value: !Ref MainLambda
+    Export:
+      Name: !Sub '${AWS::StackName}-MainLambdaName'
+
+  # DynamoDB
+  DynamoDBTableName:
+    Description: DynamoDB table name
+    Value: !Ref MainTable
+    Export:
+      Name: !Sub '${AWS::StackName}-DynamoDBTableName'
+
+  DynamoDBTableArn:
+    Description: DynamoDB table ARN
+    Value: !GetAtt MainTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-DynamoDBTableArn'
+
+  # Environment info
+  Environment:
+    Description: Environment name
+    Value: !Ref Environment
+    Export:
+      Name: !Sub '${AWS::StackName}-Environment'
+
+  Region:
+    Description: AWS Region
+    Value: !Ref AWS::Region
+    Export:
+      Name: !Sub '${AWS::StackName}-Region'
+
+  # Quick deployment summary
+  DeploymentSummary:
+    Description: Quick deployment info for developers
+    Value: !Sub |
+      API: https://${ApiDomainName}
+      Lambda: ${MainLambda}
+      Table: ${MainTable}
+      Environment: ${Environment}

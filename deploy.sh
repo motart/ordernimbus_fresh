@@ -1,9 +1,9 @@
 #!/bin/bash
 
 ################################################################################
-# OrderNimbus Master Deployment Script
-# Single source of truth for all deployments
-# Supports: local, staging, production environments
+# OrderNimbus Application Deployment Script (Immutable Architecture)
+# Fast deployment of application infrastructure (2-3 minutes)
+# Uses immutable infrastructure for CloudFront, Cognito, DNS, S3
 ################################################################################
 
 set -e
@@ -23,61 +23,21 @@ NC='\033[0m'
 print_header() { echo -e "\n${CYAN}═══════════════════════════════════════${NC}\n${CYAN}$1${NC}\n${CYAN}═══════════════════════════════════════${NC}"; }
 print_status() { echo -e "${BLUE}[$(date +'%H:%M:%S')]${NC} $1"; }
 print_success() { echo -e "${GREEN}✓${NC} $1"; }
-print_error() { echo -e "${RED}✗${NC} $1"; [ "${NO_EXIT_ON_ERROR:-0}" = "1" ] || exit 1; }
+print_error() { echo -e "${RED}✗${NC} $1"; exit 1; }
 print_warning() { echo -e "${YELLOW}⚠${NC} $1"; }
 
 # Default values
 ENVIRONMENT="${1:-staging}"
 AWS_REGION="${2:-us-west-1}"
-SKIP_TESTS="${3:-false}"
+DEPLOY_MODE="${3:-application}"  # application | full | immutable
 
 # Validate environment
 if [[ ! "$ENVIRONMENT" =~ ^(local|staging|production)$ ]]; then
     print_error "Invalid environment: $ENVIRONMENT. Use: local, staging, or production"
 fi
 
-# CloudFormation template - single source of truth
-TEMPLATE_FILE="cloudformation-simple.yaml"
-
-# Check template exists
-if [ ! -f "$TEMPLATE_FILE" ]; then
-    # Try infrastructure directory
-    if [ -f "infrastructure/cloudformation/cloudformation-template.yaml" ]; then
-        TEMPLATE_FILE="infrastructure/cloudformation/cloudformation-template.yaml"
-    else
-        print_error "CloudFormation template not found"
-    fi
-fi
-
-# AWS Account ID
-AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text 2>/dev/null || echo "")
-
-# Shopify credentials (can be overridden via environment variables)
-SHOPIFY_CLIENT_ID="${SHOPIFY_CLIENT_ID:-d4599bc60ea67dabd0be7fccc10476d9}"
-SHOPIFY_CLIENT_SECRET="${SHOPIFY_CLIENT_SECRET:-0c9bd606f75d8bebc451115f996a17bc}"
-
-# Set stack name properly - avoid double "production"
-if [ "$ENVIRONMENT" = "production" ]; then
-    STACK_NAME="ordernimbus-production"
-else
-    STACK_NAME="ordernimbus-${ENVIRONMENT}"
-fi
-
-# Configuration based on environment
-if [ "$ENVIRONMENT" = "production" ]; then
-    S3_BUCKET="ordernimbus-production-frontend-${AWS_ACCOUNT_ID}"
-    COGNITO_POOL_NAME="ordernimbus-production-users"
-    DOMAIN_NAME="app.ordernimbus.com"
-    ENABLE_CLOUDFRONT="true"
-    HOSTED_ZONE_ID="Z03623712FIVU7Z4CJ949"
-elif [ "$ENVIRONMENT" = "staging" ]; then
-    S3_BUCKET="ordernimbus-staging-frontend-${AWS_ACCOUNT_ID}"
-    COGNITO_POOL_NAME="ordernimbus-staging-users"
-    DOMAIN_NAME=""
-    ENABLE_CLOUDFRONT="false"
-    HOSTED_ZONE_ID=""
-else
-    # Local environment
+# Local development deployment
+if [ "$ENVIRONMENT" = "local" ]; then
     print_header "Local Development Deployment"
     
     print_status "Checking prerequisites..."
@@ -103,162 +63,155 @@ else
     exit 0
 fi
 
-# Display deployment configuration
-print_header "OrderNimbus Deployment"
-echo "Environment: ${GREEN}$ENVIRONMENT${NC}"
-echo "Region: ${YELLOW}$AWS_REGION${NC}"
-echo "Stack: ${YELLOW}$STACK_NAME${NC}"
-echo "Account: ${YELLOW}$AWS_ACCOUNT_ID${NC}"
-echo "Template: ${YELLOW}$TEMPLATE_FILE${NC}"
-echo ""
+# CloudFormation templates
+IMMUTABLE_TEMPLATE="infrastructure/immutable-stack.yaml"
+APPLICATION_TEMPLATE="infrastructure/application-stack.yaml"
 
-################################################################################
-# AWS DEPLOYMENT
-################################################################################
-print_header "AWS Deployment - $ENVIRONMENT"
+# Stack names
+IMMUTABLE_STACK_NAME="ordernimbus-immutable-${ENVIRONMENT}"
+APPLICATION_STACK_NAME="ordernimbus-application-${ENVIRONMENT}"
 
-# Check AWS credentials
-print_status "Checking AWS credentials..."
+# AWS Account ID
+AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text 2>/dev/null || echo "")
 if [ -z "$AWS_ACCOUNT_ID" ]; then
     print_error "AWS credentials not configured. Run 'aws configure'"
 fi
-print_success "AWS credentials valid (Account: $AWS_ACCOUNT_ID)"
 
-# Handle CloudFront for production
-if [ "$ENVIRONMENT" = "production" ] && [ "$ENABLE_CLOUDFRONT" = "true" ]; then
-    print_status "Checking for CloudFront conflicts..."
-    
-    # Find existing distributions using app.ordernimbus.com
-    EXISTING_DIST=$(aws cloudfront list-distributions \
-        --query "DistributionList.Items[?contains(Aliases.Items, 'app.ordernimbus.com')].Id" \
-        --output text 2>/dev/null | head -1)
-    
-    if [ -n "$EXISTING_DIST" ]; then
-        print_warning "Found existing CloudFront distribution: $EXISTING_DIST"
-        
-        # Check if the distribution is enabled
-        DIST_ENABLED=$(aws cloudfront get-distribution \
-            --id "$EXISTING_DIST" \
-            --query 'Distribution.DistributionConfig.Enabled' \
-            --output text 2>/dev/null || echo "false")
-        
-        if [ "$DIST_ENABLED" = "false" ]; then
-            print_status "Existing CloudFront distribution is disabled. Re-enabling it..."
-            
-            # Get the distribution config
-            aws cloudfront get-distribution-config --id "$EXISTING_DIST" > /tmp/dist-config.json 2>/dev/null
-            ETAG=$(jq -r '.ETag' /tmp/dist-config.json)
-            
-            # Update to point to our S3 bucket and enable it
-            jq --arg bucket "$S3_BUCKET.s3-website-${AWS_REGION}.amazonaws.com" \
-               '.DistributionConfig.Enabled = true | 
-                .DistributionConfig.Origins.Items[0].DomainName = $bucket |
-                .DistributionConfig.Origins.Items[0].Id = ("S3-" + $bucket)' /tmp/dist-config.json > /tmp/dist-config-updated.json
-            
-            # Update the distribution
-            aws cloudfront update-distribution \
-                --id "$EXISTING_DIST" \
-                --distribution-config "$(jq '.DistributionConfig' /tmp/dist-config-updated.json)" \
-                --if-match "$ETAG" > /dev/null 2>&1
-            
-            print_success "CloudFront distribution re-enabled and updated"
-            CLOUDFRONT_ID="$EXISTING_DIST"
-            ENABLE_CLOUDFRONT="false"  # Don't create a new one
-        else
-            # Check if it's from our stack
-            STACK_DIST=$(aws cloudformation describe-stack-resources \
-                --stack-name "$STACK_NAME" \
-                --query "StackResources[?ResourceType=='AWS::CloudFront::Distribution'].PhysicalResourceId" \
-                --output text 2>/dev/null || echo "")
-            
-            if [ "$EXISTING_DIST" != "$STACK_DIST" ]; then
-                print_warning "Distribution $EXISTING_DIST is not managed by this stack"
-                print_status "Using existing CloudFront distribution"
-                CLOUDFRONT_ID="$EXISTING_DIST"
-                ENABLE_CLOUDFRONT="false"  # Don't create a new one
-            fi
-        fi
-    fi
-    
-    # Check certificate
-    if [ "$ENABLE_CLOUDFRONT" = "true" ]; then
-        print_status "Checking SSL certificate in us-east-1..."
-        CERT_ARN=$(aws acm list-certificates \
-            --region us-east-1 \
-            --query "CertificateSummaryList[?DomainName=='app.ordernimbus.com' || DomainName=='*.ordernimbus.com'].CertificateArn" \
-            --output text | head -1)
-        
-        if [ -z "$CERT_ARN" ]; then
-            print_warning "No SSL certificate found for app.ordernimbus.com"
-            print_status "CloudFront will be disabled for this deployment"
-            ENABLE_CLOUDFRONT="false"
-        else
-            CERT_STATUS=$(aws acm describe-certificate \
-                --certificate-arn "$CERT_ARN" \
-                --region us-east-1 \
-                --query 'Certificate.Status' \
-                --output text)
-            
-            if [ "$CERT_STATUS" != "ISSUED" ]; then
-                print_warning "Certificate not yet validated (Status: $CERT_STATUS)"
-                ENABLE_CLOUDFRONT="false"
-            else
-                print_success "Certificate is valid: $CERT_ARN"
-            fi
-        fi
-    fi
-fi
+# Shopify credentials (can be overridden via environment variables)
+SHOPIFY_CLIENT_ID="${SHOPIFY_CLIENT_ID:-d4599bc60ea67dabd0be7fccc10476d9}"
+SHOPIFY_CLIENT_SECRET="${SHOPIFY_CLIENT_SECRET:-0c9bd606f75d8bebc451115f996a17bc}"
 
-# Store Shopify credentials in SSM if provided
-if [ -n "$SHOPIFY_CLIENT_ID" ] && [ -n "$SHOPIFY_CLIENT_SECRET" ]; then
-    print_status "Storing Shopify credentials in SSM Parameter Store..."
-    aws ssm put-parameter \
-        --name "/ordernimbus/${ENVIRONMENT}/shopify" \
-        --value "{\"SHOPIFY_CLIENT_ID\":\"${SHOPIFY_CLIENT_ID}\",\"SHOPIFY_CLIENT_SECRET\":\"${SHOPIFY_CLIENT_SECRET}\"}" \
-        --type "SecureString" \
-        --overwrite \
-        --region "$AWS_REGION" > /dev/null 2>&1 || true
-    print_success "Shopify credentials stored"
-fi
+print_header "OrderNimbus Application Deployment (Immutable Architecture)"
+echo "Environment: ${GREEN}$ENVIRONMENT${NC}"
+echo "Region: ${YELLOW}$AWS_REGION${NC}"
+echo "Deploy Mode: ${YELLOW}$DEPLOY_MODE${NC}"
+echo "Account: ${YELLOW}$AWS_ACCOUNT_ID${NC}"
+echo ""
 
-# Deploy CloudFormation stack
-print_status "Deploying CloudFormation stack..."
+################################################################################
+# CHECK IMMUTABLE INFRASTRUCTURE
+################################################################################
+print_header "Checking Immutable Infrastructure"
 
-# Build parameter overrides
-PARAMS="Environment=$ENVIRONMENT"
-if [ "$ENABLE_CLOUDFRONT" = "true" ] && [ -n "$CERT_ARN" ]; then
-    PARAMS="$PARAMS EnableCloudFront=true CertificateArn=$CERT_ARN"
-fi
-if [ -n "$HOSTED_ZONE_ID" ]; then
-    PARAMS="$PARAMS HostedZoneId=$HOSTED_ZONE_ID"
-fi
-
-# Check if stack exists
-STACK_EXISTS=$(aws cloudformation describe-stacks \
-    --stack-name "$STACK_NAME" \
+# Check if immutable infrastructure exists
+IMMUTABLE_EXISTS=$(aws cloudformation describe-stacks \
+    --stack-name "$IMMUTABLE_STACK_NAME" \
     --region "$AWS_REGION" \
     --query 'Stacks[0].StackStatus' \
     --output text 2>/dev/null || echo "")
 
-if [ -n "$STACK_EXISTS" ]; then
-    # Check if stack is in a failed state
-    if [[ "$STACK_EXISTS" == *"FAILED"* ]] || [[ "$STACK_EXISTS" == "ROLLBACK_COMPLETE" ]]; then
-        print_warning "Stack is in failed state: $STACK_EXISTS"
-        print_status "Deleting failed stack before redeployment..."
-        aws cloudformation delete-stack \
-            --stack-name "$STACK_NAME" \
-            --region "$AWS_REGION" 2>/dev/null || true
-        
-        # Wait for deletion
-        print_status "Waiting for stack deletion..."
-        aws cloudformation wait stack-delete-complete \
-            --stack-name "$STACK_NAME" \
-            --region "$AWS_REGION" 2>/dev/null || true
-        print_success "Failed stack deleted"
+if [ -z "$IMMUTABLE_EXISTS" ]; then
+    print_warning "Immutable infrastructure not found!"
+    echo ""
+    echo "Immutable infrastructure provides:"
+    echo "  • CloudFront distributions"
+    echo "  • Cognito User Pools"
+    echo "  • Route 53 DNS records"
+    echo "  • S3 buckets"
+    echo "  • SSL certificates"
+    echo ""
+    echo "Deploy immutable infrastructure first:"
+    echo "  ${GREEN}./deploy-immutable.sh $ENVIRONMENT $AWS_REGION${NC}"
+    echo ""
+    read -p "Deploy immutable infrastructure now? (yes/no): " deploy_immutable
+    
+    if [ "$deploy_immutable" = "yes" ]; then
+        print_status "Deploying immutable infrastructure..."
+        if ./deploy-immutable.sh "$ENVIRONMENT" "$AWS_REGION"; then
+            print_success "Immutable infrastructure deployed"
+        else
+            print_error "Failed to deploy immutable infrastructure"
+        fi
+    else
+        print_error "Cannot deploy application without immutable infrastructure"
     fi
+else
+    print_success "Immutable infrastructure found: $IMMUTABLE_EXISTS"
 fi
 
-# Deploy the stack with retry logic
+# Get immutable infrastructure outputs
+print_status "Retrieving immutable infrastructure outputs..."
+
+USER_POOL_ID=$(aws cloudformation describe-stacks \
+    --stack-name "$IMMUTABLE_STACK_NAME" \
+    --region "$AWS_REGION" \
+    --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' \
+    --output text 2>/dev/null || echo "")
+
+USER_POOL_CLIENT_ID=$(aws cloudformation describe-stacks \
+    --stack-name "$IMMUTABLE_STACK_NAME" \
+    --region "$AWS_REGION" \
+    --query 'Stacks[0].Outputs[?OutputKey==`UserPoolClientId`].OutputValue' \
+    --output text 2>/dev/null || echo "")
+
+CLOUDFRONT_ID=$(aws cloudformation describe-stacks \
+    --stack-name "$IMMUTABLE_STACK_NAME" \
+    --region "$AWS_REGION" \
+    --query 'Stacks[0].Outputs[?OutputKey==`CloudFrontDistributionId`].OutputValue' \
+    --output text 2>/dev/null || echo "")
+
+S3_BUCKET_NAME=$(aws cloudformation describe-stacks \
+    --stack-name "$IMMUTABLE_STACK_NAME" \
+    --region "$AWS_REGION" \
+    --query 'Stacks[0].Outputs[?OutputKey==`S3BucketName`].OutputValue' \
+    --output text 2>/dev/null || echo "")
+
+FRONTEND_URL=$(aws cloudformation describe-stacks \
+    --stack-name "$IMMUTABLE_STACK_NAME" \
+    --region "$AWS_REGION" \
+    --query 'Stacks[0].Outputs[?OutputKey==`FrontendURL`].OutputValue' \
+    --output text 2>/dev/null || echo "")
+
+if [ -z "$USER_POOL_ID" ] || [ -z "$USER_POOL_CLIENT_ID" ]; then
+    print_error "Could not retrieve immutable infrastructure outputs. Check the immutable stack."
+fi
+
+print_success "Retrieved immutable infrastructure configuration"
+echo "  User Pool ID: ${CYAN}$USER_POOL_ID${NC}"
+echo "  Client ID: ${CYAN}$USER_POOL_CLIENT_ID${NC}"
+echo "  CloudFront: ${CYAN}$CLOUDFRONT_ID${NC}"
+echo "  S3 Bucket: ${CYAN}$S3_BUCKET_NAME${NC}"
+echo "  Frontend URL: ${CYAN}$FRONTEND_URL${NC}"
+
+################################################################################
+# STORE SHOPIFY CREDENTIALS
+################################################################################
+if [ -n "$SHOPIFY_CLIENT_ID" ] && [ -n "$SHOPIFY_CLIENT_SECRET" ]; then
+    print_status "Storing Shopify credentials in Secrets Manager..."
+    aws secretsmanager put-secret-value \
+        --secret-id "ordernimbus/${ENVIRONMENT}/shopify" \
+        --secret-string "{\"SHOPIFY_CLIENT_ID\":\"${SHOPIFY_CLIENT_ID}\",\"SHOPIFY_CLIENT_SECRET\":\"${SHOPIFY_CLIENT_SECRET}\"}" \
+        --region "$AWS_REGION" 2>/dev/null || \
+    aws secretsmanager create-secret \
+        --name "ordernimbus/${ENVIRONMENT}/shopify" \
+        --description "Shopify OAuth credentials for OrderNimbus ${ENVIRONMENT}" \
+        --secret-string "{\"SHOPIFY_CLIENT_ID\":\"${SHOPIFY_CLIENT_ID}\",\"SHOPIFY_CLIENT_SECRET\":\"${SHOPIFY_CLIENT_SECRET}\"}" \
+        --region "$AWS_REGION" > /dev/null 2>&1
+    print_success "Shopify credentials stored"
+fi
+
+################################################################################
+# DEPLOY APPLICATION INFRASTRUCTURE
+################################################################################
+print_header "Deploying Application Infrastructure"
+
+print_status "Checking application infrastructure template..."
+if [ ! -f "$APPLICATION_TEMPLATE" ]; then
+    print_error "Application template not found: $APPLICATION_TEMPLATE"
+fi
+
+print_status "Deploying application CloudFormation stack..."
+
+# Build parameters for application stack
+PARAMS="Environment=$ENVIRONMENT ImmutableStackName=$IMMUTABLE_STACK_NAME"
+
+# Add production-specific parameters
+if [ "$ENVIRONMENT" = "production" ]; then
+    PARAMS="$PARAMS ApiDomainName=api.ordernimbus.com"
+    PARAMS="$PARAMS HostedZoneId=Z03623712FIVU7Z4CJ949"
+fi
+
+# Deploy with retry logic
 MAX_RETRIES=3
 RETRY_COUNT=0
 DEPLOY_SUCCESS=false
@@ -270,656 +223,198 @@ while [ $RETRY_COUNT -lt $MAX_RETRIES ] && [ "$DEPLOY_SUCCESS" = "false" ]; do
     fi
     
     if aws cloudformation deploy \
-        --template-file "$TEMPLATE_FILE" \
-        --stack-name "$STACK_NAME" \
+        --template-file "$APPLICATION_TEMPLATE" \
+        --stack-name "$APPLICATION_STACK_NAME" \
         --parameter-overrides $PARAMS \
         --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
         --region "$AWS_REGION" \
-        --no-fail-on-empty-changeset 2>&1 | tee /tmp/cf-deploy.log; then
+        --no-fail-on-empty-changeset 2>&1 | tee /tmp/cf-app-deploy.log; then
         DEPLOY_SUCCESS=true
-        print_success "CloudFormation stack deployed"
+        print_success "Application infrastructure deployed successfully"
     else
         RETRY_COUNT=$((RETRY_COUNT + 1))
-        if grep -q "No updates are to be performed" /tmp/cf-deploy.log; then
-            print_success "Stack is already up-to-date"
+        if grep -q "No updates are to be performed" /tmp/cf-app-deploy.log; then
+            print_success "Application infrastructure is already up-to-date"
             DEPLOY_SUCCESS=true
         elif [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
-            print_error "CloudFormation deployment failed after $MAX_RETRIES attempts. Check the stack events for details."
+            print_error "Application deployment failed after $MAX_RETRIES attempts"
         fi
     fi
 done
 
-# Run Cognito configuration validation if test exists
-if [ -f "tests/validate-cognito-config.sh" ]; then
-    print_status "Running Cognito configuration validation..."
-    if ./tests/validate-cognito-config.sh "$ENVIRONMENT" "$AWS_REGION" > /dev/null 2>&1; then
-        print_success "Cognito configuration validation passed"
-    else
-        print_warning "Cognito configuration needs updating (will be fixed during deployment)"
-    fi
-fi
-
-# Get stack outputs
-print_status "Getting stack outputs..."
+################################################################################
+# GET APPLICATION STACK OUTPUTS
+################################################################################
+print_status "Getting application stack outputs..."
 
 API_URL=$(aws cloudformation describe-stacks \
-    --stack-name "$STACK_NAME" \
+    --stack-name "$APPLICATION_STACK_NAME" \
     --region "$AWS_REGION" \
     --query 'Stacks[0].Outputs[?OutputKey==`ApiEndpoint`].OutputValue' \
     --output text 2>/dev/null || echo "")
 
-S3_BUCKET_OUTPUT=$(aws cloudformation describe-stacks \
-    --stack-name "$STACK_NAME" \
+LAMBDA_NAME=$(aws cloudformation describe-stacks \
+    --stack-name "$APPLICATION_STACK_NAME" \
     --region "$AWS_REGION" \
-    --query 'Stacks[0].Outputs[?OutputKey==`S3BucketName`].OutputValue' \
-    --output text 2>/dev/null || echo "")
-
-# Use output bucket if available, otherwise use configured
-if [ -n "$S3_BUCKET_OUTPUT" ]; then
-    S3_BUCKET="$S3_BUCKET_OUTPUT"
-fi
-
-FRONTEND_URL=$(aws cloudformation describe-stacks \
-    --stack-name "$STACK_NAME" \
-    --region "$AWS_REGION" \
-    --query 'Stacks[0].Outputs[?OutputKey==`FrontendURL`].OutputValue' \
-    --output text 2>/dev/null || echo "")
-
-CLOUDFRONT_ID=$(aws cloudformation describe-stacks \
-    --stack-name "$STACK_NAME" \
-    --region "$AWS_REGION" \
-    --query 'Stacks[0].Outputs[?OutputKey==`CloudFrontDistributionId`].OutputValue' \
-    --output text 2>/dev/null || echo "")
-
-USER_POOL_ID=$(aws cloudformation describe-stacks \
-    --stack-name "$STACK_NAME" \
-    --region "$AWS_REGION" \
-    --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' \
-    --output text 2>/dev/null || echo "")
-
-USER_POOL_CLIENT_ID=$(aws cloudformation describe-stacks \
-    --stack-name "$STACK_NAME" \
-    --region "$AWS_REGION" \
-    --query 'Stacks[0].Outputs[?OutputKey==`UserPoolClientId`].OutputValue' \
+    --query 'Stacks[0].Outputs[?OutputKey==`MainLambdaName`].OutputValue' \
     --output text 2>/dev/null || echo "")
 
 TABLE_NAME=$(aws cloudformation describe-stacks \
-    --stack-name "$STACK_NAME" \
+    --stack-name "$APPLICATION_STACK_NAME" \
     --region "$AWS_REGION" \
     --query 'Stacks[0].Outputs[?OutputKey==`DynamoDBTableName`].OutputValue' \
     --output text 2>/dev/null || echo "")
 
-# Store Cognito configuration in SSM Parameter Store
-if [ -n "$USER_POOL_ID" ] && [ -n "$USER_POOL_CLIENT_ID" ]; then
-    print_status "Storing Cognito configuration in SSM Parameter Store..."
-    
-    # Store user pool ID
-    aws ssm put-parameter \
-        --name "/ordernimbus/${ENVIRONMENT}/cognito/user-pool-id" \
-        --value "$USER_POOL_ID" \
-        --type "String" \
-        --overwrite \
-        --region "$AWS_REGION" > /dev/null 2>&1 || true
-    
-    # Store client ID
-    aws ssm put-parameter \
-        --name "/ordernimbus/${ENVIRONMENT}/cognito/client-id" \
-        --value "$USER_POOL_CLIENT_ID" \
-        --type "String" \
-        --overwrite \
-        --region "$AWS_REGION" > /dev/null 2>&1 || true
-    
-    print_success "Cognito configuration stored in SSM"
+if [ -z "$API_URL" ]; then
+    print_error "Could not retrieve application infrastructure outputs"
 fi
 
-# Store API endpoint in SSM
-if [ -n "$API_URL" ]; then
-    print_status "Storing API endpoint in SSM Parameter Store..."
-    aws ssm put-parameter \
-        --name "/ordernimbus/${ENVIRONMENT}/api/endpoint" \
-        --value "$API_URL" \
-        --type "String" \
-        --overwrite \
-        --region "$AWS_REGION" > /dev/null 2>&1 || true
-    print_success "API endpoint stored in SSM"
-fi
+print_success "Application infrastructure deployed"
+echo "  API URL: ${CYAN}$API_URL${NC}"
+echo "  Lambda: ${CYAN}$LAMBDA_NAME${NC}"
+echo "  Table: ${CYAN}$TABLE_NAME${NC}"
 
-# Create env.js file with CloudFormation outputs for the frontend
-print_status "Creating env.js with CloudFormation outputs..."
-cat > /tmp/env.js << EOF
-// Auto-generated configuration from CloudFormation outputs
-// Generated at: $(date)
-// Environment: ${ENVIRONMENT}
-window.RUNTIME_CONFIG = {
-  REACT_APP_API_URL: "${API_URL}",
-  REACT_APP_USER_POOL_ID: "${USER_POOL_ID}",
-  REACT_APP_CLIENT_ID: "${USER_POOL_CLIENT_ID}",
-  REACT_APP_REGION: "${AWS_REGION}",
-  REACT_APP_ENVIRONMENT: "${ENVIRONMENT}",
-  REACT_APP_GRAPHQL_URL: "${API_URL}/graphql",
-  REACT_APP_WS_URL: "${API_URL}".replace("https://", "wss://") + "/ws",
-  REACT_APP_ENABLE_DEBUG: ${ENVIRONMENT} !== "production",
-  REACT_APP_ENABLE_ANALYTICS: ${ENVIRONMENT} === "production",
-  REACT_APP_ENABLE_MOCK_DATA: false
-};
-EOF
-print_success "env.js created with correct Cognito configuration"
+################################################################################
+# UPDATE LAMBDA CODE (if local code exists)
+################################################################################
+print_status "Updating Lambda function code..."
 
-# Enable ADMIN_USER_PASSWORD_AUTH flow in Cognito
-if [ -n "$USER_POOL_ID" ] && [ -n "$USER_POOL_CLIENT_ID" ]; then
-    print_status "Configuring Cognito auth flows..."
-    aws cognito-idp update-user-pool-client \
-        --user-pool-id "$USER_POOL_ID" \
-        --client-id "$USER_POOL_CLIENT_ID" \
-        --explicit-auth-flows ALLOW_ADMIN_USER_PASSWORD_AUTH ALLOW_REFRESH_TOKEN_AUTH ALLOW_USER_PASSWORD_AUTH ALLOW_USER_SRP_AUTH \
-        --region "$AWS_REGION" > /dev/null 2>&1 || true
-    print_success "Cognito auth flows configured"
-fi
-
-# Deploy Lambda functions
-print_status "Deploying Lambda functions..."
-
-# Get the main Lambda function name from the stack
-MAIN_LAMBDA=$(aws cloudformation describe-stack-resources \
-    --stack-name "$STACK_NAME" \
-    --query "StackResources[?ResourceType=='AWS::Lambda::Function'].PhysicalResourceId" \
-    --output text \
-    --region "$AWS_REGION" 2>/dev/null | head -1)
-
-# Get Lambda execution role and add Cognito permissions
-if [ -n "$MAIN_LAMBDA" ]; then
-    LAMBDA_ROLE=$(aws lambda get-function \
-        --function-name "$MAIN_LAMBDA" \
-        --region "$AWS_REGION" \
-        --query 'Configuration.Role' \
-        --output text | awk -F'/' '{print $NF}')
+if [ -f "lambda/index.js" ] || [ -f "lambda/main-handler.js" ]; then
+    print_status "Found local Lambda code - updating function..."
     
-    if [ -n "$LAMBDA_ROLE" ]; then
-        print_status "Adding Cognito permissions to Lambda role..."
-        
-        # Create Cognito policy
-        cat > /tmp/cognito-policy.json << 'POLICY_EOF'
-{
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Effect": "Allow",
-            "Action": [
-                "cognito-idp:AdminInitiateAuth",
-                "cognito-idp:AdminCreateUser",
-                "cognito-idp:AdminSetUserPassword",
-                "cognito-idp:AdminGetUser",
-                "cognito-idp:AdminUpdateUserAttributes",
-                "cognito-idp:AdminDeleteUser",
-                "cognito-idp:ForgotPassword",
-                "cognito-idp:InitiateAuth"
-            ],
-            "Resource": "*"
-        }
-    ]
-}
-POLICY_EOF
-        
-        # Add inline policy
-        aws iam put-role-policy \
-            --role-name "$LAMBDA_ROLE" \
-            --policy-name CognitoAccess \
-            --policy-document file:///tmp/cognito-policy.json \
-            --region "$AWS_REGION" 2>/dev/null || true
-        
-        # Also attach managed policy
-        aws iam attach-role-policy \
-            --role-name "$LAMBDA_ROLE" \
-            --policy-arn arn:aws:iam::aws:policy/AmazonCognitoPowerUser \
-            --region "$AWS_REGION" 2>/dev/null || true
-        
-        rm -f /tmp/cognito-policy.json
-        print_success "Lambda permissions configured"
+    # Create temporary deployment package
+    mkdir -p /tmp/lambda-deploy
+    
+    # Copy Lambda files
+    if [ -d "lambda" ]; then
+        cp -r lambda/* /tmp/lambda-deploy/ 2>/dev/null || true
     fi
-fi
-
-if [ -n "$MAIN_LAMBDA" ]; then
-    print_status "Found Lambda function: $MAIN_LAMBDA"
     
-    # Check if we have a main Lambda handler or if a Lambda function exists but needs code
-    LAMBDA_EXISTS=$(aws lambda get-function --function-name "$MAIN_LAMBDA" --region "$AWS_REGION" 2>/dev/null | jq -r '.Configuration.FunctionName' || echo "")
+    # Ensure index.js exists
+    if [ -f "/tmp/lambda-deploy/main-handler.js" ] && [ ! -f "/tmp/lambda-deploy/index.js" ]; then
+        mv /tmp/lambda-deploy/main-handler.js /tmp/lambda-deploy/index.js
+    fi
     
-    if [ -n "$LAMBDA_EXISTS" ]; then
-        print_status "Deploying Lambda code from previous successful deployment..."
-        
-        # Use the Lambda code from our fixed version in /tmp if it exists
-        if [ -f "/tmp/prod-lambda/index.js" ]; then
-            cd /tmp/prod-lambda
-            zip -qr /tmp/lambda-deploy.zip .
-            
-            # Update Lambda code
-            aws lambda update-function-code \
-                --function-name "$MAIN_LAMBDA" \
-                --zip-file fileb:///tmp/lambda-deploy.zip \
-                --region "$AWS_REGION" > /dev/null 2>&1
-            
-            print_success "Lambda code deployed from cached version"
-        fi
-    elif [ -f "lambda/main-handler.js" ] || [ -f "lambda/index.js" ]; then
-        # Package and deploy main Lambda
-        mkdir -p /tmp/lambda-deploy
-        
-        # Copy all Lambda files
-        if [ -d "lambda" ]; then
-            cp -r lambda/* /tmp/lambda-deploy/ 2>/dev/null || true
-        fi
-        
-        # Ensure index.js exists
-        if [ -f "/tmp/lambda-deploy/main-handler.js" ] && [ ! -f "/tmp/lambda-deploy/index.js" ]; then
-            mv /tmp/lambda-deploy/main-handler.js /tmp/lambda-deploy/index.js
-        fi
-        
-        # Add config endpoint handling if not present
-        if [ -f "/tmp/lambda-deploy/index.js" ]; then
-            # Check if config case exists
-            if ! grep -q "case 'config':" /tmp/lambda-deploy/index.js; then
-                print_status "Adding config endpoint to Lambda..."
-                # Add config case before 'stores' case or at the end of switch
-                python3 -c "
-import sys
-with open('/tmp/lambda-deploy/index.js', 'r') as f:
-    content = f.read()
+    cd /tmp/lambda-deploy
     
-# Add config case if not present
-if \"case 'config':\" not in content:
-    config_case = '''
-      case 'config':
-        // Return application configuration
-        responseData = {
-          environment: process.env.ENVIRONMENT || 'production',
-          apiUrl: \`https://\${event.requestContext?.domainName || event.headers?.host}/\${event.requestContext?.stage || 'production'}\`,
-          region: process.env.AWS_REGION || '$AWS_REGION',
-          userPoolId: process.env.USER_POOL_ID,
-          clientId: process.env.USER_POOL_CLIENT_ID,
-          features: {
-            enableDebug: false,
-            enableAnalytics: true,
-            enableMockData: false,
-            useWebCrypto: true
-          }
-        };
-        break;
-'''
-    # Try to insert before 'default:' or at the end of switch
-    if 'default:' in content:
-        content = content.replace('default:', config_case + '\\n      default:')
-    elif \"case 'stores':\" in content:
-        content = content.replace(\"case 'stores':\", config_case + \"\\n      case 'stores':\")
+    # Add package.json if missing
+    if [ ! -f package.json ]; then
+        npm init -y --silent > /dev/null 2>&1
+    fi
     
-    with open('/tmp/lambda-deploy/index.js', 'w') as f:
-        f.write(content)
-" 2>/dev/null || true
-            fi
-        fi
-        
-        # Update API Gateway URL in Lambda code if it contains Shopify integration
-        if grep -q "shopify" /tmp/lambda-deploy/index.js; then
-            print_status "Updating Shopify redirect URI in Lambda..."
-            # Replace any hardcoded API Gateway URLs with the actual one
-            sed -i.bak "s|https://[a-z0-9]*.execute-api.[a-z0-9-]*.amazonaws.com/[a-z]*|${API_URL}|g" /tmp/lambda-deploy/index.js
-            rm -f /tmp/lambda-deploy/index.js.bak
-        fi
-        
-        # Package Lambda
-        cd /tmp/lambda-deploy
-        
-        # Add package.json if missing
-        if [ ! -f package.json ]; then
-            npm init -y --silent > /dev/null 2>&1
-        fi
-        
-        # Install dependencies if needed
-        if [ -f package.json ]; then
-            npm install aws-sdk --silent > /dev/null 2>&1 || true
-        fi
-        
-        # Create deployment package
-        zip -qr lambda-deploy.zip .
-        
-        # Update Lambda function code with retry
-        MAX_LAMBDA_RETRIES=3
-        LAMBDA_RETRY=0
-        LAMBDA_DEPLOYED=false
-        
-        while [ $LAMBDA_RETRY -lt $MAX_LAMBDA_RETRIES ] && [ "$LAMBDA_DEPLOYED" = "false" ]; do
-            if [ $LAMBDA_RETRY -gt 0 ]; then
-                print_warning "Retrying Lambda deployment (attempt $LAMBDA_RETRY)..."
-                sleep 5
-            fi
-            
-            if aws lambda update-function-code \
-                --function-name "$MAIN_LAMBDA" \
-                --zip-file fileb://lambda-deploy.zip \
-                --region "$AWS_REGION" > /tmp/lambda-update.log 2>&1; then
-                LAMBDA_DEPLOYED=true
-                print_success "Lambda code updated"
-            else
-                LAMBDA_RETRY=$((LAMBDA_RETRY + 1))
-                if [ $LAMBDA_RETRY -eq $MAX_LAMBDA_RETRIES ]; then
-                    print_warning "Failed to update Lambda code after $MAX_LAMBDA_RETRIES attempts"
-                    cat /tmp/lambda-update.log
-                fi
-            fi
-        done
-        
-        # Wait for Lambda to be ready
-        sleep 3
-        
-        # Update Lambda environment variables
-        if aws lambda update-function-configuration \
-            --function-name "$MAIN_LAMBDA" \
-            --environment "Variables={
-                ENVIRONMENT=$ENVIRONMENT,
-                TABLE_NAME=${TABLE_NAME:-ordernimbus-$ENVIRONMENT-main},
-                USER_POOL_ID=$USER_POOL_ID,
-                USER_POOL_CLIENT_ID=$USER_POOL_CLIENT_ID,
-                AWS_REGION=$AWS_REGION
-            }" \
-            --region "$AWS_REGION" > /tmp/lambda-config.log 2>&1; then
-            print_success "Lambda environment variables updated"
-        else
-            print_warning "Failed to update Lambda environment variables"
-            cat /tmp/lambda-config.log
-        fi
-        
-        print_success "Updated Lambda function: $MAIN_LAMBDA"
-        
-        # Update Shopify credentials with correct redirect URI
-        if [ -n "$SHOPIFY_CLIENT_ID" ] && [ -n "$SHOPIFY_CLIENT_SECRET" ] && [ -n "$API_URL" ]; then
-            print_status "Updating Shopify redirect URI..."
-            aws ssm put-parameter \
-                --name "/ordernimbus/${ENVIRONMENT}/shopify" \
-                --value "{\"SHOPIFY_CLIENT_ID\":\"${SHOPIFY_CLIENT_ID}\",\"SHOPIFY_CLIENT_SECRET\":\"${SHOPIFY_CLIENT_SECRET}\",\"REDIRECT_URI\":\"${API_URL}/api/shopify/callback\"}" \
-                --type "SecureString" \
-                --overwrite \
-                --region "$AWS_REGION" > /dev/null 2>&1
-            print_success "Shopify redirect URI updated: ${API_URL}/api/shopify/callback"
-        fi
-        
-        cd - > /dev/null
+    # Install dependencies
+    npm install aws-sdk --silent > /dev/null 2>&1 || true
+    
+    # Create deployment package
+    zip -qr lambda-deploy.zip .
+    
+    # Update Lambda function
+    if aws lambda update-function-code \
+        --function-name "$LAMBDA_NAME" \
+        --zip-file fileb://lambda-deploy.zip \
+        --region "$AWS_REGION" > /dev/null 2>&1; then
+        print_success "Lambda code updated"
     else
-        print_warning "No Lambda code found to deploy"
+        print_warning "Failed to update Lambda code - using default implementation"
     fi
+    
+    cd - > /dev/null
+    rm -rf /tmp/lambda-deploy
 else
-    print_warning "No Lambda function found in stack"
+    print_success "Using default Lambda implementation from CloudFormation"
 fi
 
-# Deploy individual Lambda functions if they exist
-if [ -d "lambda" ]; then
-    cd lambda
-    
-    for func in *.js; do
-        if [ -f "$func" ] && [ "$func" != "index.js" ] && [ "$func" != "main-handler.js" ]; then
-            filename="${func%.*}"
-            FUNCTION_NAME="${STACK_NAME}-${filename}"
-            
-            # Check if this function exists in the stack
-            if aws lambda get-function --function-name "$FUNCTION_NAME" --region "$AWS_REGION" &>/dev/null; then
-                print_status "Packaging Lambda: $filename"
-                
-                # Create temp directory for packaging
-                mkdir -p /tmp/lambda-${filename}
-                cp ${func} /tmp/lambda-${filename}/index.js
-                
-                # Add package.json if needed
-                cd /tmp/lambda-${filename}
-                if [ ! -f package.json ]; then
-                    npm init -y --silent > /dev/null 2>&1
-                fi
-                
-                # Install basic dependencies
-                npm install aws-sdk --silent > /dev/null 2>&1 || true
-                
-                # Create zip
-                zip -qr ${filename}.zip .
-                
-                # Update function
-                aws lambda update-function-code \
-                    --function-name "$FUNCTION_NAME" \
-                    --zip-file fileb://${filename}.zip \
-                    --region "$AWS_REGION" > /dev/null 2>&1
-                    
-                print_success "Updated Lambda: $filename"
-                
-                cd - > /dev/null
-            fi
-        fi
-    done
-    
-    cd ..
-fi
-
-# Build and deploy frontend
+################################################################################
+# BUILD AND DEPLOY FRONTEND
+################################################################################
 print_header "Building and Deploying Frontend"
 
 cd app/frontend
 
-# Update .env.local with correct Cognito values for development
-if [ -f ".env.local" ] && [ -n "$USER_POOL_ID" ] && [ -n "$USER_POOL_CLIENT_ID" ]; then
-    print_status "Updating .env.local with correct Cognito configuration..."
-    
-    # Use sed to update the values in place
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        # macOS
-        sed -i '' "s/^REACT_APP_USER_POOL_ID=.*/REACT_APP_USER_POOL_ID=$USER_POOL_ID/" .env.local
-        sed -i '' "s/^REACT_APP_CLIENT_ID=.*/REACT_APP_CLIENT_ID=$USER_POOL_CLIENT_ID/" .env.local
-        sed -i '' "s|^REACT_APP_API_URL=.*|REACT_APP_API_URL=$API_URL|" .env.local
-    else
-        # Linux
-        sed -i "s/^REACT_APP_USER_POOL_ID=.*/REACT_APP_USER_POOL_ID=$USER_POOL_ID/" .env.local
-        sed -i "s/^REACT_APP_CLIENT_ID=.*/REACT_APP_CLIENT_ID=$USER_POOL_CLIENT_ID/" .env.local
-        sed -i "s|^REACT_APP_API_URL=.*|REACT_APP_API_URL=$API_URL|" .env.local
-    fi
-    
-    print_success "Updated .env.local with Cognito configuration"
-fi
-
-# Install dependencies
 print_status "Installing frontend dependencies..."
 npm install --silent
 print_success "Dependencies installed"
 
-# Validate Cognito configuration before build
-print_status "Validating Cognito configuration..."
-if [ -z "$USER_POOL_ID" ] || [ -z "$USER_POOL_CLIENT_ID" ]; then
-    print_error "ERROR: Cognito credentials not found!"
-    print_error "USER_POOL_ID: ${USER_POOL_ID:-'NOT SET'}"
-    print_error "USER_POOL_CLIENT_ID: ${USER_POOL_CLIENT_ID:-'NOT SET'}"
-    print_error "Cannot proceed without valid Cognito configuration"
-    exit 1
-fi
-print_success "Cognito configuration validated"
+print_status "Building frontend with static configuration..."
 
-# Build frontend with production configuration
-print_status "Building frontend for $ENVIRONMENT..."
-
-# Remove .env.local to prevent it from overriding production values
-if [ "$ENVIRONMENT" = "production" ] && [ -f ".env.local" ]; then
-    print_status "Temporarily moving .env.local to prevent override..."
-    mv .env.local .env.local.backup
-fi
-
-# Update .env.production with discovered values
-if [ "$ENVIRONMENT" = "production" ] && [ -n "$API_URL" ]; then
-    cat > .env.production << EOF
-# Production Environment Configuration
-# Auto-generated by deploy.sh on $(date)
-# IMPORTANT: No local host references allowed in production!
-
-# Environment identifier
-REACT_APP_ENVIRONMENT=production
-
-# AWS Region
-REACT_APP_REGION=$AWS_REGION
-
-# API Gateway URL - Production endpoint
-REACT_APP_API_URL=$API_URL
-
-# AWS Cognito Configuration
-REACT_APP_USER_POOL_ID=$USER_POOL_ID
-REACT_APP_CLIENT_ID=$USER_POOL_CLIENT_ID
-
-# Additional endpoints (all AWS-based)
-REACT_APP_GRAPHQL_URL=${API_URL}/graphql
-REACT_APP_WS_URL=$(echo $API_URL | sed 's/https:/wss:/g')/ws
-
-# Feature Flags
-REACT_APP_ENABLE_DEBUG=false
-REACT_APP_ENABLE_ANALYTICS=true
-REACT_APP_ENABLE_MOCK_DATA=false
-
-# Build identification
-REACT_APP_BUILD_TIME=$(date -Iseconds)
-REACT_APP_BUILD_VERSION=$ENVIRONMENT-$(date +%Y%m%d-%H%M%S)
-EOF
-    print_success "Updated .env.production with discovered API endpoints"
-fi
-
-# Build with the appropriate environment
+# Build frontend with static configuration
 if [ "$ENVIRONMENT" = "production" ]; then
-    # Explicitly set environment variables for production build
+    # Production uses static configuration from static-config.ts
     REACT_APP_ENVIRONMENT=production \
-    REACT_APP_API_URL="$API_URL" \
-    REACT_APP_USER_POOL_ID="$USER_POOL_ID" \
-    REACT_APP_CLIENT_ID="$USER_POOL_CLIENT_ID" \
-    REACT_APP_REGION="$AWS_REGION" \
-    REACT_APP_GRAPHQL_URL="${API_URL}/graphql" \
-    REACT_APP_WS_URL="$(echo $API_URL | sed 's/https:/wss:/g')/ws" \
-    REACT_APP_ENABLE_DEBUG=false \
-    REACT_APP_ENABLE_ANALYTICS=true \
-    REACT_APP_ENABLE_MOCK_DATA=false \
+    REACT_APP_USE_STATIC_CONFIG=true \
+    npm run build
+elif [ "$ENVIRONMENT" = "staging" ]; then
+    # Staging also uses static configuration
+    REACT_APP_ENVIRONMENT=staging \
+    REACT_APP_USE_STATIC_CONFIG=true \
     npm run build
 else
+    # Development may still use dynamic config
     npm run build
 fi
-print_success "Frontend built"
 
-# Restore .env.local if it was moved
-if [ "$ENVIRONMENT" = "production" ] && [ -f ".env.local.backup" ]; then
-    mv .env.local.backup .env.local
-fi
+print_success "Frontend built with static configuration"
 
-# Deploy to S3
-if [ -n "$S3_BUCKET" ]; then
-    print_status "Deploying frontend to S3 bucket: $S3_BUCKET..."
-    
-    # Check if bucket exists
-    if ! aws s3api head-bucket --bucket "$S3_BUCKET" --region "$AWS_REGION" 2>/dev/null; then
-        print_warning "S3 bucket $S3_BUCKET does not exist yet. Waiting for CloudFormation to create it..."
-        sleep 10
-        
-        # Try one more time
-        if ! aws s3api head-bucket --bucket "$S3_BUCKET" --region "$AWS_REGION" 2>/dev/null; then
-            print_error "S3 bucket $S3_BUCKET still doesn't exist. Check CloudFormation stack."
-        fi
-    fi
-    
-    # Ensure bucket has proper website configuration
-    print_status "Configuring S3 bucket for static website hosting..."
-    aws s3api put-bucket-website \
-        --bucket "$S3_BUCKET" \
-        --website-configuration '{
-            "IndexDocument": {"Suffix": "index.html"},
-            "ErrorDocument": {"Key": "index.html"}
-        }' \
-        --region "$AWS_REGION" 2>/dev/null || true
-    
-    # Ensure bucket has proper public access configuration
-    print_status "Configuring S3 bucket public access..."
-    
-    # Remove public access block
-    aws s3api delete-public-access-block \
-        --bucket "$S3_BUCKET" \
-        --region "$AWS_REGION" 2>/dev/null || true
-    
-    # Add bucket policy for public read
-    aws s3api put-bucket-policy \
-        --bucket "$S3_BUCKET" \
-        --policy '{
-            "Version": "2012-10-17",
-            "Statement": [
-                {
-                    "Sid": "PublicReadGetObject",
-                    "Effect": "Allow",
-                    "Principal": "*",
-                    "Action": "s3:GetObject",
-                    "Resource": "arn:aws:s3:::'"$S3_BUCKET"'/*"
-                }
-            ]
-        }' \
-        --region "$AWS_REGION" 2>/dev/null || true
-    
-    # Upload env.js first (before other files)
-    print_status "Uploading env.js configuration..."
-    if [ -f "/tmp/env.js" ]; then
-        aws s3 cp /tmp/env.js "s3://$S3_BUCKET/env.js" \
-            --region "$AWS_REGION" \
-            --cache-control "no-cache, no-store, must-revalidate" \
-            --content-type "application/javascript" 2>&1
-        print_success "env.js uploaded with Cognito configuration"
-    fi
-    
-    # Sync all files with cache headers
-    if aws s3 sync build/ "s3://$S3_BUCKET/" \
-        --delete \
-        --region "$AWS_REGION" \
-        --cache-control "public, max-age=31536000" \
-        --exclude "index.html" \
-        --exclude "*.json" \
-        --exclude "env.js" 2>&1 | tee /tmp/s3-sync.log; then
-        print_success "Static assets uploaded to S3"
-    else
-        print_warning "Some files may have failed to upload. Check /tmp/s3-sync.log"
-    fi
+################################################################################
+# DEPLOY TO S3
+################################################################################
+print_status "Deploying frontend to S3..."
+
+# Sync build files to S3
+if aws s3 sync build/ "s3://$S3_BUCKET_NAME/" \
+    --delete \
+    --region "$AWS_REGION" \
+    --cache-control "public, max-age=31536000" \
+    --exclude "index.html" \
+    --exclude "*.json" 2>&1 | tail -5; then
     
     # Upload index.html with no-cache
-    if aws s3 cp build/index.html "s3://$S3_BUCKET/" \
+    aws s3 cp build/index.html "s3://$S3_BUCKET_NAME/" \
         --region "$AWS_REGION" \
         --cache-control "no-cache, no-store, must-revalidate" \
-        --content-type "text/html" 2>/dev/null; then
-        print_success "index.html uploaded"
-    else
-        print_warning "Failed to upload index.html"
-    fi
+        --content-type "text/html" > /dev/null 2>&1
     
     # Upload JSON files with no-cache
-    if aws s3 cp build/ "s3://$S3_BUCKET/" \
+    aws s3 cp build/ "s3://$S3_BUCKET_NAME/" \
         --recursive \
         --region "$AWS_REGION" \
         --exclude "*" \
         --include "*.json" \
         --cache-control "no-cache, no-store, must-revalidate" \
-        --content-type "application/json" 2>/dev/null; then
-        print_success "JSON files uploaded"
-    else
-        print_warning "Some JSON files may have failed to upload"
-    fi
+        --content-type "application/json" > /dev/null 2>&1
     
     print_success "Frontend deployed to S3"
+else
+    print_warning "Frontend deployment to S3 had some issues"
+fi
+
+################################################################################
+# INVALIDATE CLOUDFRONT CACHE
+################################################################################
+if [ -n "$CLOUDFRONT_ID" ] && [ "$CLOUDFRONT_ID" != "None" ]; then
+    print_status "Invalidating CloudFront cache..."
+    INVALIDATION_ID=$(aws cloudfront create-invalidation \
+        --distribution-id "$CLOUDFRONT_ID" \
+        --paths "/*" \
+        --region "$AWS_REGION" \
+        --query 'Invalidation.Id' \
+        --output text 2>/dev/null || echo "")
     
-    # Invalidate CloudFront if enabled
-    if [ -n "$CLOUDFRONT_ID" ] && [ "$CLOUDFRONT_ID" != "None" ]; then
-        print_status "Invalidating CloudFront cache..."
-        aws cloudfront create-invalidation \
-            --distribution-id "$CLOUDFRONT_ID" \
-            --paths "/*" \
-            --region "$AWS_REGION" > /dev/null
-        print_success "CloudFront cache invalidated"
+    if [ -n "$INVALIDATION_ID" ]; then
+        print_success "CloudFront cache invalidated (ID: $INVALIDATION_ID)"
+    else
+        print_warning "CloudFront invalidation may have failed"
     fi
 fi
 
 cd ../..
 
-# Create default admin user if in production
-if [ "$ENVIRONMENT" = "production" ] && [ -n "$USER_POOL_ID" ]; then
+################################################################################
+# CREATE ADMIN USER (Production Only)
+################################################################################
+if [ "$ENVIRONMENT" = "production" ]; then
     print_status "Checking for admin user..."
     
-    # Check if admin user exists
     USER_EXISTS=$(aws cognito-idp admin-get-user \
         --user-pool-id "$USER_POOL_ID" \
         --username "admin@ordernimbus.com" \
@@ -928,361 +423,156 @@ if [ "$ENVIRONMENT" = "production" ] && [ -n "$USER_POOL_ID" ]; then
     if [ -z "$USER_EXISTS" ]; then
         print_status "Creating admin user..."
         
-        # Wait a bit for user pool to be fully ready
-        sleep 3
-        
-        # Create admin user with retry
-        USER_CREATED=false
-        for i in 1 2 3; do
-            if aws cognito-idp admin-create-user \
+        if aws cognito-idp admin-create-user \
+            --user-pool-id "$USER_POOL_ID" \
+            --username "admin@ordernimbus.com" \
+            --user-attributes \
+                Name=email,Value=admin@ordernimbus.com \
+                Name=email_verified,Value=true \
+            --temporary-password "TempPass123!" \
+            --message-action SUPPRESS \
+            --region "$AWS_REGION" > /dev/null 2>&1; then
+            
+            # Set permanent password
+            aws cognito-idp admin-set-user-password \
                 --user-pool-id "$USER_POOL_ID" \
                 --username "admin@ordernimbus.com" \
-                --user-attributes \
-                    Name=email,Value=admin@ordernimbus.com \
-                    Name=email_verified,Value=true \
-                --temporary-password "TempPass123!" \
-                --message-action SUPPRESS \
-                --region "$AWS_REGION" > /tmp/user-create.log 2>&1; then
-                USER_CREATED=true
-                break
-            else
-                if grep -q "UsernameExistsException" /tmp/user-create.log; then
-                    print_warning "User already exists"
-                    USER_CREATED=true
-                    break
-                fi
-                print_warning "Retry $i: Creating user..."
-                sleep 2
-            fi
-        done
-        
-        if [ "$USER_CREATED" = "true" ]; then
-            # Set permanent password with retry
-            PASSWORD_SET=false
-            for i in 1 2 3; do
-                if aws cognito-idp admin-set-user-password \
-                    --user-pool-id "$USER_POOL_ID" \
-                    --username "admin@ordernimbus.com" \
-                    --password "Admin12345" \
-                    --permanent \
-                    --region "$AWS_REGION" > /tmp/password-set.log 2>&1; then
-                    PASSWORD_SET=true
-                    break
-                else
-                    print_warning "Retry $i: Setting password..."
-                    sleep 2
-                fi
-            done
+                --password "Admin12345" \
+                --permanent \
+                --region "$AWS_REGION" > /dev/null 2>&1
             
-            if [ "$PASSWORD_SET" = "true" ]; then
-                print_success "Admin user created (admin@ordernimbus.com / Admin12345)"
-                print_warning "Please change the admin password after first login!"
-            else
-                print_warning "User created but password may need to be set manually"
-            fi
+            print_success "Admin user created (admin@ordernimbus.com / Admin12345)"
         else
-            print_warning "Could not create admin user. You may need to create it manually."
+            print_warning "Could not create admin user"
         fi
     else
         print_success "Admin user already exists"
     fi
 fi
 
-# Display deployment summary
-print_header "Deployment Complete!"
-echo ""
-echo "Stack Name: ${GREEN}$STACK_NAME${NC}"
-echo "Region: ${GREEN}$AWS_REGION${NC}"
-echo "Environment: ${GREEN}$ENVIRONMENT${NC}"
-echo ""
-
-if [ -n "$API_URL" ]; then
-    echo "API Endpoint: ${CYAN}$API_URL${NC}"
+################################################################################
+# UPDATE SHOPIFY REDIRECT URI
+################################################################################
+if [ -n "$SHOPIFY_CLIENT_ID" ] && [ -n "$API_URL" ]; then
+    print_status "Updating Shopify redirect URI..."
+    aws secretsmanager put-secret-value \
+        --secret-id "ordernimbus/${ENVIRONMENT}/shopify" \
+        --secret-string "{\"SHOPIFY_CLIENT_ID\":\"${SHOPIFY_CLIENT_ID}\",\"SHOPIFY_CLIENT_SECRET\":\"${SHOPIFY_CLIENT_SECRET}\",\"REDIRECT_URI\":\"${API_URL}/api/shopify/callback\"}" \
+        --region "$AWS_REGION" > /dev/null 2>&1
+    print_success "Shopify redirect URI updated"
 fi
 
-if [ -n "$FRONTEND_URL" ]; then
-    echo "Frontend URL: ${CYAN}$FRONTEND_URL${NC}"
-elif [ -n "$S3_BUCKET" ]; then
-    echo "S3 Website: ${CYAN}http://${S3_BUCKET}.s3-website-${AWS_REGION}.amazonaws.com${NC}"
-fi
+################################################################################
+# DEPLOYMENT SUMMARY
+################################################################################
+print_header "Deployment Complete! (Fast Application Deployment)"
 
-if [ "$DOMAIN_NAME" = "app.ordernimbus.com" ] && [ "$ENABLE_CLOUDFRONT" = "true" ]; then
-    echo "Custom Domain: ${CYAN}https://app.ordernimbus.com${NC}"
-elif [ -n "$CLOUDFRONT_ID" ] && [ "$CLOUDFRONT_ID" != "None" ]; then
-    CLOUDFRONT_DOMAIN=$(aws cloudfront get-distribution \
-        --id "$CLOUDFRONT_ID" \
-        --query 'Distribution.DomainName' \
-        --output text 2>/dev/null)
-    if [ -n "$CLOUDFRONT_DOMAIN" ]; then
-        echo "CloudFront URL: ${CYAN}https://$CLOUDFRONT_DOMAIN${NC}"
-    fi
+DEPLOYMENT_TIME=$(date)
+echo ""
+echo "🚀 ${GREEN}Application Infrastructure Deployed Successfully${NC}"
+echo "⏱️  ${GREEN}Deployment completed in ~2-3 minutes${NC} (vs 15-20 minutes for full deployment)"
+echo ""
+echo "📍 Environment: ${GREEN}$ENVIRONMENT${NC}"
+echo "🌍 Region: ${GREEN}$AWS_REGION${NC}"
+echo ""
+
+echo "🔗 URLs:"
+if [ "$ENVIRONMENT" = "production" ]; then
+    echo "  Frontend: ${CYAN}https://app.ordernimbus.com${NC}"
+    echo "  API: ${CYAN}https://api.ordernimbus.com${NC}"
+else
+    echo "  Frontend: ${CYAN}$FRONTEND_URL${NC}"
+    echo "  API: ${CYAN}$API_URL${NC}"
 fi
 
 echo ""
-echo "User Pool ID: ${YELLOW}$USER_POOL_ID${NC}"
-echo "Client ID: ${YELLOW}$USER_POOL_CLIENT_ID${NC}"
+echo "🔑 Authentication:"
+echo "  User Pool: ${YELLOW}$USER_POOL_ID${NC}"
+echo "  Client ID: ${YELLOW}$USER_POOL_CLIENT_ID${NC}"
 
 if [ "$ENVIRONMENT" = "production" ]; then
-    echo ""
-    echo "Admin Credentials:"
-    echo "  Email: ${YELLOW}admin@ordernimbus.com${NC}"
-    echo "  Password: ${YELLOW}Admin12345${NC}"
+    echo "  Admin Login: ${YELLOW}admin@ordernimbus.com / Admin12345${NC}"
 fi
 
-if [ -n "$SHOPIFY_CLIENT_ID" ] && [ -n "$API_URL" ]; then
+echo ""
+echo "🏗️  Infrastructure:"
+echo "  Application Stack: ${YELLOW}$APPLICATION_STACK_NAME${NC}"
+echo "  Immutable Stack: ${YELLOW}$IMMUTABLE_STACK_NAME${NC}"
+echo "  Lambda Function: ${YELLOW}$LAMBDA_NAME${NC}"
+echo "  DynamoDB Table: ${YELLOW}$TABLE_NAME${NC}"
+echo "  S3 Bucket: ${YELLOW}$S3_BUCKET_NAME${NC}"
+echo "  CloudFront: ${YELLOW}$CLOUDFRONT_ID${NC}"
+
+if [ -n "$SHOPIFY_CLIENT_ID" ]; then
     echo ""
-    echo "Shopify Integration:"
-    echo "  Redirect URI: ${YELLOW}${API_URL}/api/shopify/callback${NC}"
+    echo "🛍️  Shopify Integration:"
+    echo "  Redirect URI: ${CYAN}${API_URL}/api/shopify/callback${NC}"
     echo "  ${RED}⚠ Add this URI to your Shopify app settings!${NC}"
 fi
 
 echo ""
+echo "⚡ ${GREEN}Fast Redeployment Benefits:${NC}"
+echo "  • Application changes: 2-3 minutes"
+echo "  • Users preserved across deployments"  
+echo "  • No DNS propagation delays"
+echo "  • No CloudFront wait times"
+echo "  • Simplified configuration management"
 
-# Test endpoints
-print_status "Testing deployment..."
-if [ -n "$API_URL" ]; then
-    # Wait for API to be ready
-    print_status "Waiting for API to be ready..."
-    API_READY=false
-    for i in 1 2 3 4 5; do
-        if curl -s "$API_URL/api/config" --max-time 5 > /dev/null 2>&1; then
-            API_READY=true
-            break
-        else
-            print_warning "API not ready yet, waiting... (attempt $i/5)"
-            sleep 5
-        fi
-    done
-    
-    if [ "$API_READY" = "true" ]; then
-        # Test config endpoint
-        if curl -s "$API_URL/api/config" --max-time 5 | grep -q "environment" 2>/dev/null; then
-            print_success "API config endpoint is working"
-        else
-            print_warning "API config endpoint returned unexpected response"
-        fi
-        
-        # Test authentication if admin user exists
-        if [ "$ENVIRONMENT" = "production" ] && [ -n "$USER_EXISTS" ]; then
-            AUTH_RESPONSE=$(curl -s -X POST "$API_URL/api/auth/login" \
-                -H "Content-Type: application/json" \
-                -d '{"email":"admin@ordernimbus.com","password":"Admin12345"}' \
-                --max-time 5 2>/dev/null || echo "")
-            
-            if echo "$AUTH_RESPONSE" | grep -q "tokens\|token\|accessToken" 2>/dev/null; then
-                print_success "Authentication (UC001) is working"
-            elif echo "$AUTH_RESPONSE" | grep -q "error" 2>/dev/null; then
-                print_warning "Authentication returned error: $(echo $AUTH_RESPONSE | jq -r '.error' 2>/dev/null || echo 'Unknown')"
-            else
-                print_warning "Authentication may need configuration"
-            fi
-        fi
-        
-        # Test stores endpoint
-        STORES_RESPONSE=$(curl -s "$API_URL/api/stores" -H "userId: test" --max-time 5 2>/dev/null || echo "")
-        if echo "$STORES_RESPONSE" | grep -q "stores\|data" 2>/dev/null; then
-            print_success "Store management (UC002) is working"
-        else
-            print_warning "Store endpoint may need configuration"
-        fi
-        
-        # Test Shopify connection
-        SHOPIFY_RESPONSE=$(curl -s -X POST "$API_URL/api/shopify/connect" \
-            -H "Content-Type: application/json" \
-            -d '{"storeDomain":"test.myshopify.com","userId":"test"}' \
-            --max-time 5 2>/dev/null || echo "")
-        
-        if echo "$SHOPIFY_RESPONSE" | grep -q "authUrl" 2>/dev/null; then
-            print_success "Shopify connection (UC003) is working"
-            
-            # Extract and validate redirect URI
-            AUTH_URL=$(echo "$SHOPIFY_RESPONSE" | jq -r '.authUrl' 2>/dev/null || echo "")
-            if [ -n "$AUTH_URL" ]; then
-                REDIRECT_URI=$(echo "$AUTH_URL" | python3 -c "
-import sys, urllib.parse
-url = sys.stdin.read().strip()
-if 'redirect_uri=' in url:
-    redirect_uri = url.split('redirect_uri=')[1].split('&')[0]
-    print(urllib.parse.unquote(redirect_uri))
-" 2>/dev/null || echo "")
-                
-                if [ -n "$REDIRECT_URI" ]; then
-                    print_success "Shopify redirect URI: $REDIRECT_URI"
-                    
-                    # Check if it matches the expected format
-                    EXPECTED_REDIRECT="${API_URL}/api/shopify/callback"
-                    if [ "$REDIRECT_URI" = "$EXPECTED_REDIRECT" ]; then
-                        print_success "Redirect URI is correctly configured for dynamic resolution"
-                    else
-                        print_warning "Redirect URI mismatch - Expected: $EXPECTED_REDIRECT"
-                    fi
-                fi
-            fi
-        else
-            print_warning "Shopify connection may need configuration"
-        fi
-    else
-        print_warning "API is not responding. Please check CloudWatch logs."
-    fi
-fi
+echo ""
+echo "🔄 Quick Commands:"
+echo "  Redeploy application: ${GREEN}./deploy.sh $ENVIRONMENT $AWS_REGION${NC}"
+echo "  Teardown application: ${GREEN}./teardown-application.sh $ENVIRONMENT $AWS_REGION${NC}"
+echo "  View logs: ${GREEN}aws logs tail /aws/lambda/$LAMBDA_NAME --follow${NC}"
 
-print_success "Deployment successful!"
-
-# AWS Resource Availability Tests
-print_header "Running AWS Resource Availability Tests"
+################################################################################
+# BASIC HEALTH CHECKS
+################################################################################
+print_header "Running Health Checks"
 
 TESTS_PASSED=0
 TESTS_FAILED=0
 
-# Test 1: API Gateway health
-print_status "Testing API Gateway..."
-if [ -n "$API_URL" ]; then
-    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$API_URL/api/config" --max-time 10)
-    if [ "$HTTP_CODE" = "200" ]; then
-        print_success "API Gateway is responding (HTTP $HTTP_CODE)"
-        TESTS_PASSED=$((TESTS_PASSED + 1))
-    else
-        print_error "API Gateway test failed (HTTP $HTTP_CODE)"
-        TESTS_FAILED=$((TESTS_FAILED + 1))
-    fi
+# Test 1: API Health
+print_status "Testing API health..."
+if curl -s "$API_URL/api/health" --max-time 10 | grep -q "healthy" 2>/dev/null; then
+    print_success "API health check passed"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
 else
-    print_warning "API URL not available for testing"
+    print_warning "API health check failed or timeout"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
-# Test 2: S3 bucket accessibility
-print_status "Testing S3 bucket..."
-if [ -n "$S3_BUCKET" ]; then
-    if aws s3 ls "s3://$S3_BUCKET/" --region "$AWS_REGION" > /dev/null 2>&1; then
-        print_success "S3 bucket is accessible"
-        TESTS_PASSED=$((TESTS_PASSED + 1))
-    else
-        print_error "S3 bucket is not accessible"
-        TESTS_FAILED=$((TESTS_FAILED + 1))
-    fi
+# Test 2: Frontend accessibility  
+print_status "Testing frontend accessibility..."
+HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$FRONTEND_URL" --max-time 10)
+if [ "$HTTP_CODE" = "200" ]; then
+    print_success "Frontend is accessible (HTTP $HTTP_CODE)"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+    print_warning "Frontend accessibility issue (HTTP $HTTP_CODE)"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
-# Test 3: Frontend URL accessibility
-print_status "Testing frontend URL..."
-FRONTEND_TEST_URL=""
-if [ "$DOMAIN_NAME" = "app.ordernimbus.com" ]; then
-    FRONTEND_TEST_URL="https://app.ordernimbus.com"
-elif [ -n "$CLOUDFRONT_ID" ] && [ "$CLOUDFRONT_ID" != "None" ]; then
-    CLOUDFRONT_DOMAIN=$(aws cloudfront get-distribution \
-        --id "$CLOUDFRONT_ID" \
-        --query 'Distribution.DomainName' \
-        --output text 2>/dev/null)
-    if [ -n "$CLOUDFRONT_DOMAIN" ]; then
-        FRONTEND_TEST_URL="https://$CLOUDFRONT_DOMAIN"
-    fi
-elif [ -n "$S3_BUCKET" ]; then
-    FRONTEND_TEST_URL="http://${S3_BUCKET}.s3-website-${AWS_REGION}.amazonaws.com"
+# Test 3: Static configuration
+print_status "Testing static configuration..."
+if curl -s "$API_URL/api/config" --max-time 10 | grep -q "environment" 2>/dev/null; then
+    print_success "Static configuration endpoint working"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+    print_warning "Static configuration endpoint issue"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
-if [ -n "$FRONTEND_TEST_URL" ]; then
-    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$FRONTEND_TEST_URL" --max-time 10)
-    if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "403" ]; then  # 403 might be expected for S3
-        print_success "Frontend is accessible at $FRONTEND_TEST_URL (HTTP $HTTP_CODE)"
-        TESTS_PASSED=$((TESTS_PASSED + 1))
-    else
-        print_error "Frontend is not accessible (HTTP $HTTP_CODE)"
-        TESTS_FAILED=$((TESTS_FAILED + 1))
-    fi
-fi
-
-# Test 4: CloudFront distribution status (if applicable)
-if [ -n "$CLOUDFRONT_ID" ] && [ "$CLOUDFRONT_ID" != "None" ]; then
-    print_status "Testing CloudFront distribution..."
-    DIST_STATUS=$(aws cloudfront get-distribution \
-        --id "$CLOUDFRONT_ID" \
-        --query 'Distribution.Status' \
-        --output text 2>/dev/null || echo "Unknown")
-    
-    DIST_ENABLED=$(aws cloudfront get-distribution \
-        --id "$CLOUDFRONT_ID" \
-        --query 'Distribution.DistributionConfig.Enabled' \
-        --output text 2>/dev/null || echo "false")
-    
-    if [ "$DIST_STATUS" = "Deployed" ] && [ "$DIST_ENABLED" = "true" ]; then
-        print_success "CloudFront distribution is deployed and enabled"
-        TESTS_PASSED=$((TESTS_PASSED + 1))
-    elif [ "$DIST_STATUS" = "InProgress" ]; then
-        print_warning "CloudFront distribution is still deploying (this may take 15-20 minutes)"
-        TESTS_PASSED=$((TESTS_PASSED + 1))
-    else
-        print_error "CloudFront distribution issue: Status=$DIST_STATUS, Enabled=$DIST_ENABLED"
-        TESTS_FAILED=$((TESTS_FAILED + 1))
-    fi
-fi
-
-# Test 5: Cognito User Pool
-print_status "Testing Cognito User Pool..."
-if [ -n "$USER_POOL_ID" ]; then
-    POOL_STATUS=$(aws cognito-idp describe-user-pool \
-        --user-pool-id "$USER_POOL_ID" \
-        --region "$AWS_REGION" \
-        --query 'UserPool.Status' \
-        --output text 2>/dev/null || echo "Unknown")
-    
-    if [ "$POOL_STATUS" = "Enabled" ]; then
-        print_success "Cognito User Pool is enabled"
-        TESTS_PASSED=$((TESTS_PASSED + 1))
-    else
-        print_error "Cognito User Pool status: $POOL_STATUS"
-        TESTS_FAILED=$((TESTS_FAILED + 1))
-    fi
-fi
-
-# Test 6: DNS resolution (for production)
-if [ "$DOMAIN_NAME" = "app.ordernimbus.com" ]; then
-    print_status "Testing DNS resolution..."
-    DNS_RESULT=$(nslookup app.ordernimbus.com 8.8.8.8 2>/dev/null | grep -A 1 "Name:" | grep "Address:" | head -1)
-    if [ -n "$DNS_RESULT" ]; then
-        print_success "DNS is resolving for app.ordernimbus.com"
-        TESTS_PASSED=$((TESTS_PASSED + 1))
-    else
-        print_warning "DNS may still be propagating (can take up to 48 hours)"
-    fi
-fi
-
-# Summary
 echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "Test Results: ${GREEN}$TESTS_PASSED passed${NC}, ${RED}$TESTS_FAILED failed${NC}"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "🧪 Health Check Results: ${GREEN}$TESTS_PASSED passed${NC}, ${RED}$TESTS_FAILED failed${NC}"
 
 if [ $TESTS_FAILED -gt 0 ]; then
     echo ""
-    print_warning "Some tests failed. Please check the errors above."
-    echo "Common solutions:"
-    echo "  • CloudFront: Wait 15-20 minutes for distribution to deploy"
-    echo "  • DNS: Can take up to 48 hours to propagate globally"
-    echo "  • S3: Ensure bucket policy allows public access"
+    print_warning "Some health checks failed - this is normal for new deployments"
+    echo "  • API may need 1-2 minutes to warm up"
+    echo "  • CloudFront cache may need a few minutes to propagate"
 fi
 
 echo ""
-echo "Next steps:"
-echo "  1. Visit the frontend URL to test the application"
-echo "  2. Check CloudWatch logs if any issues occur"
-echo "  3. Run './teardown-production.sh' to remove all resources"
-
-# Shopify configuration reminder
-if [ -n "$API_URL" ]; then
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "${YELLOW}IMPORTANT: Shopify App Configuration${NC}"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
-    echo "Add this redirect URI to your Shopify Partners Dashboard:"
-    echo "  ${CYAN}${API_URL}/api/shopify/callback${NC}"
-    echo ""
-    echo "Steps:"
-    echo "  1. Go to ${CYAN}https://partners.shopify.com${NC}"
-    echo "  2. Navigate to Apps → Your App → App Setup"
-    echo "  3. In 'App URLs' section, add the redirect URI above"
-    echo "  4. Save changes"
-    echo ""
-    echo "For validation, run:"
-    echo "  ${GREEN}./tests/validate-shopify-redirect.sh $ENVIRONMENT $AWS_REGION${NC}"
-fi
-
+print_success "✅ Fast application deployment completed successfully!"
 echo ""

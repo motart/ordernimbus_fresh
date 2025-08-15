@@ -1,18 +1,25 @@
 /**
- * Environment Configuration for OrderNimbus
+ * Environment Configuration for OrderNimbus (Immutable Architecture)
  * 
  * @description
- * Cloud-native configuration system that fetches config from AWS at runtime.
- * NO HARDCODING - all values come from the cloud via the /api/config endpoint.
+ * STATIC configuration system using immutable infrastructure.
+ * NO DYNAMIC FETCHING - all values are hardcoded from immutable CloudFormation stack.
  * 
- * This file now serves as a compatibility layer for existing code while
- * transitioning to the cloud-native ConfigContext approach.
+ * This provides compatibility with existing code while using the new
+ * static configuration approach for maximum performance and reliability.
+ * 
+ * @architecture
+ * - Immutable Infrastructure: CloudFront, Cognito, DNS, S3 (deployed once)
+ * - Application Infrastructure: Lambda, API Gateway, DynamoDB (fast redeploy)
  * 
  * @environments
  * - development: Local development (localhost)
- * - staging: Staging environment
- * - production: Production environment (app.ordernimbus.com)
+ * - staging: Staging environment with static config
+ * - production: Production environment with static config (app.ordernimbus.com)
  */
+
+// Import static configuration system
+import { getStaticConfig, type StaticConfig } from './static-config';
 
 export interface EnvironmentConfig {
   // Application URLs
@@ -98,56 +105,47 @@ export const isSecureContext = (): boolean => {
 };
 
 /**
- * Get complete environment configuration
- * Simple approach: Just use environment variables directly
+ * Convert StaticConfig to EnvironmentConfig for compatibility
+ */
+const convertStaticToEnvironmentConfig = (staticConfig: StaticConfig): EnvironmentConfig => {
+  return {
+    appUrl: `https://${staticConfig.immutable.frontendDomain}`,
+    apiUrl: staticConfig.application.apiUrl,
+    graphqlUrl: staticConfig.application.graphqlUrl,
+    wsUrl: staticConfig.application.wsUrl,
+    userPoolId: staticConfig.immutable.userPoolId,
+    clientId: staticConfig.immutable.clientId,
+    region: staticConfig.immutable.region,
+    environment: staticConfig.environment,
+    isSecure: staticConfig.isSecure,
+    shopifyRedirectUri: staticConfig.application.shopifyRedirectUri,
+    features: staticConfig.features,
+  };
+};
+
+/**
+ * Get complete environment configuration using static config system
+ * FAST: No API calls, no dynamic fetching - instant configuration
  */
 export const getEnvironmentConfig = (): EnvironmentConfig => {
+  // Check if static config should be used (new immutable architecture)
+  const useStaticConfig = process.env.REACT_APP_USE_STATIC_CONFIG === 'true' || 
+                          process.env.NODE_ENV === 'production' ||
+                          window.location.hostname === 'app.ordernimbus.com';
+  
+  if (useStaticConfig) {
+    console.log('🚀 Using static configuration (immutable architecture)');
+    const staticConfig = getStaticConfig();
+    return convertStaticToEnvironmentConfig(staticConfig);
+  }
+  
+  // Fallback to legacy dynamic configuration for development
+  console.log('⚠️  Using legacy dynamic configuration');
   const env = detectEnvironment();
   const isSecure = isSecureContext();
   
-  // First try to use runtime config from env.js (loaded by CloudFormation)
-  const runtimeConfig = typeof window !== 'undefined' ? (window as any).RUNTIME_CONFIG : undefined;
-  
-  // Use runtime config if available, then environment variables, then defaults
-  const apiUrl = runtimeConfig?.REACT_APP_API_URL || process.env.REACT_APP_API_URL || (env === 'development' ? 'http://localhost:3001' : '');
-  const userPoolId = runtimeConfig?.REACT_APP_USER_POOL_ID || process.env.REACT_APP_USER_POOL_ID || (env === 'development' ? 'dev-pool-id' : '');
-  const clientId = runtimeConfig?.REACT_APP_CLIENT_ID || process.env.REACT_APP_CLIENT_ID || (env === 'development' ? 'dev-client-id' : '');
-  const region = runtimeConfig?.REACT_APP_REGION || process.env.REACT_APP_REGION || 'us-west-1';
-  
-  if (apiUrl && userPoolId && clientId) {
-    if (runtimeConfig) {
-      console.log('Using runtime configuration from CloudFormation (env.js)');
-    } else {
-      console.log('Using environment variables configuration');
-    }
-    
-    return {
-      appUrl: typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000',
-      apiUrl,
-      graphqlUrl: process.env.REACT_APP_GRAPHQL_URL || `${apiUrl}/graphql`,
-      wsUrl: process.env.REACT_APP_WS_URL || apiUrl.replace('https://', 'wss://').replace('http://', 'ws://') + '/ws',
-      
-      userPoolId,
-      clientId,
-      region: region || 'us-west-1',
-      
-      environment: env,
-      isSecure,
-      
-      shopifyRedirectUri: `${apiUrl}/api/shopify/callback`,
-      
-      features: {
-        enableDebug: process.env.REACT_APP_ENABLE_DEBUG === 'true',
-        enableAnalytics: process.env.REACT_APP_ENABLE_ANALYTICS === 'true',
-        enableMockData: process.env.REACT_APP_ENABLE_MOCK_DATA === 'true',
-        useWebCrypto: isSecure && Boolean(window.crypto?.subtle)
-      }
-    };
-  }
-  
-  // For development without env vars, use defaults
-  if (env === 'development' && !apiUrl) {
-    console.log('Using development defaults');
+  // Legacy development configuration
+  if (env === 'development') {
     return {
       appUrl: 'http://localhost:3000',
       apiUrl: 'http://localhost:3001',
@@ -162,35 +160,16 @@ export const getEnvironmentConfig = (): EnvironmentConfig => {
       features: {
         enableDebug: true,
         enableAnalytics: false,
-        enableMockData: false,
+        enableMockData: true,
         useWebCrypto: false
       }
     };
   }
   
-  // Production must have env vars set
-  console.error('Configuration error: Environment variables not set!');
-  console.error('Required: REACT_APP_API_URL, REACT_APP_USER_POOL_ID, REACT_APP_CLIENT_ID');
-  
-  // Return empty config that will show error
-  return {
-    appUrl: typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000',
-    apiUrl: '',
-    graphqlUrl: '',
-    wsUrl: '',
-    userPoolId: '',
-    clientId: '',
-    region: 'us-west-1',
-    environment: env,
-    isSecure,
-    shopifyRedirectUri: '',
-    features: {
-      enableDebug: false,
-      enableAnalytics: false,
-      enableMockData: false,
-      useWebCrypto: false
-    }
-  };
+  // For non-development environments, force static config
+  console.warn('Non-development environment detected, falling back to static config');
+  const staticConfig = getStaticConfig();
+  return convertStaticToEnvironmentConfig(staticConfig);
 };
 
 /**

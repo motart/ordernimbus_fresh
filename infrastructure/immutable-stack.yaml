@@ -1,0 +1,420 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'OrderNimbus Immutable Infrastructure - Deploy Once, Use Forever'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: production
+    Description: Environment name (production, staging, development)
+    AllowedValues:
+      - production
+      - staging
+      - development
+
+  Domain:
+    Type: String
+    Default: ordernimbus.com
+    Description: Root domain name
+
+  SubdomainPrefix:
+    Type: String
+    Default: app
+    Description: Subdomain prefix for the frontend (app.ordernimbus.com)
+
+  ApiSubdomainPrefix:
+    Type: String
+    Default: api
+    Description: Subdomain prefix for the API (api.ordernimbus.com)
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, 'production']
+  CreateDNS: !Equals [!Ref Environment, 'production']  # Only production gets custom DNS
+
+Resources:
+  # ==================== HOSTED ZONE (if needed) ====================
+  # This should already exist, but documented here for reference
+  # HostedZone:
+  #   Type: AWS::Route53::HostedZone
+  #   Properties:
+  #     Name: !Ref Domain
+
+  # ==================== SSL CERTIFICATE (us-east-1 for CloudFront) ====================
+  SSLCertificate:
+    Type: AWS::CertificateManager::Certificate
+    Condition: CreateDNS
+    Properties:
+      DomainName: !Sub '${SubdomainPrefix}.${Domain}'
+      SubjectAlternativeNames:
+        - !Sub '${ApiSubdomainPrefix}.${Domain}'
+        - !Sub '*.${Domain}'
+      ValidationMethod: DNS
+      DomainValidationOptions:
+        - DomainName: !Sub '${SubdomainPrefix}.${Domain}'
+          HostedZoneId: Z03623712FIVU7Z4CJ949  # ordernimbus.com hosted zone
+        - DomainName: !Sub '${ApiSubdomainPrefix}.${Domain}'
+          HostedZoneId: Z03623712FIVU7Z4CJ949
+        - DomainName: !Sub '*.${Domain}'
+          HostedZoneId: Z03623712FIVU7Z4CJ949
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ordernimbus-ssl'
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ==================== COGNITO USER POOL (Immutable) ====================
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub 'ordernimbus-${Environment}-users'
+      AutoVerifiedAttributes:
+        - email
+      UsernameAttributes:
+        - email
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Required: true
+          Mutable: false
+        - Name: company_id
+          AttributeDataType: String
+          Required: false
+          Mutable: true
+          DeveloperOnlyAttribute: false
+        - Name: company_name
+          AttributeDataType: String
+          Required: false
+          Mutable: true
+          DeveloperOnlyAttribute: false
+        - Name: role
+          AttributeDataType: String
+          Required: false
+          Mutable: true
+          DeveloperOnlyAttribute: false
+      UserPoolTags:
+        Name: !Sub '${Environment}-ordernimbus-pool'
+        Environment: !Ref Environment
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref UserPool
+      ClientName: !Sub 'ordernimbus-${Environment}-client'
+      GenerateSecret: false
+      ExplicitAuthFlows:
+        - ALLOW_ADMIN_USER_PASSWORD_AUTH
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+      TokenValidityUnits:
+        AccessToken: hours
+        IdToken: hours
+        RefreshToken: days
+      AccessTokenValidity: 24
+      IdTokenValidity: 24
+      RefreshTokenValidity: 30
+      PreventUserExistenceErrors: ENABLED
+
+  # ==================== S3 BUCKET FOR FRONTEND ====================
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'ordernimbus-${Environment}-frontend-${AWS::AccountId}'
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: index.html
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: ['*']
+            AllowedMethods: 
+              - GET
+              - HEAD
+              - POST
+            AllowedOrigins: ['*']
+            MaxAge: 3600
+      NotificationConfiguration:
+        TopicConfigurations: []
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ordernimbus-frontend'
+        - Key: Environment
+          Value: !Ref Environment
+
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: PublicReadGetObject
+            Effect: Allow
+            Principal: '*'
+            Action: s3:GetObject
+            Resource: !Sub '${FrontendBucket.Arn}/*'
+
+  # ==================== CLOUDFRONT DISTRIBUTION ====================
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub 'OrderNimbus ${Environment} - Immutable Infrastructure'
+        DefaultRootObject: index.html
+        HttpVersion: http2
+        PriceClass: PriceClass_100
+        
+        # Custom domain (only for production)
+        Aliases: !If
+          - CreateDNS
+          - [!Sub '${SubdomainPrefix}.${Domain}']
+          - !Ref 'AWS::NoValue'
+        
+        # SSL Certificate (only for production)
+        ViewerCertificate: !If
+          - CreateDNS
+          - AcmCertificateArn: !Ref SSLCertificate
+            MinimumProtocolVersion: TLSv1.2_2021
+            SslSupportMethod: sni-only
+          - CloudFrontDefaultCertificate: true
+        
+        # S3 Origin
+        Origins:
+          - Id: S3Origin
+            DomainName: !Sub '${FrontendBucket}.s3-website-${AWS::Region}.amazonaws.com'
+            CustomOriginConfig:
+              HTTPPort: 80
+              HTTPSPort: 443
+              OriginProtocolPolicy: http-only
+              OriginSSLProtocols:
+                - TLSv1.2
+        
+        # Default Cache Behavior
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          CachedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          Compress: true
+          ForwardedValues:
+            QueryString: false
+            Cookies:
+              Forward: none
+          MinTTL: 0
+          DefaultTTL: 86400    # 1 day
+          MaxTTL: 31536000     # 1 year
+        
+        # Custom Error Pages for SPA
+        CustomErrorResponses:
+          - ErrorCachingMinTTL: 0
+            ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+          - ErrorCachingMinTTL: 0
+            ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+        
+        # Logging disabled for staging to avoid ACL issues
+        # Logging:
+        #   Bucket: !Sub '${FrontendBucket}.s3.amazonaws.com'
+        #   Prefix: 'cloudfront-logs/'
+        #   IncludeCookies: false
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ordernimbus-cloudfront'
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ==================== ROUTE 53 DNS RECORDS ====================
+  # Frontend DNS record (app.ordernimbus.com -> CloudFront)
+  FrontendDNSRecord:
+    Type: AWS::Route53::RecordSet
+    Condition: CreateDNS
+    Properties:
+      HostedZoneId: Z03623712FIVU7Z4CJ949  # ordernimbus.com hosted zone
+      Name: !Sub '${SubdomainPrefix}.${Domain}'
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt CloudFrontDistribution.DomainName
+        HostedZoneId: Z2FDTNDATAQYW2  # CloudFront's hosted zone ID (fixed)
+        EvaluateTargetHealth: false
+
+  # ==================== SSM PARAMETERS FOR STATIC CONFIGURATION ====================
+  # These values are now immutable and can be hardcoded in frontend
+  
+  SSMUserPoolId:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/ordernimbus/${Environment}/immutable/cognito/user-pool-id'
+      Type: String
+      Value: !Ref UserPool
+      Description: 'Immutable Cognito User Pool ID'
+      Tags:
+        Environment: !Ref Environment
+
+  SSMUserPoolClientId:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/ordernimbus/${Environment}/immutable/cognito/client-id'
+      Type: String
+      Value: !Ref UserPoolClient
+      Description: 'Immutable Cognito Client ID'
+      Tags:
+        Environment: !Ref Environment
+
+  SSMFrontendDomain:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/ordernimbus/${Environment}/immutable/frontend/domain'
+      Type: String
+      Value: !If
+        - CreateDNS
+        - !Sub '${SubdomainPrefix}.${Domain}'
+        - !GetAtt CloudFrontDistribution.DomainName
+      Description: 'Immutable Frontend Domain'
+      Tags:
+        Environment: !Ref Environment
+
+  SSMCloudFrontId:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/ordernimbus/${Environment}/immutable/cloudfront/distribution-id'
+      Type: String
+      Value: !Ref CloudFrontDistribution
+      Description: 'Immutable CloudFront Distribution ID'
+      Tags:
+        Environment: !Ref Environment
+
+  SSMBucketName:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/ordernimbus/${Environment}/immutable/s3/bucket-name'
+      Type: String
+      Value: !Ref FrontendBucket
+      Description: 'Immutable S3 Bucket Name'
+      Tags:
+        Environment: !Ref Environment
+
+  SSMRegion:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/ordernimbus/${Environment}/immutable/aws/region'
+      Type: String
+      Value: !Ref AWS::Region
+      Description: 'Immutable AWS Region'
+      Tags:
+        Environment: !Ref Environment
+
+Outputs:
+  # CloudFront Distribution
+  CloudFrontDistributionId:
+    Description: CloudFront Distribution ID (Immutable)
+    Value: !Ref CloudFrontDistribution
+    Export:
+      Name: !Sub '${AWS::StackName}-CloudFrontDistributionId'
+
+  CloudFrontDomainName:
+    Description: CloudFront Distribution Domain Name
+    Value: !GetAtt CloudFrontDistribution.DomainName
+    Export:
+      Name: !Sub '${AWS::StackName}-CloudFrontDomainName'
+
+  # Frontend URLs
+  FrontendURL:
+    Description: Frontend URL (Immutable)
+    Value: !If
+      - CreateDNS
+      - !Sub 'https://${SubdomainPrefix}.${Domain}'
+      - !Sub 'https://${CloudFrontDistribution.DomainName}'
+    Export:
+      Name: !Sub '${AWS::StackName}-FrontendURL'
+
+  # S3 Bucket
+  S3BucketName:
+    Description: S3 Bucket for frontend hosting (Immutable)
+    Value: !Ref FrontendBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-S3BucketName'
+
+  S3WebsiteURL:
+    Description: S3 Website URL (Immutable)
+    Value: !Sub 'http://${FrontendBucket}.s3-website-${AWS::Region}.amazonaws.com'
+    Export:
+      Name: !Sub '${AWS::StackName}-S3WebsiteURL'
+
+  # Cognito
+  UserPoolId:
+    Description: Cognito User Pool ID (Immutable)
+    Value: !Ref UserPool
+    Export:
+      Name: !Sub '${AWS::StackName}-UserPoolId'
+
+  UserPoolClientId:
+    Description: Cognito User Pool Client ID (Immutable)
+    Value: !Ref UserPoolClient
+    Export:
+      Name: !Sub '${AWS::StackName}-UserPoolClientId'
+
+  # Region
+  Region:
+    Description: AWS Region (Immutable)
+    Value: !Ref AWS::Region
+    Export:
+      Name: !Sub '${AWS::StackName}-Region'
+
+  # DNS Records (for reference)
+  FrontendDomain:
+    Description: Frontend Custom Domain (Immutable)
+    Value: !If
+      - CreateDNS
+      - !Sub '${SubdomainPrefix}.${Domain}'
+      - !GetAtt CloudFrontDistribution.DomainName
+    Export:
+      Name: !Sub '${AWS::StackName}-FrontendDomain'
+
+  ApiDomain:
+    Description: API Custom Domain (Immutable)
+    Value: !If
+      - CreateDNS
+      - !Sub '${ApiSubdomainPrefix}.${Domain}'
+      - 'api-placeholder.com'
+    Export:
+      Name: !Sub '${AWS::StackName}-ApiDomain'
+
+  # SSL Certificate
+  SSLCertificateArn:
+    Description: SSL Certificate ARN (Immutable)
+    Condition: CreateDNS
+    Value: !Ref SSLCertificate
+    Export:
+      Name: !Sub '${AWS::StackName}-SSLCertificateArn'
+
+  # Configuration Summary
+  ConfigurationSummary:
+    Description: Static configuration summary for hardcoding
+    Value: !Sub |
+      Frontend: https://${SubdomainPrefix}.${Domain}
+      API: https://${ApiSubdomainPrefix}.${Domain}
+      UserPool: ${UserPool}
+      ClientId: ${UserPoolClient}
+      Region: ${AWS::Region}
+      CloudFront: ${CloudFrontDistribution}
+      S3Bucket: ${FrontendBucket}
