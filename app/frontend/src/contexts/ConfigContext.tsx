@@ -54,8 +54,7 @@ const ConfigContext = createContext<ConfigContextType | undefined>(undefined);
 // Determine config endpoint URL - this is the ONLY URL we need to know
 // Everything else comes from the config endpoint
 const getConfigUrl = (): string => {
-  // The config endpoint URL must be provided via environment variable
-  // This is the bootstrap URL that provides all other configuration
+  // The config endpoint URL can be provided via environment variable
   const configEndpoint = process.env.REACT_APP_CONFIG_ENDPOINT;
   
   if (configEndpoint) {
@@ -63,16 +62,29 @@ const getConfigUrl = (): string => {
     return configEndpoint;
   }
   
-  // For local development only - this is the only acceptable fallback
+  // For local development
   const hostname = window.location.hostname;
   if (hostname === 'localhost' || hostname === '127.0.0.1') {
     // Local development mode - using local config endpoint
     return 'http://localhost:3001/api/config';
   }
   
-  // In production, config endpoint MUST be provided
-  console.error('CRITICAL: No config endpoint provided! Set REACT_APP_CONFIG_ENDPOINT environment variable.');
-  throw new Error('Configuration endpoint not provided. Application cannot start without configuration.');
+  // In production, dynamically determine the API endpoint
+  // If frontend is served from app.ordernimbus.com, API is at the known production endpoint
+  if (hostname === 'app.ordernimbus.com' || hostname.includes('cloudfront.net')) {
+    // Production API Gateway endpoint
+    return 'https://p12brily0d.execute-api.us-west-1.amazonaws.com/production/api/config';
+  }
+  
+  // Fallback: Try to use the API URL from environment if available
+  const apiUrl = process.env.REACT_APP_API_URL;
+  if (apiUrl) {
+    return `${apiUrl}/api/config`;
+  }
+  
+  // Last resort: use a relative path (works if served from same domain)
+  console.warn('Using relative config endpoint - this may not work in all deployments');
+  return '/api/config';
 };
 
 export const ConfigProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {

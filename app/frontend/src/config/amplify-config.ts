@@ -11,11 +11,19 @@ let cachedConfig: any = null;
 // Fetch configuration from API
 const fetchConfigFromAPI = async () => {
   try {
-    // Get config endpoint from environment or use local for development
-    const configEndpoint = process.env.REACT_APP_CONFIG_ENDPOINT || 
-      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
-        ? 'http://localhost:3001/api/config' 
-        : null);
+    // Get config endpoint from environment or determine dynamically
+    let configEndpoint = process.env.REACT_APP_CONFIG_ENDPOINT;
+    
+    if (!configEndpoint) {
+      const hostname = window.location.hostname;
+      if (hostname === 'localhost' || hostname === '127.0.0.1') {
+        configEndpoint = 'http://localhost:3001/api/config';
+      } else if (hostname === 'app.ordernimbus.com' || hostname.includes('cloudfront.net')) {
+        configEndpoint = 'https://p12brily0d.execute-api.us-west-1.amazonaws.com/production/api/config';
+      } else if (process.env.REACT_APP_API_URL) {
+        configEndpoint = `${process.env.REACT_APP_API_URL}/api/config`;
+      }
+    }
     
     if (!configEndpoint) {
       throw new Error('No configuration endpoint available');
