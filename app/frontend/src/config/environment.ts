@@ -93,14 +93,21 @@ export const getEnvironmentConfig = (): EnvironmentConfig => {
   const env = detectEnvironment();
   const isSecure = isSecureContext();
   
-  // Use environment variables directly - no complex config fetching
-  const apiUrl = process.env.REACT_APP_API_URL || (env === 'development' ? 'http://localhost:3001' : '');
-  const userPoolId = process.env.REACT_APP_USER_POOL_ID || '';
-  const clientId = process.env.REACT_APP_CLIENT_ID || '';
-  const region = process.env.REACT_APP_REGION || 'us-west-1';
+  // First try to use runtime config from env.js (loaded by CloudFormation)
+  const runtimeConfig = (window as any).RUNTIME_CONFIG;
+  
+  // Use runtime config if available, then environment variables, then defaults
+  const apiUrl = runtimeConfig?.REACT_APP_API_URL || process.env.REACT_APP_API_URL || (env === 'development' ? 'http://localhost:3001' : '');
+  const userPoolId = runtimeConfig?.REACT_APP_USER_POOL_ID || process.env.REACT_APP_USER_POOL_ID || '';
+  const clientId = runtimeConfig?.REACT_APP_CLIENT_ID || process.env.REACT_APP_CLIENT_ID || '';
+  const region = runtimeConfig?.REACT_APP_REGION || process.env.REACT_APP_REGION || 'us-west-1';
   
   if (apiUrl && userPoolId && clientId) {
-    console.log('Using environment variables configuration');
+    if (runtimeConfig) {
+      console.log('Using runtime configuration from CloudFormation (env.js)');
+    } else {
+      console.log('Using environment variables configuration');
+    }
     
     return {
       appUrl: window.location.origin,

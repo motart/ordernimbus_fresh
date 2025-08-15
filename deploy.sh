@@ -384,6 +384,27 @@ if [ -n "$API_URL" ]; then
     print_success "API endpoint stored in SSM"
 fi
 
+# Create env.js file with CloudFormation outputs for the frontend
+print_status "Creating env.js with CloudFormation outputs..."
+cat > /tmp/env.js << EOF
+// Auto-generated configuration from CloudFormation outputs
+// Generated at: $(date)
+// Environment: ${ENVIRONMENT}
+window.RUNTIME_CONFIG = {
+  REACT_APP_API_URL: "${API_URL}",
+  REACT_APP_USER_POOL_ID: "${USER_POOL_ID}",
+  REACT_APP_CLIENT_ID: "${USER_POOL_CLIENT_ID}",
+  REACT_APP_REGION: "${AWS_REGION}",
+  REACT_APP_ENVIRONMENT: "${ENVIRONMENT}",
+  REACT_APP_GRAPHQL_URL: "${API_URL}/graphql",
+  REACT_APP_WS_URL: "${API_URL}".replace("https://", "wss://") + "/ws",
+  REACT_APP_ENABLE_DEBUG: ${ENVIRONMENT} !== "production",
+  REACT_APP_ENABLE_ANALYTICS: ${ENVIRONMENT} === "production",
+  REACT_APP_ENABLE_MOCK_DATA: false
+};
+EOF
+print_success "env.js created with correct Cognito configuration"
+
 # Enable ADMIN_USER_PASSWORD_AUTH flow in Cognito
 if [ -n "$USER_POOL_ID" ] && [ -n "$USER_POOL_CLIENT_ID" ]; then
     print_status "Configuring Cognito auth flows..."
@@ -833,13 +854,24 @@ if [ -n "$S3_BUCKET" ]; then
         }' \
         --region "$AWS_REGION" 2>/dev/null || true
     
+    # Upload env.js first (before other files)
+    print_status "Uploading env.js configuration..."
+    if [ -f "/tmp/env.js" ]; then
+        aws s3 cp /tmp/env.js "s3://$S3_BUCKET/env.js" \
+            --region "$AWS_REGION" \
+            --cache-control "no-cache, no-store, must-revalidate" \
+            --content-type "application/javascript" 2>&1
+        print_success "env.js uploaded with Cognito configuration"
+    fi
+    
     # Sync all files with cache headers
     if aws s3 sync build/ "s3://$S3_BUCKET/" \
         --delete \
         --region "$AWS_REGION" \
         --cache-control "public, max-age=31536000" \
         --exclude "index.html" \
-        --exclude "*.json" 2>&1 | tee /tmp/s3-sync.log; then
+        --exclude "*.json" \
+        --exclude "env.js" 2>&1 | tee /tmp/s3-sync.log; then
         print_success "Static assets uploaded to S3"
     else
         print_warning "Some files may have failed to upload. Check /tmp/s3-sync.log"
