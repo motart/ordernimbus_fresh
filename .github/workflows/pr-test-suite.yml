@@ -125,12 +125,12 @@ jobs:
       - name: Check for hardcoded secrets
         run: |
           echo "🔍 Scanning for hardcoded secrets..."
-          # Check for AWS credentials
-          ! grep -r "AKIA[0-9A-Z]\{16\}" --exclude-dir=node_modules --exclude-dir=.git . || (echo "❌ Found AWS credentials" && exit 1)
-          # Check for private keys
-          ! grep -r "BEGIN RSA PRIVATE KEY" --exclude-dir=node_modules --exclude-dir=.git . || (echo "❌ Found private keys" && exit 1)
-          # Check for API keys in code
-          ! grep -r "api[_-]?key.*=.*['\"][a-zA-Z0-9]\{32,\}" --exclude-dir=node_modules --exclude-dir=.git . || (echo "❌ Found API keys" && exit 1)
+          # Check for AWS credentials (exclude workflow files)
+          ! grep -r "AKIA[0-9A-Z]\{16\}" --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=.github . || (echo "❌ Found AWS credentials" && exit 1)
+          # Check for private keys (exclude workflow files)
+          ! grep -r "BEGIN RSA PRIVATE KEY" --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=.github . || (echo "❌ Found private keys" && exit 1)
+          # Check for API keys in code (exclude workflow files)
+          ! grep -r "api[_-]?key.*=.*['\"][a-zA-Z0-9]\{32,\}" --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=.github . || (echo "❌ Found API keys" && exit 1)
           echo "✅ No hardcoded secrets found"
       
       - name: Security audit
