@@ -33,8 +33,21 @@ const ShopifyConnect: React.FC<ShopifyConnectProps> = ({ userId, onSuccess, onCa
         setTimeout(() => {
           const storeData = event.data.data || { 
             success: event.data.success, 
-            storeId: event.data.storeId 
+            storeId: event.data.storeId,
+            apiKey: event.data.apiKey,
+            accessToken: event.data.apiKey // Also set as accessToken for compatibility
           };
+          // Add the store domain we started with if not present
+          if (!storeData.shopifyDomain && storeDomain) {
+            storeData.shopifyDomain = storeDomain.includes('.myshopify.com') 
+              ? storeDomain 
+              : storeDomain + '.myshopify.com';
+          }
+          // Ensure API key is included
+          if (event.data.apiKey) {
+            storeData.apiKey = event.data.apiKey;
+            storeData.accessToken = event.data.apiKey;
+          }
           onSuccess(storeData);
         }, 1500);
       } else if (event.data.type === 'shopify-oauth-error') {
