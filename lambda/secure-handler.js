@@ -2,6 +2,9 @@ const AWS = require('aws-sdk');
 const https = require('https');
 const querystring = require('querystring');
 
+// Configure AWS SDK with region
+AWS.config.update({ region: process.env.AWS_REGION || 'us-west-1' });
+
 const secretsManager = new AWS.SecretsManager();
 const dynamodb = new AWS.DynamoDB.DocumentClient();
 
