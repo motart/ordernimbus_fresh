@@ -1,6 +1,8 @@
 /**
  * Shopify GraphQL Mutations
- * API Version: 2024-07
+ * API Version: 2024-10 (Updated for new Product APIs)
+ * Note: inventoryQuantity is still accepted in input for backwards compatibility
+ * but removed from output queries as it's deprecated
  */
 
 const PRODUCT_CREATE_MUTATION = `
@@ -22,7 +24,6 @@ const PRODUCT_CREATE_MUTATION = `
               title
               sku
               price
-              inventoryQuantity
             }
           }
         }
@@ -53,7 +54,6 @@ const PRODUCT_UPDATE_MUTATION = `
               title
               sku
               price
-              inventoryQuantity
             }
           }
         }
@@ -88,7 +88,6 @@ const PRODUCT_VARIANT_CREATE_MUTATION = `
         price
         compareAtPrice
         barcode
-        inventoryQuantity
         weight
         weightUnit
       }
@@ -110,7 +109,6 @@ const PRODUCT_VARIANT_UPDATE_MUTATION = `
         price
         compareAtPrice
         barcode
-        inventoryQuantity
         weight
         weightUnit
       }

@@ -1,6 +1,7 @@
 /**
  * Shopify GraphQL Queries
- * API Version: 2024-07
+ * API Version: 2024-10 (Updated to support new Product APIs)
+ * Updated: December 2024 - Removed deprecated fields per Shopify's deprecation timeline
  */
 
 const PRODUCTS_QUERY = `
@@ -50,7 +51,6 @@ const PRODUCTS_QUERY = `
                 barcode
                 weight
                 weightUnit
-                inventoryQuantity
                 inventoryPolicy
                 inventoryManagement
                 fulfillmentService
@@ -63,6 +63,22 @@ const PRODUCTS_QUERY = `
                 image {
                   url
                   altText
+                }
+                inventoryItem {
+                  id
+                  tracked
+                  inventoryLevels(first: 10) {
+                    edges {
+                      node {
+                        id
+                        available
+                        location {
+                          id
+                          name
+                        }
+                      }
+                    }
+                  }
                 }
                 createdAt
                 updatedAt
@@ -122,7 +138,6 @@ const PRODUCT_BY_ID_QUERY = `
             barcode
             weight
             weightUnit
-            inventoryQuantity
             inventoryPolicy
             inventoryManagement
             fulfillmentService
@@ -135,6 +150,22 @@ const PRODUCT_BY_ID_QUERY = `
             image {
               url
               altText
+            }
+            inventoryItem {
+              id
+              tracked
+              inventoryLevels(first: 10) {
+                edges {
+                  node {
+                    id
+                    available
+                    location {
+                      id
+                      name
+                    }
+                  }
+                }
+              }
             }
             createdAt
             updatedAt
@@ -192,7 +223,6 @@ const PRODUCT_BY_HANDLE_QUERY = `
             barcode
             weight
             weightUnit
-            inventoryQuantity
             inventoryPolicy
             inventoryManagement
             fulfillmentService
@@ -205,6 +235,22 @@ const PRODUCT_BY_HANDLE_QUERY = `
             image {
               url
               altText
+            }
+            inventoryItem {
+              id
+              tracked
+              inventoryLevels(first: 10) {
+                edges {
+                  node {
+                    id
+                    available
+                    location {
+                      id
+                      name
+                    }
+                  }
+                }
+              }
             }
             createdAt
             updatedAt

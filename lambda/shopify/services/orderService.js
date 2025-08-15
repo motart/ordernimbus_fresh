@@ -8,7 +8,7 @@ const queries = require('../queries');
 const { extractNumericId } = require('../mappers/productMapper');
 
 // Always use GraphQL for orders
-const SHOPIFY_API_VERSION = '2024-07';
+const SHOPIFY_API_VERSION = '2024-10'; // Updated for new Product APIs;
 
 class OrderService {
   constructor(shop, accessToken) {

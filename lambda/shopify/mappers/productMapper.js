@@ -48,8 +48,13 @@ function graphQLProductToREST(gqlProduct) {
       weight: variant.weight || 0,
       weight_unit: variant.weightUnit?.toLowerCase() || 'kg',
       inventory_item_id: variant.inventoryItem?.id ? extractNumericId(variant.inventoryItem.id) : null,
-      inventory_quantity: variant.inventoryQuantity || 0,
-      old_inventory_quantity: variant.inventoryQuantity || 0,
+      // Calculate total inventory quantity from all locations
+      inventory_quantity: variant.inventoryItem?.inventoryLevels?.edges?.reduce((total, edge) => {
+        return total + (edge.node.available || 0);
+      }, 0) || 0,
+      old_inventory_quantity: variant.inventoryItem?.inventoryLevels?.edges?.reduce((total, edge) => {
+        return total + (edge.node.available || 0);
+      }, 0) || 0,
       requires_shipping: variant.requiresShipping !== false,
       admin_graphql_api_id: variant.id,
       image_id: variant.image?.id ? extractNumericId(variant.image.id) : null
@@ -209,8 +214,13 @@ function graphQLVariantToREST(gqlVariant, productId) {
     weight: gqlVariant.weight || 0,
     weight_unit: gqlVariant.weightUnit?.toLowerCase() || 'kg',
     inventory_item_id: gqlVariant.inventoryItem?.id ? extractNumericId(gqlVariant.inventoryItem.id) : null,
-    inventory_quantity: gqlVariant.inventoryQuantity || 0,
-    old_inventory_quantity: gqlVariant.inventoryQuantity || 0,
+    // Calculate total inventory quantity from all locations
+    inventory_quantity: gqlVariant.inventoryItem?.inventoryLevels?.edges?.reduce((total, edge) => {
+      return total + (edge.node.available || 0);
+    }, 0) || 0,
+    old_inventory_quantity: gqlVariant.inventoryItem?.inventoryLevels?.edges?.reduce((total, edge) => {
+      return total + (edge.node.available || 0);
+    }, 0) || 0,
     requires_shipping: gqlVariant.requiresShipping !== false,
     admin_graphql_api_id: gqlVariant.id,
     image_id: gqlVariant.image?.id ? extractNumericId(gqlVariant.image.id) : null
