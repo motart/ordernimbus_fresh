@@ -180,14 +180,14 @@ class AuthService {
       this.clearAuth();
       throw new Error('Authentication required. Please log in.');
     }
-
-    // Get the actual userId from localStorage (set by AuthContext from Amplify)
-    const currentUserId = localStorage.getItem('currentUserId');
     
+    // SECURITY: Only send JWT token in Authorization header
+    // The API Gateway authorizer will extract userId from the JWT token
+    // This prevents userId manipulation attacks
     const headers = {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${this.accessToken}`, // JWT token for API Gateway Authorizer
-      'userId': currentUserId || this.userInfo?.userId, // Use currentUserId from localStorage first
+      'Authorization': `Bearer ${this.accessToken}`, // JWT token contains userId securely
+      // DO NOT send userId in headers - it can be manipulated!
       ...options.headers
     };
 

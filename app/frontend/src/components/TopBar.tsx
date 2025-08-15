@@ -1,3 +1,4 @@
+import { authService } from '../services/auth';
 import React from 'react';
 import './TopBar.css';
 import { 
@@ -36,13 +37,8 @@ const TopBar: React.FC<TopBarProps> = ({ userEmail, onNavigate, onLogout, active
 
   const loadNotificationCount = async () => {
     try {
-      const userId = localStorage.getItem('currentUserId') || 'e85183d0-3061-70b8-25f5-171fd848ac9d';
-      const response = await fetch(`${getApiUrl()}/api/notifications?unreadOnly=true`, {
-        headers: {
-          'Content-Type': 'application/json',
-          'userId': userId
-        }
-      });
+      // userId is now extracted from JWT token on backend
+      const response = await authService.authenticatedRequest(`/api/notifications?unreadOnly=true`);
 
       if (response.ok) {
         const data = await response.json();

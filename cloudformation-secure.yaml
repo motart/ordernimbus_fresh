@@ -1,0 +1,560 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'OrderNimbus - Secure Production Infrastructure with JWT Authorization'
+
+# ==================== PARAMETERS ====================
+Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues:
+      - dev
+      - staging
+      - production
+    Description: Environment name
+  
+  CertificateArn:
+    Type: String
+    Default: ''
+    Description: ACM Certificate ARN for custom domain (optional)
+
+Resources:
+  # ==================== COGNITO ====================
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub 'ordernimbus-${Environment}-users'
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Required: true
+          Mutable: false
+        - Name: company_id
+          AttributeDataType: String
+          Mutable: true
+        - Name: company_name
+          AttributeDataType: String
+          Mutable: true
+        - Name: role
+          AttributeDataType: String
+          Mutable: true
+      UsernameAttributes:
+        - email
+      AutoVerifiedAttributes:
+        - email
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: false
+      EmailConfiguration:
+        EmailSendingAccount: COGNITO_DEFAULT
+      UserPoolTags:
+        Environment: !Ref Environment
+        Project: OrderNimbus
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub 'ordernimbus-${Environment}-client'
+      UserPoolId: !Ref UserPool
+      GenerateSecret: false
+      RefreshTokenValidity: 30
+      AccessTokenValidity: 1
+      IdTokenValidity: 1
+      TokenValidityUnits:
+        AccessToken: hours
+        IdToken: hours
+        RefreshToken: days
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_ADMIN_USER_PASSWORD_AUTH
+      PreventUserExistenceErrors: ENABLED
+      AllowedOAuthFlows:
+        - code
+        - implicit
+      AllowedOAuthScopes:
+        - email
+        - openid
+        - profile
+      AllowedOAuthFlowsUserPoolClient: true
+      CallbackURLs:
+        - 'http://localhost:3000/callback'
+        - 'https://app.ordernimbus.com/callback'
+      LogoutURLs:
+        - 'http://localhost:3000/login'
+        - 'https://app.ordernimbus.com/login'
+      SupportedIdentityProviders:
+        - COGNITO
+
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Sub '${AWS::StackName}-${AWS::AccountId}'
+      UserPoolId: !Ref UserPool
+
+  # ==================== DynamoDB ====================
+  MainTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'ordernimbus-${Environment}-main'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+        - AttributeName: GSI1PK
+          AttributeType: S
+        - AttributeName: GSI1SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: GSI1
+          KeySchema:
+            - AttributeName: GSI1PK
+              KeyType: HASH
+            - AttributeName: GSI1SK
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: OrderNimbus
+
+  # ==================== S3 BUCKETS ====================
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'ordernimbus-${Environment}-frontend-${AWS::AccountId}'
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: error.html
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders:
+              - '*'
+            AllowedMethods:
+              - GET
+              - HEAD
+            AllowedOrigins:
+              - '*'
+            MaxAge: 3000
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: OrderNimbus
+
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Statement:
+          - Sid: PublicReadGetObject
+            Effect: Allow
+            Principal: '*'
+            Action:
+              - 's3:GetObject'
+            Resource: !Sub '${FrontendBucket.Arn}/*'
+
+  # ==================== LAMBDA ====================
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'ordernimbus-${Environment}-LambdaExecutionRole-${AWS::StackName}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+        - 'arn:aws:iam::aws:policy/AmazonCognitoPowerUser'
+      Policies:
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'dynamodb:PutItem'
+                  - 'dynamodb:GetItem'
+                  - 'dynamodb:UpdateItem'
+                  - 'dynamodb:DeleteItem'
+                  - 'dynamodb:Query'
+                  - 'dynamodb:Scan'
+                Resource:
+                  - !GetAtt MainTable.Arn
+                  - !Sub '${MainTable.Arn}/index/*'
+        - PolicyName: SecretsManagerAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'secretsmanager:GetSecretValue'
+                Resource: '*'
+        - PolicyName: SSMParameterAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'ssm:GetParameter'
+                  - 'ssm:PutParameter'
+                Resource: '*'
+
+  MainLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'ordernimbus-${Environment}-main'
+      Runtime: nodejs18.x
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 30
+      MemorySize: 512
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref MainTable
+          ENVIRONMENT: !Ref Environment
+          USER_POOL_ID: !Ref UserPool
+          USER_POOL_CLIENT_ID: !Ref UserPoolClient
+      Code:
+        ZipFile: |
+          exports.handler = async (event) => {
+            console.log('Secure Lambda - Event:', JSON.stringify(event));
+            
+            // Extract userId from JWT token (provided by API Gateway authorizer)
+            const userId = event.requestContext?.authorizer?.claims?.sub;
+            
+            if (!userId) {
+              return {
+                statusCode: 401,
+                body: JSON.stringify({ error: 'Unauthorized - No valid user token' })
+              };
+            }
+            
+            // Now use the secure userId from JWT for all operations
+            return {
+              statusCode: 200,
+              body: JSON.stringify({ 
+                message: 'Secure endpoint',
+                userId: userId,
+                path: event.rawPath 
+              })
+            };
+          };
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: OrderNimbus
+
+  # ==================== API GATEWAY WITH AUTHORIZER ====================
+  ApiGateway:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub 'ordernimbus-${Environment}-api'
+      ProtocolType: HTTP
+      CorsConfiguration:
+        AllowOrigins: 
+          - 'http://app.ordernimbus.com'
+          - 'https://app.ordernimbus.com'
+          - 'http://localhost:3000'
+          - 'http://127.0.0.1:3000'
+          - !Sub 'http://${FrontendBucket}.s3-website-${AWS::Region}.amazonaws.com'
+        AllowHeaders: 
+          - '*'
+        AllowMethods: 
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+          - HEAD
+          - PATCH
+        AllowCredentials: true
+        MaxAge: 86400
+
+  # Cognito JWT Authorizer
+  ApiAuthorizer:
+    Type: AWS::ApiGatewayV2::Authorizer
+    Properties:
+      ApiId: !Ref ApiGateway
+      AuthorizerType: JWT
+      IdentitySource:
+        - $request.header.Authorization
+      JwtConfiguration:
+        Audience:
+          - !Ref UserPoolClient
+        Issuer: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}'
+      Name: CognitoAuthorizer
+
+  ApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref ApiGateway
+      StageName: !Ref Environment
+      AutoDeploy: true
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 5000
+        ThrottlingRateLimit: 10000
+
+  # Lambda Integration
+  LambdaIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref ApiGateway
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${MainLambda.Arn}/invocations'
+      IntegrationMethod: POST
+      PayloadFormatVersion: '2.0'
+
+  # Protected Routes (with authorizer)
+  StoresRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: 'GET /api/stores'
+      AuthorizationType: JWT
+      AuthorizerId: !Ref ApiAuthorizer
+      Target: !Sub 'integrations/${LambdaIntegration}'
+
+  ProductsRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: 'GET /api/products'
+      AuthorizationType: JWT
+      AuthorizerId: !Ref ApiAuthorizer
+      Target: !Sub 'integrations/${LambdaIntegration}'
+
+  OrdersRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: 'GET /api/orders'
+      AuthorizationType: JWT
+      AuthorizerId: !Ref ApiAuthorizer
+      Target: !Sub 'integrations/${LambdaIntegration}'
+
+  InventoryRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: 'GET /api/inventory'
+      AuthorizationType: JWT
+      AuthorizerId: !Ref ApiAuthorizer
+      Target: !Sub 'integrations/${LambdaIntegration}'
+
+  CustomersRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: 'GET /api/customers'
+      AuthorizationType: JWT
+      AuthorizerId: !Ref ApiAuthorizer
+      Target: !Sub 'integrations/${LambdaIntegration}'
+
+  # Public routes (no authorizer)
+  AuthLoginRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: 'POST /api/auth/login'
+      Target: !Sub 'integrations/${LambdaIntegration}'
+
+  AuthRegisterRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: 'POST /api/auth/register'
+      Target: !Sub 'integrations/${LambdaIntegration}'
+
+  # Catch-all route
+  DefaultRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: '$default'
+      AuthorizationType: JWT
+      AuthorizerId: !Ref ApiAuthorizer
+      Target: !Sub 'integrations/${LambdaIntegration}'
+
+  # Lambda Permission for API Gateway
+  LambdaApiGatewayPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt MainLambda.Arn
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'
+
+  # ==================== CLOUDFRONT ====================
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Condition: HasCertificate
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub 'OrderNimbus ${Environment} - ${AWS::StackName}'
+        DefaultRootObject: index.html
+        HttpVersion: http2
+        
+        # Custom domain
+        Aliases:
+          - app.ordernimbus.com
+        
+        # SSL Certificate
+        ViewerCertificate:
+          AcmCertificateArn: !Ref CertificateArn
+          MinimumProtocolVersion: TLSv1.2_2021
+          SslSupportMethod: sni-only
+        
+        # S3 Origin
+        Origins:
+          - Id: S3Origin
+            DomainName: !Sub '${FrontendBucket}.s3-website-${AWS::Region}.amazonaws.com'
+            CustomOriginConfig:
+              HTTPPort: 80
+              HTTPSPort: 443
+              OriginProtocolPolicy: http-only
+              OriginSSLProtocols:
+                - TLSv1.2
+        
+        # Default Cache Behavior
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          CachedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          Compress: true
+          ForwardedValues:
+            QueryString: false
+            Cookies:
+              Forward: none
+          MinTTL: 0
+          DefaultTTL: 86400
+          MaxTTL: 31536000
+        
+        # Custom Error Pages for SPA
+        CustomErrorResponses:
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 0
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 0
+        
+        PriceClass: PriceClass_100
+        
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: !If [HasCertificate, !Ref AWS::NoValue, true]
+          AcmCertificateArn: !If [HasCertificate, !Ref CertificateArn, !Ref AWS::NoValue]
+          MinimumProtocolVersion: !If [HasCertificate, TLSv1.2_2021, !Ref AWS::NoValue]
+          SslSupportMethod: !If [HasCertificate, sni-only, !Ref AWS::NoValue]
+
+  # ==================== SECRETS MANAGER ====================
+  ShopifySecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub 'ordernimbus/${Environment}/shopify'
+      Description: 'Shopify OAuth credentials'
+      SecretString: !Sub |
+        {
+          "SHOPIFY_CLIENT_ID": "PLACEHOLDER_CLIENT_ID",
+          "SHOPIFY_CLIENT_SECRET": "PLACEHOLDER_CLIENT_SECRET"
+        }
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: OrderNimbus
+
+# ==================== CONDITIONS ====================
+Conditions:
+  HasCertificate: !Not [!Equals [!Ref CertificateArn, '']]
+
+# ==================== OUTPUTS ====================
+Outputs:
+  UserPoolId:
+    Description: Cognito User Pool ID
+    Value: !Ref UserPool
+    Export:
+      Name: !Sub '${AWS::StackName}-UserPoolId'
+
+  UserPoolClientId:
+    Description: Cognito User Pool Client ID
+    Value: !Ref UserPoolClient
+    Export:
+      Name: !Sub '${AWS::StackName}-ClientId'
+
+  ApiEndpoint:
+    Description: API Gateway endpoint URL
+    Value: !Sub 'https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${Environment}'
+    Export:
+      Name: !Sub '${AWS::StackName}-ApiEndpoint'
+
+  FrontendURL:
+    Description: Frontend URL
+    Value: !If
+      - HasCertificate
+      - !Sub 'https://${CloudFrontDistribution.DomainName}'
+      - !Sub 'http://${FrontendBucket}.s3-website-${AWS::Region}.amazonaws.com'
+    Export:
+      Name: !Sub '${AWS::StackName}-FrontendURL'
+
+  S3BucketName:
+    Description: S3 bucket name for frontend
+    Value: !Ref FrontendBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-S3BucketName'
+
+  CloudFrontDistributionId:
+    Description: CloudFront Distribution ID
+    Condition: HasCertificate
+    Value: !Ref CloudFrontDistribution
+    Export:
+      Name: !Sub '${AWS::StackName}-CloudFrontId'
+
+  DynamoDBTableName:
+    Description: DynamoDB Table Name
+    Value: !Ref MainTable
+    Export:
+      Name: !Sub '${AWS::StackName}-TableName'
+
+  LambdaFunctionArn:
+    Description: Lambda Function ARN
+    Value: !GetAtt MainLambda.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-LambdaArn'

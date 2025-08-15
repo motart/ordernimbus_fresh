@@ -1,3 +1,4 @@
+import { authService } from '../services/auth';
 import React, { useState, useEffect } from 'react';
 import './CustomersPage.css';
 import toast from 'react-hot-toast';
@@ -43,14 +44,9 @@ const CustomersPage: React.FC = () => {
   const loadCustomers = async () => {
     setIsLoading(true);
     try {
-      const userId = localStorage.getItem('currentUserId') || 'e85183d0-3061-70b8-25f5-171fd848ac9d';
+      // userId is now extracted from JWT token on backend
       
-      const response = await fetch(`${getApiUrl()}/api/customers`, {
-        headers: {
-          'Content-Type': 'application/json',
-          'userId': userId
-        }
-      });
+      const response = await authService.authenticatedRequest(`/api/customers`);
 
       if (response.ok) {
         const data = await response.json();
@@ -78,15 +74,12 @@ const CustomersPage: React.FC = () => {
 
   const handleManualEntry = async (customerData: any) => {
     try {
-      const userId = localStorage.getItem('currentUserId') || 'e85183d0-3061-70b8-25f5-171fd848ac9d';
+      // userId is now extracted from JWT token on backend
       
-      const response = await fetch(`${getApiUrl()}/api/customers`, {
+      const response = await authService.authenticatedRequest(`/api/customers`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'userId': userId
-        },
         body: JSON.stringify({
+          storeId: customerData.storeId,
           customer: {
             ...customerData,
             id: `manual-${Date.now()}`,

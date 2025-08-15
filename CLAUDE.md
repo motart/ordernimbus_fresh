@@ -35,8 +35,25 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Custom Instructions & Observations for Claude
 
-### 🎨 CRITICAL PRIORITY: UI/UX Excellence
-**UI/UX must be the top consideration in all development.** Always ensure:
+### 🔐 CRITICAL PRIORITY #1: Security-First Development
+**Security must be the PRIMARY consideration in EVERY aspect of design and development.** Always ensure:
+- **Authentication & Authorization**: Use JWT tokens, never trust client-provided user IDs
+- **Data Validation**: Validate all inputs on both client and server side
+- **Secure Communication**: Always use HTTPS, never send sensitive data in URLs
+- **Least Privilege**: Grant minimum necessary permissions to users and services
+- **Secret Management**: Use AWS Secrets Manager/Parameter Store, NEVER hardcode credentials
+- **Input Sanitization**: Prevent SQL injection, XSS, and other injection attacks
+- **Audit Logging**: Log all security-relevant events for forensic analysis
+- **Zero Trust Architecture**: Verify everything, trust nothing from the client
+- **Data Encryption**: Encrypt sensitive data at rest and in transit
+- **Security Headers**: Implement proper CORS, CSP, and other security headers
+- **API Security**: All endpoints must have proper authentication (except public login/register)
+- **Session Management**: Use secure, httpOnly cookies for sessions when applicable
+- **Rate Limiting**: Implement rate limiting to prevent abuse and DDoS
+- **Dependency Security**: Regularly audit and update dependencies for security patches
+
+### 🎨 CRITICAL PRIORITY #2: UI/UX Excellence
+**UI/UX must be a top consideration in all development.** Always ensure:
 - **Immediate Visual Feedback**: Every user action must have instant visual response
 - **Smooth Animations**: State changes should use transitions (slideInScale, fadeIn, etc.)
 - **Clear Loading States**: Show spinners/progress bars for all async operations
