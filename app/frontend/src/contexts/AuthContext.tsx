@@ -83,6 +83,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             role: payload['custom:role'] as string || 'user'
           };
           
+          // Store userId in localStorage for API calls
+          localStorage.setItem('currentUserId', currentUser.userId);
+          
           setUser(userInfo);
           setIsAuthenticated(true);
         }
@@ -201,6 +204,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const logout = async () => {
     try {
       await signOut();
+      // Clear stored userId
+      localStorage.removeItem('currentUserId');
       setIsAuthenticated(false);
       setUser(null);
     } catch (error) {
