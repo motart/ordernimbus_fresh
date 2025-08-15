@@ -1,3 +1,4 @@
+import { authService } from '../services/auth';
 import React, { useState, useEffect } from 'react';
 import './NotificationsPage.css';
 import toast from 'react-hot-toast';
@@ -36,14 +37,9 @@ const NotificationsPage: React.FC = () => {
 
   const loadNotifications = async () => {
     try {
-      const userId = localStorage.getItem('currentUserId') || 'e85183d0-3061-70b8-25f5-171fd848ac9d';
+      // userId is now extracted from JWT token on backend
       
-      const response = await fetch(`${getApiUrl()}/api/notifications`, {
-        headers: {
-          'Content-Type': 'application/json',
-          'userId': userId
-        }
-      });
+      const response = await authService.authenticatedRequest(`/api/notifications`);
 
       if (response.ok) {
         const data = await response.json();
@@ -69,15 +65,9 @@ const NotificationsPage: React.FC = () => {
 
   const markAsRead = async (notificationId: string) => {
     try {
-      const userId = localStorage.getItem('currentUserId') || 'e85183d0-3061-70b8-25f5-171fd848ac9d';
+      // userId is now extracted from JWT token on backend
       
-      const response = await fetch(`${getApiUrl()}/api/notifications/${notificationId}/read`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'userId': userId
-        }
-      });
+      const response = await authService.authenticatedRequest(`/api/notifications/${notificationId}/read`);
 
       if (response.ok) {
         setNotifications(prev => 
@@ -95,15 +85,9 @@ const NotificationsPage: React.FC = () => {
 
   const markAllAsRead = async () => {
     try {
-      const userId = localStorage.getItem('currentUserId') || 'e85183d0-3061-70b8-25f5-171fd848ac9d';
+      // userId is now extracted from JWT token on backend
       
-      const response = await fetch(`${getApiUrl()}/api/notifications/read-all`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'userId': userId
-        }
-      });
+      const response = await authService.authenticatedRequest(`/api/notifications/read-all`);
 
       if (response.ok) {
         setNotifications(prev => prev.map(n => ({ ...n, read: true })));

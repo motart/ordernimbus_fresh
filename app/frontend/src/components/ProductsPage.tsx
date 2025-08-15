@@ -1,3 +1,4 @@
+import { authService } from '../services/auth';
 import React, { useState, useEffect } from 'react';
 import './ProductsPage.css';
 import toast from 'react-hot-toast';
@@ -57,14 +58,9 @@ const ProductsPage: React.FC = () => {
 
   const loadStores = async () => {
     try {
-      const userId = localStorage.getItem('currentUserId') || 'e85183d0-3061-70b8-25f5-171fd848ac9d';
+      // userId is now extracted from JWT token on backend
       
-      const response = await fetch(`${getApiUrl()}/api/stores`, {
-        headers: {
-          'Content-Type': 'application/json',
-          'userId': userId
-        }
-      });
+      const response = await authService.authenticatedRequest(`/api/stores`);
 
       if (response.ok) {
         const data = await response.json();
@@ -88,14 +84,9 @@ const ProductsPage: React.FC = () => {
     
     setIsLoading(true);
     try {
-      const userId = localStorage.getItem('currentUserId') || 'e85183d0-3061-70b8-25f5-171fd848ac9d';
+      // userId is now extracted from JWT token on backend
       
-      const response = await fetch(`${getApiUrl()}/api/products?storeId=${selectedStore}`, {
-        headers: {
-          'Content-Type': 'application/json',
-          'userId': userId
-        }
-      });
+      const response = await authService.authenticatedRequest(`/api/products?storeId=${selectedStore}`);
 
       if (response.ok) {
         const data = await response.json();
@@ -123,14 +114,10 @@ const ProductsPage: React.FC = () => {
 
   const handleManualEntry = async (productData: any) => {
     try {
-      const userId = localStorage.getItem('currentUserId') || 'e85183d0-3061-70b8-25f5-171fd848ac9d';
+      // userId is now extracted from JWT token on backend
       
-      const response = await fetch(`${getApiUrl()}/api/products`, {
+      const response = await authService.authenticatedRequest(`/api/products`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'userId': userId
-        },
         body: JSON.stringify({
           storeId: productData.storeId,
           product: {

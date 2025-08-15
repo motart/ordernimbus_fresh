@@ -1,3 +1,4 @@
+import { authService } from '../services/auth';
 import React, { useState, useEffect } from 'react';
 import './OrderPage.css';
 import toast from 'react-hot-toast';
@@ -92,14 +93,9 @@ const OrderPage: React.FC = () => {
 
   const loadStores = async () => {
     try {
-      const userId = localStorage.getItem('currentUserId') || 'e85183d0-3061-70b8-25f5-171fd848ac9d';
+      // userId is now extracted from JWT token on backend
       
-      const response = await fetch(`${getApiUrl()}/api/stores`, {
-        headers: {
-          'Content-Type': 'application/json',
-          'userId': userId
-        }
-      });
+      const response = await authService.authenticatedRequest(`/api/stores`);
 
       if (response.ok) {
         const data = await response.json();
@@ -123,14 +119,9 @@ const OrderPage: React.FC = () => {
     
     setIsLoading(true);
     try {
-      const userId = localStorage.getItem('currentUserId') || 'e85183d0-3061-70b8-25f5-171fd848ac9d';
+      // userId is now extracted from JWT token on backend
       
-      const response = await fetch(`${getApiUrl()}/api/orders?storeId=${selectedStore}`, {
-        headers: {
-          'Content-Type': 'application/json',
-          'userId': userId
-        }
-      });
+      const response = await authService.authenticatedRequest(`/api/orders?storeId=${selectedStore}`);
 
       if (response.ok) {
         const data = await response.json();
@@ -152,15 +143,10 @@ const OrderPage: React.FC = () => {
   const loadAllOrders = async () => {
     setIsLoading(true);
     try {
-      const userId = localStorage.getItem('currentUserId') || 'e85183d0-3061-70b8-25f5-171fd848ac9d';
+      // userId is now extracted from JWT token on backend
       
       // Load orders from all stores
-      const response = await fetch(`${getApiUrl()}/api/orders`, {
-        headers: {
-          'Content-Type': 'application/json',
-          'userId': userId
-        }
-      });
+      const response = await authService.authenticatedRequest(`/api/orders`);
 
       if (response.ok) {
         const data = await response.json();
@@ -297,20 +283,16 @@ const OrderPage: React.FC = () => {
 
   const handleCSVUpload = async (csvData: any[], columnMappings: any, dataType: string) => {
     try {
-      const userId = localStorage.getItem('currentUserId') || 'e85183d0-3061-70b8-25f5-171fd848ac9d';
+      // userId is now extracted from JWT token on backend
       
       // Use the universal data upload endpoint
-      const response = await fetch(`${getApiUrl()}/api/data/upload-csv`, {
+      const response = await authService.authenticatedRequest(`/api/data/upload-csv`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'userId': userId
-        },
         body: JSON.stringify({
+          dataType: dataType,
           storeId: selectedStore,
-          csvData,
-          columnMappings,
-          dataType
+          data: csvData,
+          columnMappings: columnMappings
         })
       });
 
@@ -331,7 +313,7 @@ const OrderPage: React.FC = () => {
 
   const handleManualEntry = async (orderData: any) => {
     try {
-      const userId = localStorage.getItem('currentUserId') || 'e85183d0-3061-70b8-25f5-171fd848ac9d';
+      // userId is now extracted from JWT token on backend
       
       // Add required fields for order creation
       const completeOrderData = {
@@ -346,14 +328,10 @@ const OrderPage: React.FC = () => {
         currency: orderData.currency || 'USD'
       };
 
-      const response = await fetch(`${getApiUrl()}/api/orders`, {
+      const response = await authService.authenticatedRequest(`/api/orders`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'userId': userId
-        },
         body: JSON.stringify({
-          storeId: orderData.storeId,
+          storeId: orderData.storeId || selectedStore,
           order: completeOrderData
         })
       });

@@ -1,3 +1,4 @@
+import { authService } from '../services/auth';
 import React, { useState, useEffect } from 'react';
 import './InventoryPage.css';
 import toast from 'react-hot-toast';
@@ -60,14 +61,9 @@ const InventoryPage: React.FC = () => {
 
   const loadStores = async () => {
     try {
-      const userId = localStorage.getItem('currentUserId') || 'e85183d0-3061-70b8-25f5-171fd848ac9d';
+      // userId is now extracted from JWT token on backend
       
-      const response = await fetch(`${getApiUrl()}/api/stores`, {
-        headers: {
-          'Content-Type': 'application/json',
-          'userId': userId
-        }
-      });
+      const response = await authService.authenticatedRequest(`/api/stores`);
 
       if (response.ok) {
         const data = await response.json();
@@ -92,14 +88,9 @@ const InventoryPage: React.FC = () => {
     setIsLoading(true);
     try {
       // Always fetch from API - backend handles all data storage
-      const userId = localStorage.getItem('currentUserId') || 'e85183d0-3061-70b8-25f5-171fd848ac9d';
+      // userId is now extracted from JWT token on backend
       
-      const response = await fetch(`${getApiUrl()}/api/inventory?storeId=${selectedStore}`, {
-        headers: {
-          'Content-Type': 'application/json',
-          'userId': userId
-        }
-      });
+      const response = await authService.authenticatedRequest(`/api/inventory?storeId=${selectedStore}`);
 
       if (response.ok) {
         const data = await response.json();
@@ -188,14 +179,10 @@ const InventoryPage: React.FC = () => {
 
   const handleManualEntry = async (inventoryData: any) => {
     try {
-      const userId = localStorage.getItem('currentUserId') || 'e85183d0-3061-70b8-25f5-171fd848ac9d';
+      // userId is now extracted from JWT token on backend
       
-      const response = await fetch(`${getApiUrl()}/api/inventory`, {
+      const response = await authService.authenticatedRequest(`/api/inventory`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'userId': userId
-        },
         body: JSON.stringify({
           storeId: inventoryData.storeId,
           inventory: {

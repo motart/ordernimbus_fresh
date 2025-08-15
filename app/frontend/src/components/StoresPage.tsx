@@ -236,14 +236,7 @@ const StoresPage: React.FC = () => {
         ? `${apiUrl}/api/stores/${editingStore.id}`
         : `${apiUrl}/api/stores`;
       
-      const response = await fetch(endpoint, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-          'userId': user?.userId || 'test-user'
-        },
-        body: JSON.stringify(storePayload)
-      });
+      const response = await authService.authenticatedRequest(endpoint);
 
       if (!response.ok) {
         throw new Error('Failed to save store');
@@ -310,16 +303,11 @@ const StoresPage: React.FC = () => {
       
       // First, trigger the sync endpoint to start importing data
       const apiUrl = getApiUrl();
-      const syncResponse = await fetch(`${apiUrl}/api/shopify/sync`, {
+      const syncResponse = await authService.authenticatedRequest(`/api/shopify/sync`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'userId': userId
-        },
         body: JSON.stringify({
-          userId: userId,
-          shopifyDomain: storeDomain,
-          syncType: 'full'
+          shop: storeDomain,
+          storeId: storeDomain.replace('.myshopify.com', '')
         })
       });
       
@@ -400,11 +388,7 @@ const StoresPage: React.FC = () => {
     
     const checkStatus = async () => {
       try {
-        const response = await fetch(`${apiUrl}/api/stores`, {
-          headers: {
-            'userId': user?.userId || 'test-user'
-          }
-        });
+        const response = await authService.authenticatedRequest(`${apiUrl}/api/stores`);
         
         if (response.ok) {
           const result = await response.json();
@@ -468,12 +452,7 @@ const StoresPage: React.FC = () => {
       const apiUrl = getApiUrl();
       
       // Call API to delete store
-      const response = await fetch(`${apiUrl}/api/stores/${storeToDelete.id}`, {
-        method: 'DELETE',
-        headers: {
-          'userId': user?.userId || 'test-user'
-        }
-      });
+      const response = await authService.authenticatedRequest(`${apiUrl}/api/stores/${storeToDelete.id}`);
 
       if (response.ok) {
         const updatedStores = stores.filter(store => store.id !== storeToDelete.id);
@@ -510,17 +489,13 @@ const StoresPage: React.FC = () => {
       const apiUrl = getApiUrl();
       const endpoint = dataType === 'orders' ? '/api/orders/upload-csv' : '/api/data/upload-csv';
       
-      const response = await fetch(`${apiUrl}${endpoint}`, {
+      const response = await authService.authenticatedRequest(endpoint, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'userId': user?.userId || 'test-user'
-        },
         body: JSON.stringify({
+          dataType: dataType,
           storeId: selectedStoreForCSV.id,
-          csvData,
-          columnMappings,
-          dataType
+          data: csvData,
+          columnMappings: columnMappings
         })
       });
 
@@ -571,19 +546,11 @@ const StoresPage: React.FC = () => {
       toast('🔄 Starting manual sync...', { duration: 2000 });
       
       const apiUrl = getApiUrl();
-      const response = await fetch(`${apiUrl}/api/shopify/sync`, {
+      const response = await authService.authenticatedRequest(`/api/shopify/sync`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'userId': user?.userId || 'test-user'
-        },
         body: JSON.stringify({
-          userId: user?.userId || 'test-user',
           storeId: store.id,
-          shopifyDomain: store.shopifyDomain,
-          apiKey: store.apiKey,
-          syncType: 'full',
-          locationId: store.primaryLocationId
+          shop: store.shopifyDomain
         })
       });
 
