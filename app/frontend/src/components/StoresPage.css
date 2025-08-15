@@ -1175,6 +1175,64 @@
   }
 }
 
+@keyframes slideInScale {
+  0% {
+    transform: translateY(30px) scale(0.95);
+    opacity: 0;
+  }
+  50% {
+    transform: translateY(0) scale(1.02);
+  }
+  100% {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% center;
+  }
+  100% {
+    background-position: 200% center;
+  }
+}
+
+/* New store card animation */
+.store-card.new-store {
+  animation: slideInScale 0.6s ease-out;
+  position: relative;
+  overflow: visible;
+}
+
+.store-card.new-store::before {
+  content: '✨ New';
+  position: absolute;
+  top: -8px;
+  right: 16px;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: white;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  z-index: 10;
+  animation: pulse 2s infinite;
+}
+
+.store-card.new-store .store-icon {
+  background: linear-gradient(
+    90deg,
+    rgba(102, 126, 234, 0.1) 0%,
+    rgba(118, 75, 162, 0.2) 25%,
+    rgba(102, 126, 234, 0.1) 50%,
+    rgba(118, 75, 162, 0.2) 75%,
+    rgba(102, 126, 234, 0.1) 100%
+  );
+  background-size: 200% auto;
+  animation: shimmer 3s linear infinite;
+}
+
 /* CSV Upload Badge */
 .btn-csv-upload::after {
   content: 'CSV';

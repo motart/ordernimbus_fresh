@@ -22,13 +22,20 @@ const ShopifyConnect: React.FC<ShopifyConnectProps> = ({ userId, onSuccess, onCa
     const handleMessage = (event: MessageEvent) => {
       console.log('Received message:', event.data);
       
-      if (event.data.type === 'shopify-oauth-success') {
-        console.log('OAuth success received:', event.data.data);
+      // Handle both message types for compatibility
+      if (event.data.type === 'shopify-oauth-success' || event.data.type === 'shopify-connected') {
+        console.log('OAuth success received:', event.data);
         setStep('success');
         setLoading(false);
         toast.success('Shopify store connected successfully!');
+        
+        // Trigger sync immediately after connection
         setTimeout(() => {
-          onSuccess(event.data.data);
+          const storeData = event.data.data || { 
+            success: event.data.success, 
+            storeId: event.data.storeId 
+          };
+          onSuccess(storeData);
         }, 1500);
       } else if (event.data.type === 'shopify-oauth-error') {
         console.log('OAuth error received:', event.data.error);
