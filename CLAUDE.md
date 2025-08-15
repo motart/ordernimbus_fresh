@@ -4,19 +4,29 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 🔒 UNSHAKEABLE RULES - MANDATORY FOR ALL CHANGES
 
-### RULE #1: ALL CHANGES CREATE PR TO DEVELOP AUTOMATICALLY
+### RULE #1: MANDATORY WORKFLOW FOR EVERY TASK
+**FOR EVERY PIECE OF WORK, WITHOUT EXCEPTION:**
+1. **CREATE** new branch from `develop` branch
+2. **IMPLEMENT** all changes in the feature branch
+3. **DEPLOY** to production to verify it works
+4. **CREATE** automergeable PR to `develop`
+5. **IF TESTS FAIL**: Find what broke → Fix it → Start loop again
+6. **LOOP** until all tests pass and PR is ready to merge
+- **NO EXCEPTIONS** - This workflow is MANDATORY for ALL tasks
+
+### RULE #2: ALL CHANGES CREATE PR TO DEVELOP AUTOMATICALLY
 - **NEVER** commit directly to any protected branch
 - **ALWAYS** create feature branch from `develop`
 - **ALWAYS** create PR to `develop` branch (not main)
 - **NO EXCEPTIONS** - even for "quick fixes"
 
-### RULE #2: PR CANNOT MERGE IF ANY TEST FAILS
+### RULE #3: PR CANNOT MERGE IF ANY TEST FAILS
 - **ALL 7 test suites MUST pass**: Unit, Backend, Frontend, E2E, Integration, Security, Code Quality
 - **If ANY test fails → PR is BLOCKED**
 - **Cannot disable tests to make them pass**
 - **Cannot use admin override**
 
-### RULE #3: ENFORCEMENT IS AUTOMATIC
+### RULE #4: ENFORCEMENT IS AUTOMATIC
 - GitHub Actions run on EVERY pull request
 - Branch protection rules prevent bypassing
 - Git hooks enforce locally
