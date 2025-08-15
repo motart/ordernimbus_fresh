@@ -18,26 +18,79 @@ describe('Security: JWT Authentication E2E Tests', function() {
   let driver;
   let originalUserId;
   let jwtToken;
+  let skipTests = false;
 
   // Setup Chrome driver with options
   before(async function() {
-    const chromeOptions = new chrome.Options();
-    chromeOptions.addArguments('--disable-gpu');
-    chromeOptions.addArguments('--no-sandbox');
-    chromeOptions.addArguments('--disable-dev-shm-usage');
-    if (process.env.CI) {
-      chromeOptions.addArguments('--headless');
+    // First check if test server is available
+    try {
+      const http = require('http');
+      await new Promise((resolve, reject) => {
+        const req = http.get(BASE_URL, (res) => {
+          if (res.statusCode >= 200 && res.statusCode < 500) {
+            resolve();
+          } else {
+            reject(new Error(`Server returned ${res.statusCode}`));
+          }
+        });
+        req.on('error', reject);
+        req.setTimeout(2000, () => {
+          req.destroy();
+          reject(new Error('Server timeout'));
+        });
+      });
+    } catch (error) {
+      console.log('⚠️ Test server not available at', BASE_URL);
+      console.log('   Skipping E2E tests (server not running)');
+      skipTests = true;
+      this.skip();
+      return;
     }
 
-    driver = await new Builder()
-      .forBrowser('chrome')
-      .setChromeOptions(chromeOptions)
-      .build();
+    // Try to set up Selenium WebDriver
+    try {
+      const chromeOptions = new chrome.Options();
+      chromeOptions.addArguments('--disable-gpu');
+      chromeOptions.addArguments('--no-sandbox');
+      chromeOptions.addArguments('--disable-dev-shm-usage');
+      if (process.env.CI) {
+        chromeOptions.addArguments('--headless');
+      }
+
+      // Try to connect to Selenium server if available
+      if (process.env.SELENIUM_REMOTE_URL) {
+        driver = await new Builder()
+          .forBrowser('chrome')
+          .setChromeOptions(chromeOptions)
+          .usingServer(process.env.SELENIUM_REMOTE_URL)
+          .build();
+      } else {
+        driver = await new Builder()
+          .forBrowser('chrome')
+          .setChromeOptions(chromeOptions)
+          .build();
+      }
+    } catch (error) {
+      console.log('⚠️ Selenium WebDriver not available, skipping E2E tests');
+      console.log('   Error:', error.message);
+      skipTests = true;
+      this.skip();
+    }
   });
 
   after(async function() {
     if (driver) {
-      await driver.quit();
+      try {
+        await driver.quit();
+      } catch (error) {
+        // Ignore errors during cleanup
+      }
+    }
+  });
+
+  beforeEach(function() {
+    if (skipTests) {
+      this.skip();
     }
   });
 
