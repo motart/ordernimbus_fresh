@@ -629,6 +629,67 @@ if \"case 'config':\" not in content:
         
         print_success "Updated Lambda function: $MAIN_LAMBDA"
         
+        # Ensure Lambda has required IAM permissions
+        print_status "Configuring Lambda IAM permissions..."
+        LAMBDA_ROLE=$(aws lambda get-function-configuration \
+            --function-name "$MAIN_LAMBDA" \
+            --region "$AWS_REGION" \
+            --query 'Role' \
+            --output text 2>/dev/null || echo "")
+        
+        if [ -n "$LAMBDA_ROLE" ]; then
+            ROLE_NAME=$(echo "$LAMBDA_ROLE" | rev | cut -d'/' -f1 | rev)
+            
+            # Add DynamoDB permissions
+            cat > /tmp/dynamodb-policy.json << EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:UpdateItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:Query",
+        "dynamodb:Scan"
+      ],
+      "Resource": "arn:aws:dynamodb:${AWS_REGION}:${AWS_ACCOUNT_ID:-335021149718}:table/${TABLE_NAME:-ordernimbus-$ENVIRONMENT-main}*"
+    }
+  ]
+}
+EOF
+            aws iam put-role-policy \
+                --role-name "$ROLE_NAME" \
+                --policy-name DynamoDBAccess \
+                --policy-document file:///tmp/dynamodb-policy.json \
+                --region "$AWS_REGION" 2>/dev/null || true
+            
+            # Add Secrets Manager permissions
+            cat > /tmp/secrets-policy.json << EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:GetSecretValue"
+      ],
+      "Resource": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID:-335021149718}:secret:ordernimbus/${ENVIRONMENT}/shopify*"
+    }
+  ]
+}
+EOF
+            aws iam put-role-policy \
+                --role-name "$ROLE_NAME" \
+                --policy-name SecretsManagerAccess \
+                --policy-document file:///tmp/secrets-policy.json \
+                --region "$AWS_REGION" 2>/dev/null || true
+            
+            print_success "Lambda IAM permissions configured"
+        fi
+        
         # Update Shopify credentials with correct redirect URI
         if [ -n "$SHOPIFY_CLIENT_ID" ] && [ -n "$SHOPIFY_CLIENT_SECRET" ] && [ -n "$API_URL" ]; then
             print_status "Updating Shopify redirect URI..."
