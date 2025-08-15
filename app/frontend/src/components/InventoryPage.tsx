@@ -5,7 +5,7 @@ import { ClipLoader } from 'react-spinners';
 import { FiRefreshCw, FiSearch, FiFilter, FiPackage, FiAlertTriangle, FiCheckCircle, FiPlus } from 'react-icons/fi';
 import ManualEntryModal from './ManualEntryModal';
 import './ManualEntryModal.css';
-import { useApiUrl } from '../contexts/ConfigContext';
+import { getApiUrl } from '../config/environment';
 
 interface InventoryItem {
   id: string;
@@ -39,7 +39,6 @@ interface Store {
 }
 
 const InventoryPage: React.FC = () => {
-  const apiUrl = useApiUrl();
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [stores, setStores] = useState<Store[]>([]);
   const [selectedStore, setSelectedStore] = useState<string>('');
@@ -63,7 +62,7 @@ const InventoryPage: React.FC = () => {
     try {
       const userId = localStorage.getItem('currentUserId') || 'e85183d0-3061-70b8-25f5-171fd848ac9d';
       
-      const response = await fetch(`${apiUrl}/api/stores`, {
+      const response = await fetch(`${getApiUrl()}/api/stores`, {
         headers: {
           'Content-Type': 'application/json',
           'userId': userId
@@ -95,7 +94,7 @@ const InventoryPage: React.FC = () => {
       // Always fetch from API - backend handles all data storage
       const userId = localStorage.getItem('currentUserId') || 'e85183d0-3061-70b8-25f5-171fd848ac9d';
       
-      const response = await fetch(`${apiUrl}/api/inventory?storeId=${selectedStore}`, {
+      const response = await fetch(`${getApiUrl()}/api/inventory?storeId=${selectedStore}`, {
         headers: {
           'Content-Type': 'application/json',
           'userId': userId
@@ -191,7 +190,7 @@ const InventoryPage: React.FC = () => {
     try {
       const userId = localStorage.getItem('currentUserId') || 'e85183d0-3061-70b8-25f5-171fd848ac9d';
       
-      const response = await fetch(`${apiUrl}/api/inventory`, {
+      const response = await fetch(`${getApiUrl()}/api/inventory`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
