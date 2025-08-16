@@ -5,6 +5,51 @@ const querystring = require('querystring');
 const secretsManager = new AWS.SecretsManager();
 const dynamodb = new AWS.DynamoDB.DocumentClient();
 
+// Extract userId from JWT token (basic decoding without verification)
+const extractUserIdFromToken = async (authHeader) => {
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    console.log('No Bearer token found in Authorization header');
+    return null;
+  }
+  
+  const token = authHeader.substring(7); // Remove 'Bearer ' prefix
+  
+  try {
+    // JWT tokens have three parts separated by dots: header.payload.signature
+    const parts = token.split('.');
+    if (parts.length !== 3) {
+      console.log('Invalid JWT format');
+      return null;
+    }
+    
+    // Decode the payload (second part)
+    // Add padding if necessary for proper Base64 decoding
+    let payload = parts[1];
+    while (payload.length % 4) {
+      payload += '=';
+    }
+    
+    // Decode from Base64
+    const decodedPayload = Buffer.from(payload, 'base64').toString('utf8');
+    const payloadObj = JSON.parse(decodedPayload);
+    
+    console.log('Decoded JWT payload - sub:', payloadObj.sub);
+    
+    // For Cognito tokens, the user ID is typically in the 'sub' claim
+    // We'll check multiple possible fields for flexibility
+    const userId = payloadObj.sub || 
+                   payloadObj['cognito:username'] || 
+                   payloadObj.username ||
+                   payloadObj.email;
+    
+    console.log('Extracted userId from JWT:', userId);
+    return userId;
+  } catch (error) {
+    console.error('Error extracting userId from token:', error);
+    return null;
+  }
+};
+
 // Cache for Shopify credentials
 let shopifyCredentials = null;
 
@@ -79,29 +124,11 @@ exports.handler = async (event) => {
     'http://localhost:3000',
     'http://127.0.0.1:3000',
     'http://app.ordernimbus.com.s3-website-us-west-1.amazonaws.com',
-    'http://app.ordernimbus.com.s3-website-us-east-1.amazonaws.com',
-    'https://d39qw5rr9tjqlc.cloudfront.net',  // CloudFront distribution
-    'https://diw7iro5ilji0.cloudfront.net',   // Alternative CloudFront distribution
-    'https://d3hmv6uk3v1el2.cloudfront.net'   // Another CloudFront distribution
+    'http://app.ordernimbus.com.s3-website-us-east-1.amazonaws.com'
   ];
   
-  // Check if origin is allowed (including CloudFront wildcard)
-  let allowOrigin = allowedOrigins[0]; // Default to first allowed origin
-  
-  // Check exact match first
-  if (allowedOrigins.includes(origin)) {
-    allowOrigin = origin;
-  } 
-  // Check if it's a CloudFront distribution (*.cloudfront.net)
-  else if (origin && origin.match(/^https:\/\/[a-z0-9]+\.cloudfront\.net$/)) {
-    allowOrigin = origin;
-    console.log('Allowing CloudFront origin:', origin);
-  }
-  // Check if it's an S3 website
-  else if (origin && origin.match(/\.s3-website-[a-z0-9-]+\.amazonaws\.com$/)) {
-    allowOrigin = origin;
-    console.log('Allowing S3 website origin:', origin);
-  }
+  // Check if origin is allowed
+  const allowOrigin = allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
   
   const corsHeaders = {
     'Access-Control-Allow-Origin': allowOrigin,
@@ -147,23 +174,52 @@ exports.handler = async (event) => {
     
     switch(resource) {
       case 'products':
-        // Get userId from headers
-        const productsUserId = event.headers?.userid || event.headers?.userId || event.headers?.UserId || 'test-user';
+        // Extract userId from JWT token
+        const productsAuthHeader = event.headers?.Authorization || event.headers?.authorization;
+        let productsUserId = await extractUserIdFromToken(productsAuthHeader);
+        
+        // Fallback to header if JWT extraction fails (for backward compatibility)
+        if (!productsUserId) {
+          productsUserId = event.headers?.userid || event.headers?.userId || event.headers?.UserId;
+        }
+        
+        if (!productsUserId) {
+          return {
+            statusCode: 401,
+            headers: corsHeaders,
+            body: JSON.stringify({ error: 'Authentication required' })
+          };
+        }
         const storeId = event.queryStringParameters?.storeId;
         
         console.log('Fetching products for user:', productsUserId, 'store:', storeId);
         
         try {
-          // Query DynamoDB for synced products
-          const productsResult = await dynamodb.query({
-            TableName: process.env.TABLE_NAME,
-            KeyConditionExpression: 'pk = :pk AND begins_with(sk, :skPrefix)',
-            ExpressionAttributeValues: {
-              ':pk': `user_${productsUserId}`,
-              ':skPrefix': 'product_'
-            },
-            Limit: 100
-          }).promise();
+          // Query DynamoDB for synced products (both formats)
+          const [newFormatProducts, oldFormatProducts] = await Promise.all([
+            dynamodb.query({
+              TableName: process.env.TABLE_NAME,
+              KeyConditionExpression: 'pk = :pk AND begins_with(sk, :skPrefix)',
+              ExpressionAttributeValues: {
+                ':pk': `USER#${productsUserId}`,
+                ':skPrefix': 'PRODUCT#'
+              },
+              Limit: 100
+            }).promise(),
+            dynamodb.query({
+              TableName: process.env.TABLE_NAME,
+              KeyConditionExpression: 'pk = :pk AND begins_with(sk, :skPrefix)',
+              ExpressionAttributeValues: {
+                ':pk': `user_${productsUserId}`,
+                ':skPrefix': 'product_'
+              },
+              Limit: 100
+            }).promise()
+          ]);
+          
+          const productsResult = {
+            Items: [...(newFormatProducts.Items || []), ...(oldFormatProducts.Items || [])]
+          };
           
           console.log(`Found ${productsResult.Items?.length || 0} products in DynamoDB`);
           
@@ -201,22 +257,51 @@ exports.handler = async (event) => {
         break;
         
       case 'orders':
-        // Get userId from headers
-        const ordersUserId = event.headers?.userid || event.headers?.userId || event.headers?.UserId || 'test-user';
+        // Extract userId from JWT token
+        const ordersAuthHeader = event.headers?.Authorization || event.headers?.authorization;
+        let ordersUserId = await extractUserIdFromToken(ordersAuthHeader);
+        
+        // Fallback to header if JWT extraction fails (for backward compatibility)
+        if (!ordersUserId) {
+          ordersUserId = event.headers?.userid || event.headers?.userId || event.headers?.UserId;
+        }
+        
+        if (!ordersUserId) {
+          return {
+            statusCode: 401,
+            headers: corsHeaders,
+            body: JSON.stringify({ error: 'Authentication required' })
+          };
+        }
         
         console.log('Fetching orders for user:', ordersUserId);
         
         try {
-          // Query DynamoDB for synced orders
-          const ordersResult = await dynamodb.query({
-            TableName: process.env.TABLE_NAME,
-            KeyConditionExpression: 'pk = :pk AND begins_with(sk, :skPrefix)',
-            ExpressionAttributeValues: {
-              ':pk': `user_${ordersUserId}`,
-              ':skPrefix': 'order_'
-            },
-            Limit: 100
-          }).promise();
+          // Query DynamoDB for synced orders (both formats)
+          const [newFormatOrders, oldFormatOrders] = await Promise.all([
+            dynamodb.query({
+              TableName: process.env.TABLE_NAME,
+              KeyConditionExpression: 'pk = :pk AND begins_with(sk, :skPrefix)',
+              ExpressionAttributeValues: {
+                ':pk': `USER#${ordersUserId}`,
+                ':skPrefix': 'ORDER#'
+              },
+              Limit: 100
+            }).promise(),
+            dynamodb.query({
+              TableName: process.env.TABLE_NAME,
+              KeyConditionExpression: 'pk = :pk AND begins_with(sk, :skPrefix)',
+              ExpressionAttributeValues: {
+                ':pk': `user_${ordersUserId}`,
+                ':skPrefix': 'order_'
+              },
+              Limit: 100
+            }).promise()
+          ]);
+          
+          const ordersResult = {
+            Items: [...(newFormatOrders.Items || []), ...(oldFormatOrders.Items || [])]
+          };
           
           console.log(`Found ${ordersResult.Items?.length || 0} orders in DynamoDB`);
           
@@ -257,22 +342,51 @@ exports.handler = async (event) => {
         break;
         
       case 'inventory':
-        // Get userId from headers
-        const inventoryUserId = event.headers?.userid || event.headers?.userId || event.headers?.UserId || 'test-user';
+        // Extract userId from JWT token
+        const inventoryAuthHeader = event.headers?.Authorization || event.headers?.authorization;
+        let inventoryUserId = await extractUserIdFromToken(inventoryAuthHeader);
+        
+        // Fallback to header if JWT extraction fails (for backward compatibility)
+        if (!inventoryUserId) {
+          inventoryUserId = event.headers?.userid || event.headers?.userId || event.headers?.UserId;
+        }
+        
+        if (!inventoryUserId) {
+          return {
+            statusCode: 401,
+            headers: corsHeaders,
+            body: JSON.stringify({ error: 'Authentication required' })
+          };
+        }
         
         console.log('Fetching inventory for user:', inventoryUserId);
         
         try {
-          // Query DynamoDB for products (which contain inventory)
-          const inventoryResult = await dynamodb.query({
-            TableName: process.env.TABLE_NAME,
-            KeyConditionExpression: 'pk = :pk AND begins_with(sk, :skPrefix)',
-            ExpressionAttributeValues: {
-              ':pk': `user_${inventoryUserId}`,
-              ':skPrefix': 'product_'
-            },
-            Limit: 100
-          }).promise();
+          // Query DynamoDB for products (which contain inventory) - both formats
+          const [newFormatInventory, oldFormatInventory] = await Promise.all([
+            dynamodb.query({
+              TableName: process.env.TABLE_NAME,
+              KeyConditionExpression: 'pk = :pk AND begins_with(sk, :skPrefix)',
+              ExpressionAttributeValues: {
+                ':pk': `USER#${inventoryUserId}`,
+                ':skPrefix': 'PRODUCT#'
+              },
+              Limit: 100
+            }).promise(),
+            dynamodb.query({
+              TableName: process.env.TABLE_NAME,
+              KeyConditionExpression: 'pk = :pk AND begins_with(sk, :skPrefix)',
+              ExpressionAttributeValues: {
+                ':pk': `user_${inventoryUserId}`,
+                ':skPrefix': 'product_'
+              },
+              Limit: 100
+            }).promise()
+          ]);
+          
+          const inventoryResult = {
+            Items: [...(newFormatInventory.Items || []), ...(oldFormatInventory.Items || [])]
+          };
           
           console.log(`Found ${inventoryResult.Items?.length || 0} inventory items in DynamoDB`);
           
@@ -307,21 +421,49 @@ exports.handler = async (event) => {
         break;
         
       case 'customers':
-        // Get userId from headers  
-        const customersUserId = event.headers?.userid || event.headers?.userId || event.headers?.UserId || 'test-user';
+        // Extract userId from JWT token
+        const customersAuthHeader = event.headers?.Authorization || event.headers?.authorization;
+        let customersUserId = await extractUserIdFromToken(customersAuthHeader);
+        
+        // Fallback to header if JWT extraction fails (for backward compatibility)
+        if (!customersUserId) {
+          customersUserId = event.headers?.userid || event.headers?.userId || event.headers?.UserId;
+        }
+        
+        if (!customersUserId) {
+          return {
+            statusCode: 401,
+            headers: corsHeaders,
+            body: JSON.stringify({ error: 'Authentication required' })
+          };
+        }
         
         console.log('Fetching customer metadata for user:', customersUserId);
         
         try {
-          // Get metadata which contains customer count
-          const metadataResult = await dynamodb.query({
-            TableName: process.env.TABLE_NAME,
-            KeyConditionExpression: 'pk = :pk AND begins_with(sk, :skPrefix)',
-            ExpressionAttributeValues: {
-              ':pk': `user_${customersUserId}`,
-              ':skPrefix': 'store_'
-            }
-          }).promise();
+          // Get metadata which contains customer count (both formats)
+          const [newFormatMeta, oldFormatMeta] = await Promise.all([
+            dynamodb.query({
+              TableName: process.env.TABLE_NAME,
+              KeyConditionExpression: 'pk = :pk AND begins_with(sk, :skPrefix)',
+              ExpressionAttributeValues: {
+                ':pk': `USER#${customersUserId}`,
+                ':skPrefix': 'STORE#'
+              }
+            }).promise(),
+            dynamodb.query({
+              TableName: process.env.TABLE_NAME,
+              KeyConditionExpression: 'pk = :pk AND begins_with(sk, :skPrefix)',
+              ExpressionAttributeValues: {
+                ':pk': `user_${customersUserId}`,
+                ':skPrefix': 'store_'
+              }
+            }).promise()
+          ]);
+          
+          const metadataResult = {
+            Items: [...(newFormatMeta.Items || []), ...(oldFormatMeta.Items || [])]
+          };
           
           // For now, return summary data since we don't store individual customers
           const metadata = metadataResult.Items?.[0];
@@ -377,8 +519,22 @@ exports.handler = async (event) => {
         break;
         
       case 'stores':
-        // Get userId from headers
-        const storesUserId = event.headers?.userid || event.headers?.userId || event.headers?.UserId || 'test-user';
+        // Extract userId from JWT token
+        const storesAuthHeader = event.headers?.Authorization || event.headers?.authorization;
+        let storesUserId = await extractUserIdFromToken(storesAuthHeader);
+        
+        // Fallback to header if JWT extraction fails (for backward compatibility)
+        if (!storesUserId) {
+          storesUserId = event.headers?.userid || event.headers?.userId || event.headers?.UserId;
+        }
+        
+        if (!storesUserId) {
+          return {
+            statusCode: 401,
+            headers: corsHeaders,
+            body: JSON.stringify({ error: 'Authentication required' })
+          };
+        }
         
         // Handle DELETE method
         if (method === 'DELETE') {
@@ -449,15 +605,29 @@ exports.handler = async (event) => {
           console.log('Fetching stores for user:', storesUserId);
           
           try {
-            // Query DynamoDB for user's stores
-            const storesResult = await dynamodb.query({
-              TableName: process.env.TABLE_NAME,
-              KeyConditionExpression: 'pk = :pk AND begins_with(sk, :skPrefix)',
-              ExpressionAttributeValues: {
-                ':pk': `user_${storesUserId}`,
-                ':skPrefix': 'store_'
-              }
-            }).promise();
+            // Query DynamoDB for user's stores (both old and new formats)
+            const [newFormatStores, oldFormatStores] = await Promise.all([
+              dynamodb.query({
+                TableName: process.env.TABLE_NAME,
+                KeyConditionExpression: 'pk = :pk AND begins_with(sk, :skPrefix)',
+                ExpressionAttributeValues: {
+                  ':pk': `USER#${storesUserId}`,
+                  ':skPrefix': 'STORE#'
+                }
+              }).promise(),
+              dynamodb.query({
+                TableName: process.env.TABLE_NAME,
+                KeyConditionExpression: 'pk = :pk AND begins_with(sk, :skPrefix)',
+                ExpressionAttributeValues: {
+                  ':pk': `user_${storesUserId}`,
+                  ':skPrefix': 'store_'
+                }
+              }).promise()
+            ]);
+            
+            const storesResult = {
+              Items: [...(newFormatStores.Items || []), ...(oldFormatStores.Items || [])]
+            };
             
             console.log(`Found ${storesResult.Items?.length || 0} stores in DynamoDB`);
             
@@ -648,7 +818,7 @@ exports.handler = async (event) => {
               req.end();
             });
             
-            // Store the access token in DynamoDB (for token retrieval)
+            // Store the access token in DynamoDB
             await dynamodb.put({
               TableName: process.env.TABLE_NAME,
               Item: {
@@ -657,25 +827,6 @@ exports.handler = async (event) => {
                 accessToken: accessToken,
                 storeDomain: shop,
                 connectedAt: new Date().toISOString()
-              }
-            }).promise();
-            
-            // Also create a store metadata record for the stores list
-            await dynamodb.put({
-              TableName: process.env.TABLE_NAME,
-              Item: {
-                pk: `user_${stateResult.Item.userId}`,
-                sk: `store_${shop}_metadata`,
-                storeId: shop.replace('.myshopify.com', ''),
-                storeName: shop.replace('.myshopify.com', ''),
-                displayName: shop.replace('.myshopify.com', ''),
-                storeType: 'shopify',
-                shopifyDomain: shop,
-                syncStatus: 'pending',
-                connectedAt: new Date().toISOString(),
-                productsCount: 0,
-                ordersCount: 0,
-                customersCount: 0
               }
             }).promise();
             
@@ -914,24 +1065,18 @@ exports.handler = async (event) => {
               console.error('Failed to fetch customers:', customersData.reason);
             }
             
-            // Update or create metadata about the sync
+            // Store metadata about the sync
             await dynamodb.put({
               TableName: process.env.TABLE_NAME,
               Item: {
                 pk: `user_${userId}`,
                 sk: `store_${actualStoreDomain}_metadata`,
-                storeId: actualStoreDomain.replace('.myshopify.com', ''),
-                storeName: actualStoreDomain.replace('.myshopify.com', ''),
-                displayName: actualStoreDomain.replace('.myshopify.com', ''),
-                storeType: 'shopify',
-                shopifyDomain: actualStoreDomain,
-                customersCount: customers.length,
-                productsCount: products.length,
-                ordersCount: orders.length,
+                customerCount: customers.length,
+                productCount: products.length,
+                orderCount: orders.length,
                 totalInventory: inventory,
                 totalRevenue: totalRevenue.toFixed(2),
-                lastSyncAt: new Date().toISOString(),
-                syncStatus: 'completed'
+                lastSyncedAt: new Date().toISOString()
               }
             }).promise().catch(err => console.error('Error storing metadata:', err));
             
