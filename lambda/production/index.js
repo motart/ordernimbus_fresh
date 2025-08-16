@@ -2,6 +2,10 @@ const AWS = require('aws-sdk');
 const https = require('https');
 const querystring = require('querystring');
 
+// Configure AWS SDK with region
+AWS.config.update({ region: process.env.AWS_REGION || 'us-west-1' });
+
+// Create AWS service instances conditionally to handle test environments
 const secretsManager = new AWS.SecretsManager();
 const dynamodb = new AWS.DynamoDB.DocumentClient();
 
@@ -127,8 +131,14 @@ exports.handler = async (event) => {
     'http://app.ordernimbus.com.s3-website-us-east-1.amazonaws.com'
   ];
   
-  // Check if origin is allowed
-  const allowOrigin = allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
+  // Check if origin is allowed - also support CloudFront distributions
+  let allowOrigin = allowedOrigins[0]; // Default
+  if (allowedOrigins.includes(origin)) {
+    allowOrigin = origin;
+  } else if (origin && origin.match(/^https?:\/\/[a-z0-9]+\.cloudfront\.net$/)) {
+    // Allow any CloudFront distribution
+    allowOrigin = origin;
+  }
   
   const corsHeaders = {
     'Access-Control-Allow-Origin': allowOrigin,
