@@ -102,11 +102,29 @@ exports.handler = async (event) => {
     'http://localhost:3000',
     'http://127.0.0.1:3000',
     'http://app.ordernimbus.com.s3-website-us-west-1.amazonaws.com',
-    'http://app.ordernimbus.com.s3-website-us-east-1.amazonaws.com'
+    'http://app.ordernimbus.com.s3-website-us-east-1.amazonaws.com',
+    'https://d39qw5rr9tjqlc.cloudfront.net',  // CloudFront distribution
+    'https://diw7iro5ilji0.cloudfront.net',   // Alternative CloudFront distribution
+    'https://d3hmv6uk3v1el2.cloudfront.net'   // Another CloudFront distribution
   ];
   
-  // Check if origin is allowed
-  const allowOrigin = allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
+  // Check if origin is allowed (including CloudFront wildcard)
+  let allowOrigin = allowedOrigins[0]; // Default to first allowed origin
+  
+  // Check exact match first
+  if (allowedOrigins.includes(origin)) {
+    allowOrigin = origin;
+  } 
+  // Check if it's a CloudFront distribution (*.cloudfront.net)
+  else if (origin && origin.match(/^https:\/\/[a-z0-9]+\.cloudfront\.net$/)) {
+    allowOrigin = origin;
+    console.log('Allowing CloudFront origin:', origin);
+  }
+  // Check if it's an S3 website
+  else if (origin && origin.match(/\.s3-website-[a-z0-9-]+\.amazonaws\.com$/)) {
+    allowOrigin = origin;
+    console.log('Allowing S3 website origin:', origin);
+  }
   
   const corsHeaders = {
     'Access-Control-Allow-Origin': allowOrigin,
