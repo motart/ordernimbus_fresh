@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import './Dashboard.css';
+import './EnhancedDashboard.css';
 import toast from 'react-hot-toast';
 import Sidebar from './Sidebar';
 import TopBar from './TopBar';
@@ -11,6 +12,7 @@ import OrderPage from './OrderPage';
 import ProductsPage from './ProductsPage';
 import CustomersPage from './CustomersPage';
 import NotificationsPage from './NotificationsPage';
+import EnhancedDashboard from './EnhancedDashboard';
 import SecureDataManager from '../utils/SecureDataManager';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -163,149 +165,15 @@ const Dashboard: React.FC = () => {
           <CustomersPage />
         ) : activePage === 'notifications' ? (
           <NotificationsPage />
+        ) : activePage === 'dashboard' ? (
+          <EnhancedDashboard />
         ) : (
           <div className="dashboard-content">
-              {!hasData && activePage === 'dashboard' ? (
-                <div className="empty-state">
-                  <div className="empty-state-icon">📊</div>
-                  <h2>Welcome to OrderNimbus!</h2>
-                  <p>Get started by setting up your first store and uploading your sales data.</p>
-                  <div className="onboarding-steps">
-                    <div className="onboarding-step">
-                      <span className="step-number">1</span>
-                      <div className="step-content">
-                        <h3>Add Your Stores</h3>
-                        <p>Add your physical stores or connect your Shopify account</p>
-                        <button 
-                          className="action-button primary"
-                          onClick={() => handleNavigate('stores')}
-                        >
-                          Add Store
-                        </button>
-                      </div>
-                    </div>
-                    <div className="onboarding-step">
-                      <span className="step-number">2</span>
-                      <div className="step-content">
-                        <h3>Upload Sales Data</h3>
-                        <p>Import your historical sales data via CSV</p>
-                        <button 
-                          className="action-button"
-                          onClick={() => handleNavigate('upload')}
-                        >
-                          Upload Data
-                        </button>
-                      </div>
-                    </div>
-                    <div className="onboarding-step">
-                      <span className="step-number">3</span>
-                      <div className="step-content">
-                        <h3>Get Forecasts</h3>
-                        <p>View AI-powered sales predictions and insights</p>
-                        <button className="action-button" disabled>
-                          View Forecasts
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <div className="metrics-row">
-                    <div className="metric-card">
-                      <h3>Total Sales</h3>
-                      <p className="metric-value">{totalSales > 0 ? `$${(totalSales / 1000).toFixed(1)}K` : '--'}</p>
-                      <span className="metric-change neutral">{totalSales > 0 ? '+12.5%' : '--'}</span>
-                    </div>
-                    <div className="metric-card">
-                      <h3>Daily Average</h3>
-                      <p className="metric-value">{avgSales > 0 ? `$${(avgSales / 1000).toFixed(1)}K` : '--'}</p>
-                      <span className="metric-change neutral">{avgSales > 0 ? '+5.2%' : '--'}</span>
-                    </div>
-                    <div className="metric-card">
-                      <h3>Forecast Accuracy</h3>
-                      <p className="metric-value">{accuracy > 0 ? `${accuracy}%` : '--'}</p>
-                      <span className="metric-change neutral">{accuracy > 0 ? '+2.1%' : '--'}</span>
-                    </div>
-                    <div className="metric-card">
-                      <h3>SKUs Analyzed</h3>
-                      <p className="metric-value">{hasData ? '1,248' : '0'}</p>
-                      <span className="metric-change neutral">--</span>
-                    </div>
-                  </div>
-
-                  <div className="chart-container">
-          <div className="chart-header">
-            <h2>Sales Forecast</h2>
-            <div className="time-selector">
-              <button 
-                className={timeRange === '7days' ? 'active' : ''}
-                onClick={() => setTimeRange('7days')}
-              >
-                7 Days
-              </button>
-              <button 
-                className={timeRange === '30days' ? 'active' : ''}
-                onClick={() => setTimeRange('30days')}
-              >
-                30 Days
-              </button>
-              <button 
-                className={timeRange === '90days' ? 'active' : ''}
-                onClick={() => setTimeRange('90days')}
-              >
-                90 Days
-              </button>
+            <div className="empty-state">
+              <h2>Page Under Construction</h2>
+              <p>This page is being enhanced with new UI/UX features.</p>
             </div>
           </div>
-          
-          <div className="chart">
-            <div className="chart-legend">
-              <span className="legend-item actual">Actual Sales</span>
-              <span className="legend-item forecast">Forecast</span>
-            </div>
-            <div className="chart-bars">
-              {salesData.map((day, index) => (
-                <div key={index} className="chart-bar-group">
-                  <div className="bars">
-                    <div 
-                      className="bar actual" 
-                      style={{ height: `${(day.actual / 80000) * 100}%` }}
-                      title={`Actual: $${day.actual.toLocaleString()}`}
-                    />
-                    <div 
-                      className="bar forecast" 
-                      style={{ height: `${(day.forecast / 80000) * 100}%` }}
-                      title={`Forecast: $${day.forecast.toLocaleString()}`}
-                    />
-                  </div>
-                  <span className="bar-label">{day.date}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-                  </div>
-
-                  <div className="actions-row">
-                    <div className="action-card">
-                      <h3>Upload Sales Data</h3>
-                      <p>Import CSV files with historical sales</p>
-                      <button className="action-button">Upload CSV</button>
-                    </div>
-                    <div className="action-card">
-                      <h3>Configure Alerts</h3>
-                      <p>Set up notifications for forecast changes</p>
-                      <button className="action-button">Configure</button>
-                    </div>
-                    <div className="action-card">
-                      <h3>Export Data</h3>
-                      <p>Download your sales data</p>
-                      <button className="action-button">Export CSV</button>
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
         )}
       </div>
     </div>

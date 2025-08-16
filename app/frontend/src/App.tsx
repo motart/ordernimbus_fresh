@@ -1,6 +1,8 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import './App.css';
 import './animations.css';
+import './styles/GlobalStyles.css';
+import './components/ui/UIComponents.css';
 import Dashboard from './components/Dashboard';
 import AuthPage from './components/AuthPage';
 import { Toaster } from 'react-hot-toast';
