@@ -200,6 +200,154 @@ exports.handler = async (event) => {
             body: JSON.stringify({ error: 'Authentication required' })
           };
         }
+        
+        // Handle POST method for creating products
+        if (method === 'POST') {
+          console.log('Creating new product for user:', productsUserId);
+          
+          try {
+            // Parse request body
+            const requestBody = JSON.parse(event.body || '{}');
+            const productStoreId = requestBody.storeId;
+            
+            if (!productStoreId) {
+              responseData = {
+                error: 'Store ID is required'
+              };
+              statusCode = 400;
+              break;
+            }
+            
+            // Generate product ID
+            const productId = requestBody.id || `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            const variantId = requestBody.variantId || `variant_${productId}`;
+            
+            // Create product item
+            const productItem = {
+              pk: `USER#${productsUserId}`,
+              sk: `PRODUCT#${productStoreId}#${productId}`,
+              productId: productId,
+              variantId: variantId,
+              title: requestBody.title || requestBody.name,
+              name: requestBody.title || requestBody.name,
+              variantTitle: requestBody.variantTitle || 'Default',
+              sku: requestBody.sku || '',
+              price: requestBody.price || 0,
+              inventory: requestBody.inventory_quantity || requestBody.inventory || 0,
+              vendor: requestBody.vendor || '',
+              product_type: requestBody.product_type || '',
+              description: requestBody.description || '',
+              tags: requestBody.tags || '',
+              weight: requestBody.weight || 0,
+              compare_at_price: requestBody.compare_at_price || null,
+              storeDomain: productStoreId,
+              storeId: productStoreId,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+              syncedAt: new Date().toISOString(),
+              userId: productsUserId
+            };
+            
+            // Save to DynamoDB
+            await dynamodb.put({
+              TableName: process.env.TABLE_NAME,
+              Item: productItem
+            }).promise();
+            
+            console.log('Product created successfully:', productId);
+            
+            responseData = {
+              success: true,
+              product: {
+                id: productId,
+                variantId: variantId,
+                name: productItem.title,
+                sku: productItem.sku,
+                price: productItem.price,
+                inventory: productItem.inventory
+              }
+            };
+          } catch (error) {
+            console.error('Error creating product:', error);
+            responseData = {
+              success: false,
+              error: 'Failed to create product'
+            };
+            statusCode = 500;
+          }
+          break;
+        }
+        
+        // Handle PUT method for updating products
+        if (method === 'PUT') {
+          console.log('Updating product for user:', productsUserId);
+          
+          try {
+            const requestBody = JSON.parse(event.body || '{}');
+            const productId = requestBody.id || requestBody.productId;
+            const productStoreId = requestBody.storeId;
+            
+            if (!productId || !productStoreId) {
+              responseData = {
+                error: 'Product ID and Store ID are required'
+              };
+              statusCode = 400;
+              break;
+            }
+            
+            // Update product in DynamoDB
+            const updateExpression = [];
+            const expressionAttributeNames = {};
+            const expressionAttributeValues = {};
+            
+            const fieldsToUpdate = ['title', 'name', 'sku', 'price', 'inventory', 'vendor', 'product_type', 'description', 'tags'];
+            
+            fieldsToUpdate.forEach(field => {
+              if (requestBody[field] !== undefined) {
+                updateExpression.push(`#${field} = :${field}`);
+                expressionAttributeNames[`#${field}`] = field;
+                expressionAttributeValues[`:${field}`] = requestBody[field];
+              }
+            });
+            
+            if (updateExpression.length > 0) {
+              updateExpression.push('#updatedAt = :updatedAt');
+              expressionAttributeNames['#updatedAt'] = 'updatedAt';
+              expressionAttributeValues[':updatedAt'] = new Date().toISOString();
+              
+              await dynamodb.update({
+                TableName: process.env.TABLE_NAME,
+                Key: {
+                  pk: `USER#${productsUserId}`,
+                  sk: `PRODUCT#${productStoreId}#${productId}`
+                },
+                UpdateExpression: `SET ${updateExpression.join(', ')}`,
+                ExpressionAttributeNames: expressionAttributeNames,
+                ExpressionAttributeValues: expressionAttributeValues
+              }).promise();
+              
+              responseData = {
+                success: true,
+                message: 'Product updated successfully'
+              };
+            } else {
+              responseData = {
+                success: false,
+                message: 'No fields to update'
+              };
+            }
+          } catch (error) {
+            console.error('Error updating product:', error);
+            responseData = {
+              success: false,
+              error: 'Failed to update product'
+            };
+            statusCode = 500;
+          }
+          break;
+        }
+        
+        // Handle GET method (existing code)
         const storeId = event.queryStringParameters?.storeId;
         
         console.log('Fetching products for user:', productsUserId, 'store:', storeId);
@@ -284,6 +432,102 @@ exports.handler = async (event) => {
           };
         }
         
+        // Handle POST method for creating orders
+        if (method === 'POST') {
+          console.log('Creating new order for user:', ordersUserId);
+          
+          try {
+            // Parse request body
+            const requestBody = JSON.parse(event.body || '{}');
+            const orderStoreId = requestBody.storeId;
+            
+            if (!orderStoreId) {
+              responseData = {
+                error: 'Store ID is required'
+              };
+              statusCode = 400;
+              break;
+            }
+            
+            // Generate order ID and number
+            const orderId = requestBody.id || `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            const orderNumber = requestBody.name || requestBody.orderNumber || `#${Math.floor(1000 + Math.random() * 9000)}`;
+            
+            // Create order item
+            const orderItem = {
+              pk: `USER#${ordersUserId}`,
+              sk: `ORDER#${orderStoreId}#${orderId}`,
+              orderId: orderId,
+              orderNumber: orderNumber,
+              name: orderNumber,
+              customerEmail: requestBody.email || requestBody.customerEmail,
+              customerName: requestBody.billing_first_name && requestBody.billing_last_name 
+                ? `${requestBody.billing_first_name} ${requestBody.billing_last_name}`
+                : requestBody.customerName || requestBody.email,
+              phone: requestBody.phone || '',
+              totalPrice: requestBody.total_price || requestBody.total || 0,
+              currency: requestBody.currency || 'USD',
+              status: requestBody.financial_status || requestBody.status || 'pending',
+              fulfillmentStatus: requestBody.fulfillment_status || requestBody.fulfillmentStatus || 'unfulfilled',
+              billingFirstName: requestBody.billing_first_name || '',
+              billingLastName: requestBody.billing_last_name || '',
+              billingAddress1: requestBody.billing_address1 || '',
+              billingCity: requestBody.billing_city || '',
+              billingProvince: requestBody.billing_province || requestBody.billing_state || '',
+              billingZip: requestBody.billing_zip || '',
+              billingCountry: requestBody.billing_country || 'United States',
+              shippingFirstName: requestBody.shipping_first_name || requestBody.billing_first_name || '',
+              shippingLastName: requestBody.shipping_last_name || requestBody.billing_last_name || '',
+              shippingAddress1: requestBody.shipping_address1 || requestBody.billing_address1 || '',
+              shippingCity: requestBody.shipping_city || requestBody.billing_city || '',
+              shippingProvince: requestBody.shipping_province || requestBody.billing_province || '',
+              shippingZip: requestBody.shipping_zip || requestBody.billing_zip || '',
+              shippingCountry: requestBody.shipping_country || requestBody.billing_country || 'United States',
+              lineItemName: requestBody.lineitem_name || '',
+              lineItemQuantity: requestBody.lineitem_quantity || 1,
+              lineItemPrice: requestBody.lineitem_price || 0,
+              lineItemSku: requestBody.lineitem_sku || '',
+              lineItems: requestBody.lineItems || 1,
+              tags: requestBody.tags || '',
+              note: requestBody.note || '',
+              storeDomain: orderStoreId,
+              storeId: orderStoreId,
+              createdAt: requestBody.created_at || new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+              syncedAt: new Date().toISOString(),
+              userId: ordersUserId
+            };
+            
+            // Save to DynamoDB
+            await dynamodb.put({
+              TableName: process.env.TABLE_NAME,
+              Item: orderItem
+            }).promise();
+            
+            console.log('Order created successfully:', orderId);
+            
+            responseData = {
+              success: true,
+              order: {
+                id: orderId,
+                orderNumber: orderNumber,
+                customerEmail: orderItem.customerEmail,
+                total: orderItem.totalPrice,
+                status: orderItem.status
+              }
+            };
+          } catch (error) {
+            console.error('Error creating order:', error);
+            responseData = {
+              success: false,
+              error: 'Failed to create order'
+            };
+            statusCode = 500;
+          }
+          break;
+        }
+        
+        // Handle GET method (existing code)
         console.log('Fetching orders for user:', ordersUserId);
         
         try {
@@ -369,11 +613,112 @@ exports.handler = async (event) => {
           };
         }
         
+        // Handle POST method for updating inventory
+        if (method === 'POST') {
+          console.log('Updating inventory for user:', inventoryUserId);
+          
+          try {
+            // Parse request body
+            const requestBody = JSON.parse(event.body || '{}');
+            const inventoryStoreId = requestBody.storeId;
+            const inventorySku = requestBody.sku;
+            
+            if (!inventoryStoreId || !inventorySku) {
+              responseData = {
+                error: 'Store ID and SKU are required'
+              };
+              statusCode = 400;
+              break;
+            }
+            
+            // Generate inventory ID
+            const inventoryId = `${inventorySku}_${requestBody.location || 'default'}`;
+            
+            // Create inventory item
+            const inventoryItem = {
+              pk: `USER#${inventoryUserId}`,
+              sk: `INVENTORY#${inventoryStoreId}#${inventoryId}`,
+              inventoryId: inventoryId,
+              sku: inventorySku,
+              productId: requestBody.productId || inventorySku,
+              location: requestBody.location || 'Warehouse A',
+              quantity: requestBody.quantity || 0,
+              available: requestBody.available !== undefined ? requestBody.available : requestBody.quantity || 0,
+              reserved: requestBody.reserved || 0,
+              incoming: requestBody.incoming || 0,
+              productName: requestBody.productName || '',
+              storeDomain: inventoryStoreId,
+              storeId: inventoryStoreId,
+              updatedAt: requestBody.updated_at || new Date().toISOString(),
+              syncedAt: new Date().toISOString(),
+              userId: inventoryUserId
+            };
+            
+            // Also update the product's inventory if it exists
+            if (requestBody.productId) {
+              await dynamodb.update({
+                TableName: process.env.TABLE_NAME,
+                Key: {
+                  pk: `USER#${inventoryUserId}`,
+                  sk: `PRODUCT#${inventoryStoreId}#${requestBody.productId}`
+                },
+                UpdateExpression: 'SET inventory = :qty, updatedAt = :updated',
+                ExpressionAttributeValues: {
+                  ':qty': inventoryItem.quantity,
+                  ':updated': new Date().toISOString()
+                },
+                ConditionExpression: 'attribute_exists(pk)'
+              }).promise().catch(() => {
+                // Ignore if product doesn't exist
+                console.log('Product not found for inventory update, creating inventory record only');
+              });
+            }
+            
+            // Save inventory record to DynamoDB
+            await dynamodb.put({
+              TableName: process.env.TABLE_NAME,
+              Item: inventoryItem
+            }).promise();
+            
+            console.log('Inventory updated successfully:', inventoryId);
+            
+            responseData = {
+              success: true,
+              inventory: {
+                id: inventoryId,
+                sku: inventorySku,
+                location: inventoryItem.location,
+                quantity: inventoryItem.quantity,
+                available: inventoryItem.available,
+                reserved: inventoryItem.reserved
+              }
+            };
+          } catch (error) {
+            console.error('Error updating inventory:', error);
+            responseData = {
+              success: false,
+              error: 'Failed to update inventory'
+            };
+            statusCode = 500;
+          }
+          break;
+        }
+        
+        // Handle GET method (existing code)
         console.log('Fetching inventory for user:', inventoryUserId);
         
         try {
-          // Query DynamoDB for products (which contain inventory) - both formats
-          const [newFormatInventory, oldFormatInventory] = await Promise.all([
+          // Query DynamoDB for both product and inventory records
+          const [inventoryRecords, productRecords] = await Promise.all([
+            dynamodb.query({
+              TableName: process.env.TABLE_NAME,
+              KeyConditionExpression: 'pk = :pk AND begins_with(sk, :skPrefix)',
+              ExpressionAttributeValues: {
+                ':pk': `USER#${inventoryUserId}`,
+                ':skPrefix': 'INVENTORY#'
+              },
+              Limit: 100
+            }).promise(),
             dynamodb.query({
               TableName: process.env.TABLE_NAME,
               KeyConditionExpression: 'pk = :pk AND begins_with(sk, :skPrefix)',
@@ -382,34 +727,47 @@ exports.handler = async (event) => {
                 ':skPrefix': 'PRODUCT#'
               },
               Limit: 100
-            }).promise(),
-            dynamodb.query({
-              TableName: process.env.TABLE_NAME,
-              KeyConditionExpression: 'pk = :pk AND begins_with(sk, :skPrefix)',
-              ExpressionAttributeValues: {
-                ':pk': `user_${inventoryUserId}`,
-                ':skPrefix': 'product_'
-              },
-              Limit: 100
             }).promise()
           ]);
           
-          const inventoryResult = {
-            Items: [...(newFormatInventory.Items || []), ...(oldFormatInventory.Items || [])]
-          };
+          // Combine inventory records with product data
+          const inventoryMap = new Map();
           
-          console.log(`Found ${inventoryResult.Items?.length || 0} inventory items in DynamoDB`);
+          // Add inventory records
+          (inventoryRecords.Items || []).forEach(item => {
+            inventoryMap.set(item.sku, {
+              productId: item.productId,
+              variantId: item.variantId,
+              productName: item.productName,
+              sku: item.sku,
+              quantity: item.quantity || 0,
+              available: item.available || 0,
+              reserved: item.reserved || 0,
+              incoming: item.incoming || 0,
+              location: item.location || 'Main Store',
+              lastUpdated: item.updatedAt || item.syncedAt
+            });
+          });
           
-          // Transform to inventory format
-          const inventory = (inventoryResult.Items || []).map(item => ({
-            productId: item.productId,
-            variantId: item.variantId,
-            productName: item.title,
-            sku: item.sku || '',
-            quantity: item.inventory || 0,
-            location: item.storeDomain || 'Main Store',
-            lastUpdated: item.syncedAt
-          }));
+          // Add/update with product data
+          (productRecords.Items || []).forEach(item => {
+            if (item.sku && !inventoryMap.has(item.sku)) {
+              inventoryMap.set(item.sku, {
+                productId: item.productId,
+                variantId: item.variantId,
+                productName: item.title,
+                sku: item.sku,
+                quantity: item.inventory || 0,
+                available: item.inventory || 0,
+                reserved: 0,
+                incoming: 0,
+                location: item.storeDomain || 'Main Store',
+                lastUpdated: item.syncedAt
+              });
+            }
+          });
+          
+          const inventory = Array.from(inventoryMap.values());
           
           responseData = {
             inventory: inventory,
@@ -448,11 +806,96 @@ exports.handler = async (event) => {
           };
         }
         
-        console.log('Fetching customer metadata for user:', customersUserId);
+        // Handle POST method for creating customers
+        if (method === 'POST') {
+          console.log('Creating new customer for user:', customersUserId);
+          
+          try {
+            // Parse request body
+            const requestBody = JSON.parse(event.body || '{}');
+            const customerStoreId = requestBody.storeId;
+            
+            if (!customerStoreId) {
+              responseData = {
+                error: 'Store ID is required'
+              };
+              statusCode = 400;
+              break;
+            }
+            
+            // Generate customer ID
+            const customerId = requestBody.id || `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            
+            // Create customer item
+            const customerItem = {
+              pk: `USER#${customersUserId}`,
+              sk: `CUSTOMER#${customerStoreId}#${customerId}`,
+              customerId: customerId,
+              email: requestBody.email || '',
+              firstName: requestBody.first_name || requestBody.firstName || '',
+              lastName: requestBody.last_name || requestBody.lastName || '',
+              fullName: `${requestBody.first_name || ''} ${requestBody.last_name || ''}`.trim(),
+              phone: requestBody.phone || '',
+              address: requestBody.address || '',
+              city: requestBody.city || '',
+              state: requestBody.state || requestBody.province || '',
+              zip: requestBody.zip || requestBody.postal || '',
+              country: requestBody.country || 'United States',
+              tags: requestBody.tags || '',
+              notes: requestBody.notes || requestBody.note || '',
+              totalOrders: requestBody.totalOrders || 0,
+              totalSpent: requestBody.totalSpent || 0,
+              storeDomain: customerStoreId,
+              storeId: customerStoreId,
+              createdAt: requestBody.created_at || new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+              syncedAt: new Date().toISOString(),
+              userId: customersUserId
+            };
+            
+            // Save to DynamoDB
+            await dynamodb.put({
+              TableName: process.env.TABLE_NAME,
+              Item: customerItem
+            }).promise();
+            
+            console.log('Customer created successfully:', customerId);
+            
+            responseData = {
+              success: true,
+              customer: {
+                id: customerId,
+                email: customerItem.email,
+                name: customerItem.fullName,
+                phone: customerItem.phone
+              }
+            };
+          } catch (error) {
+            console.error('Error creating customer:', error);
+            responseData = {
+              success: false,
+              error: 'Failed to create customer'
+            };
+            statusCode = 500;
+          }
+          break;
+        }
+        
+        // Handle GET method
+        console.log('Fetching customers for user:', customersUserId);
         
         try {
-          // Get metadata which contains customer count (both formats)
-          const [newFormatMeta, oldFormatMeta] = await Promise.all([
+          // Query for actual customer records and metadata
+          const [customerRecords, customerMetadata] = await Promise.all([
+            dynamodb.query({
+              TableName: process.env.TABLE_NAME,
+              KeyConditionExpression: 'pk = :pk AND begins_with(sk, :skPrefix)',
+              ExpressionAttributeValues: {
+                ':pk': `USER#${customersUserId}`,
+                ':skPrefix': 'CUSTOMER#'
+              },
+              Limit: 100
+            }).promise(),
             dynamodb.query({
               TableName: process.env.TABLE_NAME,
               KeyConditionExpression: 'pk = :pk AND begins_with(sk, :skPrefix)',
@@ -460,34 +903,41 @@ exports.handler = async (event) => {
                 ':pk': `USER#${customersUserId}`,
                 ':skPrefix': 'STORE#'
               }
-            }).promise(),
-            dynamodb.query({
-              TableName: process.env.TABLE_NAME,
-              KeyConditionExpression: 'pk = :pk AND begins_with(sk, :skPrefix)',
-              ExpressionAttributeValues: {
-                ':pk': `user_${customersUserId}`,
-                ':skPrefix': 'store_'
-              }
             }).promise()
           ]);
           
-          const metadataResult = {
-            Items: [...(newFormatMeta.Items || []), ...(oldFormatMeta.Items || [])]
-          };
+          const customers = (customerRecords.Items || []).map(item => ({
+            id: item.customerId,
+            email: item.email,
+            firstName: item.firstName,
+            lastName: item.lastName,
+            name: item.fullName,
+            phone: item.phone,
+            address: item.address,
+            city: item.city,
+            state: item.state,
+            zip: item.zip,
+            country: item.country,
+            tags: item.tags,
+            totalOrders: item.totalOrders || 0,
+            totalSpent: item.totalSpent || 0,
+            createdAt: item.createdAt,
+            storeDomain: item.storeDomain
+          }));
           
-          // For now, return summary data since we don't store individual customers
-          const metadata = metadataResult.Items?.[0];
-          const customerCount = metadata?.customerCount || 0;
+          // Get metadata for summary
+          const metadata = customerMetadata.Items?.[0];
+          const customerCount = customers.length || metadata?.customerCount || 0;
           
           responseData = {
-            customers: [],
-            count: customerCount,
+            customers: customers,
+            count: customers.length,
             summary: {
               totalCustomers: customerCount,
               lastSyncedAt: metadata?.lastSyncedAt
             },
-            source: 'dynamodb-metadata',
-            note: 'Individual customer data not yet stored'
+            source: customers.length > 0 ? 'dynamodb' : 'dynamodb-metadata',
+            note: customers.length === 0 ? 'Individual customer data not yet stored' : undefined
           };
         } catch (dbError) {
           console.error('Error fetching customers from DynamoDB:', dbError);
@@ -509,6 +959,292 @@ exports.handler = async (event) => {
           ],
           count: 2
         };
+        break;
+        
+      case 'data':
+        // Handle data upload endpoint for CSV batch imports
+        // Extract userId from JWT token
+        const dataAuthHeader = event.headers?.Authorization || event.headers?.authorization;
+        let dataUserId = await extractUserIdFromToken(dataAuthHeader);
+        
+        // Fallback to header if JWT extraction fails (for backward compatibility)
+        if (!dataUserId) {
+          dataUserId = event.headers?.userid || event.headers?.userId || event.headers?.UserId;
+        }
+        
+        if (!dataUserId) {
+          return {
+            statusCode: 401,
+            headers: corsHeaders,
+            body: JSON.stringify({ error: 'Authentication required' })
+          };
+        }
+        
+        // Only handle POST method for batch uploads
+        if (method !== 'POST' || !path.includes('/data/upload')) {
+          responseData = {
+            message: 'Data upload endpoint',
+            availableEndpoints: ['/api/data/upload'],
+            methods: ['POST']
+          };
+          break;
+        }
+        
+        console.log('Processing batch data upload for user:', dataUserId);
+        
+        try {
+          // Parse request body
+          const uploadRequest = JSON.parse(event.body || '{}');
+          const { storeId, dataType, csvContent, mappedColumns, records } = uploadRequest;
+          
+          // Validate required fields
+          if (!storeId) {
+            return {
+              statusCode: 400,
+              headers: corsHeaders,
+              body: JSON.stringify({ error: 'Store ID is required for data upload' })
+            };
+          }
+          
+          if (!dataType || !['products', 'orders', 'customers', 'inventory'].includes(dataType)) {
+            return {
+              statusCode: 400,
+              headers: corsHeaders,
+              body: JSON.stringify({ error: 'Valid data type required (products, orders, customers, inventory)' })
+            };
+          }
+          
+          // Parse CSV if provided as string
+          let dataRecords = records;
+          if (csvContent && !records) {
+            // Simple CSV parsing (frontend should send parsed data)
+            const lines = csvContent.split('\n');
+            const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+            dataRecords = lines.slice(1).filter(line => line.trim()).map(line => {
+              const values = line.split(',').map(v => v.trim().replace(/"/g, ''));
+              const record = {};
+              headers.forEach((header, i) => {
+                const mappedField = mappedColumns?.[header] || header;
+                record[mappedField] = values[i] || '';
+              });
+              return record;
+            });
+          }
+          
+          if (!dataRecords || dataRecords.length === 0) {
+            return {
+              statusCode: 400,
+              headers: corsHeaders,
+              body: JSON.stringify({ error: 'No data records to upload' })
+            };
+          }
+          
+          console.log(`Processing ${dataRecords.length} ${dataType} records for store ${storeId}`);
+          
+          // Process records based on data type
+          const results = {
+            success: 0,
+            failed: 0,
+            errors: []
+          };
+          
+          // Batch write items
+          const batchWrites = [];
+          const timestamp = new Date().toISOString();
+          
+          for (const record of dataRecords) {
+            try {
+              let item = {};
+              
+              switch (dataType) {
+                case 'products':
+                  const productId = record.id || record.sku || `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                  item = {
+                    pk: `USER#${dataUserId}`,
+                    sk: `PRODUCT#${storeId}#${productId}`,
+                    productId: productId,
+                    variantId: record.variantId || `variant_${productId}`,
+                    title: record.title || record.name || 'Untitled Product',
+                    name: record.title || record.name || 'Untitled Product',
+                    sku: record.sku || '',
+                    price: parseFloat(record.price) || 0,
+                    inventory: parseInt(record.inventory_quantity || record.inventory) || 0,
+                    vendor: record.vendor || '',
+                    product_type: record.product_type || '',
+                    description: record.description || '',
+                    tags: record.tags || '',
+                    storeDomain: storeId,
+                    storeId: storeId,
+                    createdAt: timestamp,
+                    updatedAt: timestamp,
+                    syncedAt: timestamp,
+                    userId: dataUserId
+                  };
+                  break;
+                  
+                case 'orders':
+                  const orderId = record.id || `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                  item = {
+                    pk: `USER#${dataUserId}`,
+                    sk: `ORDER#${storeId}#${orderId}`,
+                    orderId: orderId,
+                    orderNumber: record.name || record.orderNumber || `#${Math.floor(1000 + Math.random() * 9000)}`,
+                    customerEmail: record.email || record.customerEmail || '',
+                    customerName: record.billing_first_name && record.billing_last_name 
+                      ? `${record.billing_first_name} ${record.billing_last_name}`
+                      : record.customerName || record.email || 'Guest',
+                    totalPrice: parseFloat(record.total_price || record.total) || 0,
+                    currency: record.currency || 'USD',
+                    status: record.financial_status || record.status || 'pending',
+                    fulfillmentStatus: record.fulfillment_status || 'unfulfilled',
+                    lineItems: parseInt(record.lineItems) || 1,
+                    storeDomain: storeId,
+                    storeId: storeId,
+                    createdAt: record.created_at || timestamp,
+                    updatedAt: timestamp,
+                    syncedAt: timestamp,
+                    userId: dataUserId
+                  };
+                  break;
+                  
+                case 'customers':
+                  const customerId = record.id || record.email || `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                  item = {
+                    pk: `USER#${dataUserId}`,
+                    sk: `CUSTOMER#${storeId}#${customerId}`,
+                    customerId: customerId,
+                    email: record.email || '',
+                    firstName: record.first_name || record.firstName || '',
+                    lastName: record.last_name || record.lastName || '',
+                    fullName: `${record.first_name || ''} ${record.last_name || ''}`.trim() || 'Unknown',
+                    phone: record.phone || '',
+                    address: record.address || '',
+                    city: record.city || '',
+                    state: record.state || record.province || '',
+                    zip: record.zip || record.postal || '',
+                    country: record.country || 'United States',
+                    tags: record.tags || '',
+                    storeDomain: storeId,
+                    storeId: storeId,
+                    createdAt: record.created_at || timestamp,
+                    updatedAt: timestamp,
+                    syncedAt: timestamp,
+                    userId: dataUserId
+                  };
+                  break;
+                  
+                case 'inventory':
+                  const inventorySku = record.sku;
+                  if (!inventorySku) {
+                    throw new Error('SKU is required for inventory records');
+                  }
+                  const inventoryId = `${inventorySku}_${record.location || 'default'}`;
+                  item = {
+                    pk: `USER#${dataUserId}`,
+                    sk: `INVENTORY#${storeId}#${inventoryId}`,
+                    inventoryId: inventoryId,
+                    sku: inventorySku,
+                    productId: record.productId || inventorySku,
+                    location: record.location || 'Warehouse A',
+                    quantity: parseInt(record.quantity) || 0,
+                    available: parseInt(record.available !== undefined ? record.available : record.quantity) || 0,
+                    reserved: parseInt(record.reserved) || 0,
+                    incoming: parseInt(record.incoming) || 0,
+                    storeDomain: storeId,
+                    storeId: storeId,
+                    updatedAt: record.updated_at || timestamp,
+                    syncedAt: timestamp,
+                    userId: dataUserId
+                  };
+                  break;
+              }
+              
+              batchWrites.push({
+                PutRequest: {
+                  Item: item
+                }
+              });
+              
+              // DynamoDB batch write limit is 25 items
+              if (batchWrites.length === 25) {
+                await dynamodb.batchWrite({
+                  RequestItems: {
+                    [process.env.TABLE_NAME]: batchWrites.splice(0, 25)
+                  }
+                }).promise();
+              }
+              
+              results.success++;
+            } catch (recordError) {
+              console.error(`Error processing record:`, recordError);
+              results.failed++;
+              results.errors.push({
+                record: record.id || record.sku || record.email || 'unknown',
+                error: recordError.message
+              });
+            }
+          }
+          
+          // Write remaining items
+          if (batchWrites.length > 0) {
+            const chunks = [];
+            while (batchWrites.length > 0) {
+              chunks.push(batchWrites.splice(0, 25));
+            }
+            
+            for (const chunk of chunks) {
+              await dynamodb.batchWrite({
+                RequestItems: {
+                  [process.env.TABLE_NAME]: chunk
+                }
+              }).promise();
+            }
+          }
+          
+          // Update store metadata with upload info
+          await dynamodb.update({
+            TableName: process.env.TABLE_NAME,
+            Key: {
+              pk: `USER#${dataUserId}`,
+              sk: `STORE#${storeId}_metadata`
+            },
+            UpdateExpression: 'SET lastUploadAt = :timestamp, lastUploadType = :dataType, #uploadCount = if_not_exists(#uploadCount, :zero) + :one',
+            ExpressionAttributeNames: {
+              '#uploadCount': 'uploadCount'
+            },
+            ExpressionAttributeValues: {
+              ':timestamp': timestamp,
+              ':dataType': dataType,
+              ':zero': 0,
+              ':one': 1
+            }
+          }).promise().catch(err => {
+            console.log('Could not update store metadata:', err);
+          });
+          
+          console.log(`Upload complete: ${results.success} succeeded, ${results.failed} failed`);
+          
+          responseData = {
+            success: true,
+            message: `Successfully uploaded ${results.success} ${dataType} records`,
+            results: {
+              dataType: dataType,
+              storeId: storeId,
+              totalRecords: dataRecords.length,
+              successful: results.success,
+              failed: results.failed,
+              errors: results.errors.slice(0, 10) // Limit error details
+            }
+          };
+        } catch (error) {
+          console.error('Error processing batch upload:', error);
+          responseData = {
+            success: false,
+            error: 'Failed to process batch upload',
+            details: error.message
+          };
+          statusCode = 500;
+        }
         break;
         
       case 'config':
