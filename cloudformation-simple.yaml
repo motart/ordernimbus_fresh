@@ -46,8 +46,18 @@ Resources:
             Version: '2012-10-17'
             Statement:
               - Effect: Allow
-                Action: '*'
-                Resource: '*'
+                Action:
+                  - 'dynamodb:GetItem'
+                  - 'dynamodb:PutItem'
+                  - 'dynamodb:UpdateItem'
+                  - 'dynamodb:DeleteItem'
+                  - 'dynamodb:Query'
+                  - 'dynamodb:Scan'
+                  - 'dynamodb:BatchGetItem'
+                  - 'dynamodb:BatchWriteItem'
+                Resource: 
+                  - !GetAtt MainTable.Arn
+                  - !Sub '${MainTable.Arn}/index/*'
         - PolicyName: SecretsManagerAccess
           PolicyDocument:
             Version: '2012-10-17'
@@ -79,6 +89,7 @@ Resources:
                   - 'cognito-idp:AdminInitiateAuth'
                   - 'cognito-idp:AdminSetUserPassword'
                   - 'cognito-idp:ListUsers'
+                  - 'cognito-idp:ForgotPassword'
                 Resource: !GetAtt UserPool.Arn
 
   # ==================== AWS COGNITO USER POOL ====================
@@ -160,16 +171,26 @@ Resources:
         IndexDocument: index.html
         ErrorDocument: index.html
       PublicAccessBlockConfiguration:
-        BlockPublicAcls: false
-        BlockPublicPolicy: false
-        IgnorePublicAcls: false
-        RestrictPublicBuckets: false
+        BlockPublicAcls: !If [CreateCloudFront, true, false]
+        BlockPublicPolicy: !If [CreateCloudFront, true, false]
+        IgnorePublicAcls: !If [CreateCloudFront, true, false]
+        RestrictPublicBuckets: !If [CreateCloudFront, true, false]
       CorsConfiguration:
         CorsRules:
           - AllowedHeaders: ['*']
             AllowedMethods: [GET, HEAD]
-            AllowedOrigins: ['*']
+            AllowedOrigins: 
+              - 'https://app.ordernimbus.com'
+              - 'http://localhost:3000'
             MaxAge: 3600
+
+  # CloudFront Origin Access Identity for secure S3 access
+  CloudFrontOriginAccessIdentity:
+    Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+    Condition: CreateCloudFront
+    Properties:
+      CloudFrontOriginAccessIdentityConfig:
+        Comment: !Sub 'OAI for ${AWS::StackName}'
 
   FrontendBucketPolicy:
     Type: AWS::S3::BucketPolicy
@@ -177,11 +198,23 @@ Resources:
       Bucket: !Ref FrontendBucket
       PolicyDocument:
         Statement:
+          - Sid: AllowCloudFrontAccess
+            Effect: Allow
+            Principal:
+              AWS: !If 
+                - CreateCloudFront
+                - !Sub 'arn:aws:iam::cloudfront:user/CloudFront Origin Access Identity ${CloudFrontOriginAccessIdentity}'
+                - '*'
+            Action: s3:GetObject
+            Resource: !Sub '${FrontendBucket.Arn}/*'
           - Sid: PublicReadGetObject
             Effect: Allow
             Principal: '*'
             Action: s3:GetObject
             Resource: !Sub '${FrontendBucket.Arn}/*'
+            Condition:
+              Bool:
+                'aws:SecureTransport': 'false'
 
   # ==================== SSL CERTIFICATE ====================
   # Note: Certificate must be in us-east-1 for CloudFront
@@ -213,16 +246,12 @@ Resources:
           MinimumProtocolVersion: TLSv1.2_2021
           SslSupportMethod: sni-only
         
-        # S3 Origin
+        # S3 Origin with OAI
         Origins:
           - Id: S3Origin
-            DomainName: !Sub '${FrontendBucket}.s3-website-${AWS::Region}.amazonaws.com'
-            CustomOriginConfig:
-              HTTPPort: 80
-              HTTPSPort: 443
-              OriginProtocolPolicy: http-only
-              OriginSSLProtocols:
-                - TLSv1.2
+            DomainName: !GetAtt FrontendBucket.RegionalDomainName
+            S3OriginConfig:
+              OriginAccessIdentity: !Sub 'origin-access-identity/cloudfront/${CloudFrontOriginAccessIdentity}'
         
         # Default Cache Behavior
         DefaultCacheBehavior:
