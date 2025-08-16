@@ -109,8 +109,6 @@ const Dashboard: React.FC = () => {
       case 'orders': return 'Orders';
       case 'products': return 'Products';
       case 'customers': return 'Customers';
-      case 'analytics': return 'Analytics';
-      case 'reports': return 'Reports';
       case 'notifications': return 'Notifications';
       case 'help': return 'Help & Support';
       case 'settings': return 'Settings';
@@ -300,9 +298,9 @@ const Dashboard: React.FC = () => {
                       <button className="action-button">Configure</button>
                     </div>
                     <div className="action-card">
-                      <h3>Export Report</h3>
-                      <p>Download detailed analytics report</p>
-                      <button className="action-button">Export PDF</button>
+                      <h3>Export Data</h3>
+                      <p>Download your sales data</p>
+                      <button className="action-button">Export CSV</button>
                     </div>
                   </div>
                 </>
