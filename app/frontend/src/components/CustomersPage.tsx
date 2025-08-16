@@ -1,4 +1,3 @@
-import { authService } from '../services/auth';
 import React, { useState, useEffect } from 'react';
 import './CustomersPage.css';
 import toast from 'react-hot-toast';
@@ -6,7 +5,8 @@ import { ClipLoader } from 'react-spinners';
 import { FiRefreshCw, FiSearch, FiFilter, FiUsers, FiPlus, FiMail, FiPhone, FiMapPin } from 'react-icons/fi';
 import ManualEntryModal from './ManualEntryModal';
 import './ManualEntryModal.css';
-import { getApiUrl } from '../config/environment';
+import { useAuth } from '../contexts/AuthContext';
+import { createAuthenticatedFetch } from '../utils/authenticatedFetch';
 
 interface Customer {
   id: string;
@@ -30,6 +30,8 @@ interface Customer {
 }
 
 const CustomersPage: React.FC = () => {
+  const { getAccessToken } = useAuth();
+  const authenticatedFetch = createAuthenticatedFetch({ getAccessToken });
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [countryFilter, setCountryFilter] = useState<string>('all');
@@ -46,7 +48,7 @@ const CustomersPage: React.FC = () => {
     try {
       // userId is now extracted from JWT token on backend
       
-      const response = await authService.authenticatedRequest(`/api/customers`);
+      const response = await authenticatedFetch(`/api/customers`);
 
       if (response.ok) {
         const data = await response.json();
@@ -76,7 +78,7 @@ const CustomersPage: React.FC = () => {
     try {
       // userId is now extracted from JWT token on backend
       
-      const response = await authService.authenticatedRequest(`/api/customers`, {
+      const response = await authenticatedFetch(`/api/customers`, {
         method: 'POST',
         body: JSON.stringify({
           storeId: customerData.storeId,

@@ -1,4 +1,3 @@
-import { authService } from '../services/auth';
 import React, { useState, useEffect } from 'react';
 import './OrderPage.css';
 import toast from 'react-hot-toast';
@@ -8,7 +7,8 @@ import CSVUploadModal from './CSVUploadModal';
 import ManualEntryModal from './ManualEntryModal';
 import './CSVUploadModal.css';
 import './ManualEntryModal.css';
-import { getApiUrl } from '../config/environment';
+import { useAuth } from '../contexts/AuthContext';
+import { createAuthenticatedFetch } from '../utils/authenticatedFetch';
 
 interface OrderItem {
   id: string;
@@ -67,6 +67,8 @@ interface Store {
 }
 
 const OrderPage: React.FC = () => {
+  const { getAccessToken } = useAuth();
+  const authenticatedFetch = createAuthenticatedFetch({ getAccessToken });
   const [orders, setOrders] = useState<Order[]>([]);
   const [stores, setStores] = useState<Store[]>([]);
   const [selectedStore, setSelectedStore] = useState<string>('');
@@ -95,7 +97,7 @@ const OrderPage: React.FC = () => {
     try {
       // userId is now extracted from JWT token on backend
       
-      const response = await authService.authenticatedRequest(`/api/stores`);
+      const response = await authenticatedFetch(`/api/stores`);
 
       if (response.ok) {
         const data = await response.json();
@@ -121,7 +123,7 @@ const OrderPage: React.FC = () => {
     try {
       // userId is now extracted from JWT token on backend
       
-      const response = await authService.authenticatedRequest(`/api/orders?storeId=${selectedStore}`);
+      const response = await authenticatedFetch(`/api/orders?storeId=${selectedStore}`);
 
       if (response.ok) {
         const data = await response.json();
@@ -146,7 +148,7 @@ const OrderPage: React.FC = () => {
       // userId is now extracted from JWT token on backend
       
       // Load orders from all stores
-      const response = await authService.authenticatedRequest(`/api/orders`);
+      const response = await authenticatedFetch(`/api/orders`);
 
       if (response.ok) {
         const data = await response.json();
@@ -286,7 +288,7 @@ const OrderPage: React.FC = () => {
       // userId is now extracted from JWT token on backend
       
       // Use the universal data upload endpoint
-      const response = await authService.authenticatedRequest(`/api/data/upload-csv`, {
+      const response = await authenticatedFetch(`/api/data/upload-csv`, {
         method: 'POST',
         body: JSON.stringify({
           dataType: dataType,
@@ -328,7 +330,7 @@ const OrderPage: React.FC = () => {
         currency: orderData.currency || 'USD'
       };
 
-      const response = await authService.authenticatedRequest(`/api/orders`, {
+      const response = await authenticatedFetch(`/api/orders`, {
         method: 'POST',
         body: JSON.stringify({
           storeId: orderData.storeId || selectedStore,

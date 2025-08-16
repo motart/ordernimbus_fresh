@@ -1,4 +1,3 @@
-import { authService } from '../services/auth';
 import React, { useState, useEffect } from 'react';
 import './NotificationsPage.css';
 import toast from 'react-hot-toast';
@@ -8,7 +7,8 @@ import {
   FiCheckCircle, FiXCircle, FiRefreshCw, FiCheck,
   FiTrendingUp, FiBox, FiCheckSquare
 } from 'react-icons/fi';
-import { getApiUrl } from '../config/environment';
+import { useAuth } from '../contexts/AuthContext';
+import { createAuthenticatedFetch } from '../utils/authenticatedFetch';
 
 interface Notification {
   id: string;
@@ -23,6 +23,8 @@ interface Notification {
 }
 
 const NotificationsPage: React.FC = () => {
+  const { getAccessToken } = useAuth();
+  const authenticatedFetch = createAuthenticatedFetch({ getAccessToken });
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
@@ -39,7 +41,7 @@ const NotificationsPage: React.FC = () => {
     try {
       // userId is now extracted from JWT token on backend
       
-      const response = await authService.authenticatedRequest(`/api/notifications`);
+      const response = await authenticatedFetch(`/api/notifications`);
 
       if (response.ok) {
         const data = await response.json();
@@ -67,7 +69,9 @@ const NotificationsPage: React.FC = () => {
     try {
       // userId is now extracted from JWT token on backend
       
-      const response = await authService.authenticatedRequest(`/api/notifications/${notificationId}/read`);
+      const response = await authenticatedFetch(`/api/notifications/${notificationId}/read`, {
+        method: 'PUT'
+      });
 
       if (response.ok) {
         setNotifications(prev => 
@@ -87,7 +91,9 @@ const NotificationsPage: React.FC = () => {
     try {
       // userId is now extracted from JWT token on backend
       
-      const response = await authService.authenticatedRequest(`/api/notifications/read-all`);
+      const response = await authenticatedFetch(`/api/notifications/read-all`, {
+        method: 'PUT'
+      });
 
       if (response.ok) {
         setNotifications(prev => prev.map(n => ({ ...n, read: true })));

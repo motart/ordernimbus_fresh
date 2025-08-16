@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import './LogsPage.css';
-import { getApiUrl } from '../config/environment';
-import { authService } from '../services/auth';
 import { useAuth } from '../contexts/AuthContext';
+import { createAuthenticatedFetch } from '../utils/authenticatedFetch';
 import toast from 'react-hot-toast';
 import {
   FiRefreshCw,
@@ -61,7 +60,8 @@ const LogsPage: React.FC = () => {
   const [autoScroll, setAutoScroll] = useState(true);
   const logsContainerRef = useRef<HTMLDivElement>(null);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const { user } = useAuth();
+  const { user, getAccessToken } = useAuth();
+  const authenticatedFetch = createAuthenticatedFetch({ getAccessToken });
 
   // Fetch logs from API
   const fetchLogs = useCallback(async (since?: string) => {
@@ -75,7 +75,7 @@ const LogsPage: React.FC = () => {
       if (filter.startTime) params.append('startTime', filter.startTime);
       if (filter.endTime) params.append('endTime', filter.endTime);
 
-      const response = await authService.authenticatedRequest(
+      const response = await authenticatedFetch(
         `/api/logs?${params.toString()}`
       );
 

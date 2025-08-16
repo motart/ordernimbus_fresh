@@ -1,4 +1,3 @@
-import { authService } from '../services/auth';
 import React, { useState, useEffect } from 'react';
 import './InventoryPage.css';
 import toast from 'react-hot-toast';
@@ -6,7 +5,8 @@ import { ClipLoader } from 'react-spinners';
 import { FiRefreshCw, FiSearch, FiFilter, FiPackage, FiAlertTriangle, FiCheckCircle, FiPlus } from 'react-icons/fi';
 import ManualEntryModal from './ManualEntryModal';
 import './ManualEntryModal.css';
-import { getApiUrl } from '../config/environment';
+import { useAuth } from '../contexts/AuthContext';
+import { createAuthenticatedFetch } from '../utils/authenticatedFetch';
 
 interface InventoryItem {
   id: string;
@@ -40,6 +40,8 @@ interface Store {
 }
 
 const InventoryPage: React.FC = () => {
+  const { getAccessToken } = useAuth();
+  const authenticatedFetch = createAuthenticatedFetch({ getAccessToken });
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [stores, setStores] = useState<Store[]>([]);
   const [selectedStore, setSelectedStore] = useState<string>('');
@@ -63,7 +65,7 @@ const InventoryPage: React.FC = () => {
     try {
       // userId is now extracted from JWT token on backend
       
-      const response = await authService.authenticatedRequest(`/api/stores`);
+      const response = await authenticatedFetch(`/api/stores`);
 
       if (response.ok) {
         const data = await response.json();
@@ -90,7 +92,7 @@ const InventoryPage: React.FC = () => {
       // Always fetch from API - backend handles all data storage
       // userId is now extracted from JWT token on backend
       
-      const response = await authService.authenticatedRequest(`/api/inventory?storeId=${selectedStore}`);
+      const response = await authenticatedFetch(`/api/inventory?storeId=${selectedStore}`);
 
       if (response.ok) {
         const data = await response.json();
@@ -181,7 +183,7 @@ const InventoryPage: React.FC = () => {
     try {
       // userId is now extracted from JWT token on backend
       
-      const response = await authService.authenticatedRequest(`/api/inventory`, {
+      const response = await authenticatedFetch(`/api/inventory`, {
         method: 'POST',
         body: JSON.stringify({
           storeId: inventoryData.storeId,
