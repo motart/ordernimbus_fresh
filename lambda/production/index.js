@@ -546,8 +546,168 @@ exports.handler = async (event) => {
           };
         }
         
+        // Handle POST method for creating stores
+        if (method === 'POST') {
+          console.log('Creating new store for user:', storesUserId);
+          
+          try {
+            // Parse request body
+            const requestBody = JSON.parse(event.body || '{}');
+            
+            // Validate required fields
+            if (!requestBody.name) {
+              responseData = {
+                error: 'Store name is required'
+              };
+              statusCode = 400;
+              break;
+            }
+            
+            // Generate store ID
+            const storeId = requestBody.id || `${requestBody.type || 'manual'}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            
+            // Create store item
+            const storeItem = {
+              pk: `USER#${storesUserId}`,
+              sk: `STORE#${storeId}_metadata`,
+              storeId: storeId,
+              storeName: requestBody.name,
+              name: requestBody.name,
+              displayName: requestBody.name,
+              storeType: requestBody.type || 'brick-and-mortar',
+              type: requestBody.type || 'brick-and-mortar',
+              address: requestBody.address || '',
+              city: requestBody.city || '',
+              state: requestBody.state || '',
+              zipCode: requestBody.zipCode || '',
+              country: requestBody.country || 'United States',
+              website: requestBody.website || '',
+              shopifyDomain: requestBody.shopifyDomain || '',
+              apiKey: requestBody.apiKey || '',
+              status: requestBody.status || 'active',
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+              userId: storesUserId
+            };
+            
+            // Save to DynamoDB
+            await dynamodb.put({
+              TableName: process.env.TABLE_NAME,
+              Item: storeItem
+            }).promise();
+            
+            console.log('Store created successfully:', storeId);
+            
+            // Return the created store
+            responseData = {
+              success: true,
+              store: {
+                id: storeId,
+                name: storeItem.storeName,
+                displayName: storeItem.displayName,
+                type: storeItem.storeType,
+                address: storeItem.address,
+                city: storeItem.city,
+                state: storeItem.state,
+                zipCode: storeItem.zipCode,
+                country: storeItem.country,
+                website: storeItem.website,
+                shopifyDomain: storeItem.shopifyDomain,
+                status: storeItem.status,
+                createdAt: storeItem.createdAt
+              }
+            };
+            statusCode = 201;
+            
+          } catch (error) {
+            console.error('Error creating store:', error);
+            responseData = {
+              error: 'Failed to create store',
+              details: error.message
+            };
+            statusCode = 500;
+          }
+        }
+        // Handle PUT method for updating stores
+        else if (method === 'PUT') {
+          const storeId = event.pathParameters?.id || event.queryStringParameters?.storeId;
+          
+          if (!storeId) {
+            responseData = {
+              error: 'Store ID is required for update'
+            };
+            statusCode = 400;
+            break;
+          }
+          
+          console.log('Updating store:', storeId, 'for user:', storesUserId);
+          
+          try {
+            // Parse request body
+            const requestBody = JSON.parse(event.body || '{}');
+            
+            // Update store item
+            const updateExpression = [];
+            const expressionAttributeNames = {};
+            const expressionAttributeValues = {};
+            
+            // Build update expression dynamically
+            const updateableFields = [
+              'name', 'displayName', 'type', 'address', 'city', 'state', 
+              'zipCode', 'country', 'website', 'shopifyDomain', 'apiKey', 'status'
+            ];
+            
+            updateableFields.forEach(field => {
+              if (requestBody[field] !== undefined) {
+                const placeholder = `#${field}`;
+                const valuePlaceholder = `:${field}`;
+                updateExpression.push(`${placeholder} = ${valuePlaceholder}`);
+                expressionAttributeNames[placeholder] = field;
+                expressionAttributeValues[valuePlaceholder] = requestBody[field];
+              }
+            });
+            
+            // Always update the updatedAt timestamp
+            updateExpression.push('#updatedAt = :updatedAt');
+            expressionAttributeNames['#updatedAt'] = 'updatedAt';
+            expressionAttributeValues[':updatedAt'] = new Date().toISOString();
+            
+            // Update in DynamoDB
+            await dynamodb.update({
+              TableName: process.env.TABLE_NAME,
+              Key: {
+                pk: `USER#${storesUserId}`,
+                sk: `STORE#${storeId}_metadata`
+              },
+              UpdateExpression: `SET ${updateExpression.join(', ')}`,
+              ExpressionAttributeNames: expressionAttributeNames,
+              ExpressionAttributeValues: expressionAttributeValues
+            }).promise();
+            
+            console.log('Store updated successfully:', storeId);
+            
+            // Return success response
+            responseData = {
+              success: true,
+              store: {
+                id: storeId,
+                ...requestBody,
+                updatedAt: expressionAttributeValues[':updatedAt']
+              }
+            };
+            statusCode = 200;
+            
+          } catch (error) {
+            console.error('Error updating store:', error);
+            responseData = {
+              error: 'Failed to update store',
+              details: error.message
+            };
+            statusCode = 500;
+          }
+        }
         // Handle DELETE method
-        if (method === 'DELETE') {
+        else if (method === 'DELETE') {
           const storeId = event.pathParameters?.id || event.queryStringParameters?.storeId;
           
           if (!storeId) {
