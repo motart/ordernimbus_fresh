@@ -16,7 +16,6 @@ import { SiShopify } from 'react-icons/si';
 import { MdStorefront } from 'react-icons/md';
 import useSecureData from '../hooks/useSecureData';
 import { useAuth } from '../contexts/AuthContext';
-import { authService } from '../services/auth';
 import ShopifyConnect from './ShopifyConnect';
 import CSVUploadModal from './CSVUploadModal';
 import './CSVUploadModal.css';
@@ -110,7 +109,27 @@ const StoresPage: React.FC = () => {
     setData, 
     getData 
   } = useSecureData();
-  const { user } = useAuth();
+  const { user, getAccessToken } = useAuth();
+
+  // Helper function for authenticated API requests
+  const authenticatedFetch = async (endpoint: string, options: RequestInit = {}) => {
+    const token = await getAccessToken();
+    if (!token) {
+      throw new Error('Authentication required. Please log in.');
+    }
+
+    const apiUrl = getApiUrl();
+    const url = endpoint.startsWith('http') ? endpoint : `${apiUrl}${endpoint}`;
+    
+    return fetch(url, {
+      ...options,
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        ...options.headers
+      }
+    });
+  };
 
   // Load stores function - moved outside useEffect to be reusable
   const loadStores = async () => {
@@ -118,8 +137,8 @@ const StoresPage: React.FC = () => {
     
     setIsLoadingStores(true);
     try {
-      // Use the authenticated API request helper
-      const response = await authService.authenticatedRequest(`/api/stores?t=${Date.now()}`);
+      // Use the authenticated fetch helper
+      const response = await authenticatedFetch(`/api/stores?t=${Date.now()}`);
       
       if (response.ok) {
         const result = await response.json();
@@ -261,7 +280,10 @@ const StoresPage: React.FC = () => {
         ? `${apiUrl}/api/stores/${editingStore.id}`
         : `${apiUrl}/api/stores`;
       
-      const response = await authService.authenticatedRequest(endpoint);
+      const response = await authenticatedFetch(endpoint, {
+        method: method,
+        body: JSON.stringify(storePayload)
+      });
 
       if (!response.ok) {
         throw new Error('Failed to save store');
@@ -328,7 +350,7 @@ const StoresPage: React.FC = () => {
       
       // First, trigger the sync endpoint to start importing data
       const apiUrl = getApiUrl();
-      const syncResponse = await authService.authenticatedRequest(`/api/shopify/sync`, {
+      const syncResponse = await authenticatedFetch(`/api/shopify/sync`, {
         method: 'POST',
         body: JSON.stringify({
           shop: storeDomain,
@@ -413,7 +435,7 @@ const StoresPage: React.FC = () => {
     
     const checkStatus = async () => {
       try {
-        const response = await authService.authenticatedRequest(`${apiUrl}/api/stores`);
+        const response = await authenticatedFetch(`/api/stores`);
         
         if (response.ok) {
           const result = await response.json();
@@ -477,7 +499,7 @@ const StoresPage: React.FC = () => {
       const apiUrl = getApiUrl();
       
       // Call API to delete store using DELETE method
-      const response = await authService.authenticatedRequest(`/api/stores/${storeToDelete.id}`, {
+      const response = await authenticatedFetch(`/api/stores/${storeToDelete.id}`, {
         method: 'DELETE'
       });
 
@@ -516,7 +538,7 @@ const StoresPage: React.FC = () => {
       const apiUrl = getApiUrl();
       const endpoint = dataType === 'orders' ? '/api/orders/upload-csv' : '/api/data/upload-csv';
       
-      const response = await authService.authenticatedRequest(endpoint, {
+      const response = await authenticatedFetch(endpoint, {
         method: 'POST',
         body: JSON.stringify({
           dataType: dataType,
@@ -573,7 +595,7 @@ const StoresPage: React.FC = () => {
       toast('🔄 Starting manual sync...', { duration: 2000 });
       
       const apiUrl = getApiUrl();
-      const response = await authService.authenticatedRequest(`/api/shopify/sync`, {
+      const response = await authenticatedFetch(`/api/shopify/sync`, {
         method: 'POST',
         body: JSON.stringify({
           storeId: store.id,

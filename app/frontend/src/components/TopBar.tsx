@@ -1,4 +1,3 @@
-import { authService } from '../services/auth';
 import React from 'react';
 import './TopBar.css';
 import { 
@@ -6,6 +5,7 @@ import {
   FiHelpCircle
 } from 'react-icons/fi';
 import { getApiUrl } from '../config/environment';
+import { useAuth } from '../contexts/AuthContext';
 
 interface TopBarProps {
   userEmail: string;
@@ -35,10 +35,24 @@ const TopBar: React.FC<TopBarProps> = ({ userEmail, onNavigate, onLogout, active
     };
   }, []);
 
+  const { getAccessToken } = useAuth();
+
   const loadNotificationCount = async () => {
     try {
-      // userId is now extracted from JWT token on backend
-      const response = await authService.authenticatedRequest(`/api/notifications?unreadOnly=true`);
+      // Get the access token from AWS Amplify
+      const token = await getAccessToken();
+      if (!token) {
+        // User is not authenticated, skip loading notifications
+        return;
+      }
+
+      const apiUrl = getApiUrl();
+      const response = await fetch(`${apiUrl}/api/notifications?unreadOnly=true`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
 
       if (response.ok) {
         const data = await response.json();

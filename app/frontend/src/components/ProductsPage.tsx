@@ -1,4 +1,3 @@
-import { authService } from '../services/auth';
 import React, { useState, useEffect } from 'react';
 import './ProductsPage.css';
 import toast from 'react-hot-toast';
@@ -6,7 +5,8 @@ import { ClipLoader } from 'react-spinners';
 import { FiRefreshCw, FiSearch, FiFilter, FiPackage, FiPlus, FiTag, FiDollarSign } from 'react-icons/fi';
 import ManualEntryModal from './ManualEntryModal';
 import './ManualEntryModal.css';
-import { getApiUrl } from '../config/environment';
+import { useAuth } from '../contexts/AuthContext';
+import { createAuthenticatedFetch } from '../utils/authenticatedFetch';
 
 interface Product {
   id: string;
@@ -36,6 +36,8 @@ interface Store {
 }
 
 const ProductsPage: React.FC = () => {
+  const { getAccessToken } = useAuth();
+  const authenticatedFetch = createAuthenticatedFetch({ getAccessToken });
   const [products, setProducts] = useState<Product[]>([]);
   const [stores, setStores] = useState<Store[]>([]);
   const [selectedStore, setSelectedStore] = useState<string>('');
@@ -60,7 +62,7 @@ const ProductsPage: React.FC = () => {
     try {
       // userId is now extracted from JWT token on backend
       
-      const response = await authService.authenticatedRequest(`/api/stores`);
+      const response = await authenticatedFetch(`/api/stores`);
 
       if (response.ok) {
         const data = await response.json();
@@ -86,7 +88,7 @@ const ProductsPage: React.FC = () => {
     try {
       // userId is now extracted from JWT token on backend
       
-      const response = await authService.authenticatedRequest(`/api/products?storeId=${selectedStore}`);
+      const response = await authenticatedFetch(`/api/products?storeId=${selectedStore}`);
 
       if (response.ok) {
         const data = await response.json();
@@ -116,7 +118,7 @@ const ProductsPage: React.FC = () => {
     try {
       // userId is now extracted from JWT token on backend
       
-      const response = await authService.authenticatedRequest(`/api/products`, {
+      const response = await authenticatedFetch(`/api/products`, {
         method: 'POST',
         body: JSON.stringify({
           storeId: productData.storeId,
