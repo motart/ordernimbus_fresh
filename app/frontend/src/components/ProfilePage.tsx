@@ -373,12 +373,6 @@ const ProfilePage: React.FC = () => {
 
   return (
     <div className="profile-page">
-      <div className="profile-header">
-        <div className="header-content">
-          <h1>Account & Settings</h1>
-          <p className="subtitle">Manage your account, team, and preferences</p>
-        </div>
-      </div>
 
       <div className="profile-tabs">
         <button

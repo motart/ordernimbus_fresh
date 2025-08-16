@@ -217,10 +217,6 @@ const InventoryPage: React.FC = () => {
     <div className="inventory-page">
       <header className="inventory-header">
         <div className="header-content">
-          <div className="header-left">
-            <h1>Inventory Management</h1>
-            <p>Track and manage your product inventory across all stores</p>
-          </div>
           <div className="header-actions">
             {selectedStore && (
               <button 

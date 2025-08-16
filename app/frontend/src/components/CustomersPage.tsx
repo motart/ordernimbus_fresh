@@ -170,10 +170,6 @@ const CustomersPage: React.FC = () => {
     <div className="customers-page">
       <header className="customers-header">
         <div className="header-content">
-          <div className="header-left">
-            <h1>Customer Management</h1>
-            <p>Manage your customer database and track customer relationships</p>
-          </div>
           <div className="header-actions">
             <button 
               onClick={() => setShowManualEntry(true)}

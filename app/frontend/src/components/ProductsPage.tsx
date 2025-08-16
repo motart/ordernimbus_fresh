@@ -205,10 +205,6 @@ const ProductsPage: React.FC = () => {
     <div className="order-page">
       <header className="order-header">
         <div className="header-content">
-          <div className="header-left">
-            <h1>Product Management</h1>
-            <p>Manage your product catalog across all stores</p>
-          </div>
           <div className="header-actions">
             {selectedStore && (
               <button 

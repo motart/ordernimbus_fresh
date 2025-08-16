@@ -165,10 +165,6 @@ const NotificationsPage: React.FC = () => {
     <div className="notifications-page">
       <header className="notifications-header">
         <div className="header-content">
-          <div className="header-left">
-            <h1>Notifications</h1>
-            <p>Stay updated with important alerts and updates</p>
-          </div>
           <div className="header-actions">
             {notifications.some(n => !n.read) && (
               <button onClick={markAllAsRead} className="mark-all-read-btn">
