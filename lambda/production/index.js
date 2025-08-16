@@ -648,7 +648,7 @@ exports.handler = async (event) => {
               req.end();
             });
             
-            // Store the access token in DynamoDB
+            // Store the access token in DynamoDB (for token retrieval)
             await dynamodb.put({
               TableName: process.env.TABLE_NAME,
               Item: {
@@ -657,6 +657,25 @@ exports.handler = async (event) => {
                 accessToken: accessToken,
                 storeDomain: shop,
                 connectedAt: new Date().toISOString()
+              }
+            }).promise();
+            
+            // Also create a store metadata record for the stores list
+            await dynamodb.put({
+              TableName: process.env.TABLE_NAME,
+              Item: {
+                pk: `user_${stateResult.Item.userId}`,
+                sk: `store_${shop}_metadata`,
+                storeId: shop.replace('.myshopify.com', ''),
+                storeName: shop.replace('.myshopify.com', ''),
+                displayName: shop.replace('.myshopify.com', ''),
+                storeType: 'shopify',
+                shopifyDomain: shop,
+                syncStatus: 'pending',
+                connectedAt: new Date().toISOString(),
+                productsCount: 0,
+                ordersCount: 0,
+                customersCount: 0
               }
             }).promise();
             
@@ -895,18 +914,24 @@ exports.handler = async (event) => {
               console.error('Failed to fetch customers:', customersData.reason);
             }
             
-            // Store metadata about the sync
+            // Update or create metadata about the sync
             await dynamodb.put({
               TableName: process.env.TABLE_NAME,
               Item: {
                 pk: `user_${userId}`,
                 sk: `store_${actualStoreDomain}_metadata`,
-                customerCount: customers.length,
-                productCount: products.length,
-                orderCount: orders.length,
+                storeId: actualStoreDomain.replace('.myshopify.com', ''),
+                storeName: actualStoreDomain.replace('.myshopify.com', ''),
+                displayName: actualStoreDomain.replace('.myshopify.com', ''),
+                storeType: 'shopify',
+                shopifyDomain: actualStoreDomain,
+                customersCount: customers.length,
+                productsCount: products.length,
+                ordersCount: orders.length,
                 totalInventory: inventory,
                 totalRevenue: totalRevenue.toFixed(2),
-                lastSyncedAt: new Date().toISOString()
+                lastSyncAt: new Date().toISOString(),
+                syncStatus: 'completed'
               }
             }).promise().catch(err => console.error('Error storing metadata:', err));
             

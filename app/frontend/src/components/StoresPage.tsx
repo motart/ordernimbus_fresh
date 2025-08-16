@@ -126,6 +126,7 @@ const StoresPage: React.FC = () => {
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json',
+        'userId': user?.userId || '', // Add userId header for Lambda
         ...options.headers
       }
     });
