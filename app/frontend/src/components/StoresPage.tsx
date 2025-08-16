@@ -335,6 +335,7 @@ const StoresPage: React.FC = () => {
     try {
       // Extract the store domain from the storeData passed from OAuth callback
       const storeDomain = storeData.storeDomain || storeData.shopifyDomain || storeData.shop || '';
+      const storeId = storeData.storeId || storeDomain.replace('.myshopify.com', '');
       const userId = user?.userId || storeData.userId || 'test-user';
       
       // Validate we have required data
@@ -353,8 +354,10 @@ const StoresPage: React.FC = () => {
       const syncResponse = await authenticatedFetch(`/api/shopify/sync`, {
         method: 'POST',
         body: JSON.stringify({
-          shop: storeDomain,
-          storeId: storeDomain.replace('.myshopify.com', '')
+          userId: userId,  // Required parameter
+          shopifyDomain: storeDomain,  // The Lambda expects this field name
+          storeId: storeId,
+          syncType: 'initial'  // Optional: specify sync type
         })
       });
       
