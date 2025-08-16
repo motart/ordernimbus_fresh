@@ -227,10 +227,6 @@ const ForecastPage: React.FC = () => {
   return (
     <div className="forecast-page">
       <div className="forecast-header">
-        <div className="header-content">
-          <h1>Sales Forecast</h1>
-          <h2 className="subtitle">AI-powered predictions and analytics for your business</h2>
-        </div>
         <div className="header-actions">
           <button className="btn-secondary" onClick={handleExportForecast} disabled={stores.length === 0}>
             {React.createElement(FiDownload as any)}

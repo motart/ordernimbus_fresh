@@ -729,14 +729,6 @@ const StoresPage: React.FC = () => {
   if (!isInitialized || isLoadingStores) {
     return (
       <div className="stores-page">
-        <div className="page-header">
-          <div className="header-content">
-            <h1>
-              Stores
-              <span className="page-subtitle">Manage your retail locations and online stores</span>
-            </h1>
-          </div>
-        </div>
         <div style={{
           display: 'flex',
           justifyContent: 'center',
@@ -762,9 +754,6 @@ const StoresPage: React.FC = () => {
   return (
     <div className="stores-page">
       <div className="page-header">
-        <div className="header-content">
-          <h1>Stores</h1>
-        </div>
         <div className="header-actions">
           <button className="btn-shopify" onClick={() => setShowShopifyConnect(true)}>
             {React.createElement(SiShopify as any)}

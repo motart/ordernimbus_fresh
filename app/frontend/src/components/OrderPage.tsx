@@ -361,10 +361,6 @@ const OrderPage: React.FC = () => {
     <div className="order-page">
       <header className="order-header">
         <div className="header-content">
-          <div className="header-left">
-            <h1>Order Management</h1>
-            <p>View and manage orders from all your connected stores</p>
-          </div>
           <div className="header-actions">
             <button 
               onClick={() => setShowManualEntry(true)}
