@@ -125,7 +125,7 @@ const StoresPage: React.FC = () => {
         const result = await response.json();
         if (result.stores && result.stores.length >= 0) {
           setStores(result.stores);
-          console.log('Loaded stores from API:', result.stores.length, 'stores');
+          // Successfully loaded stores from API
           
           // Save to local storage as backup
           if (result.stores.length > 0) {
@@ -147,7 +147,7 @@ const StoresPage: React.FC = () => {
         const localStores = await getData<Store[]>('stores');
         if (localStores && localStores.length > 0) {
           setStores(localStores);
-          console.log('Loaded stores from local storage:', localStores.length, 'stores');
+          // Loaded stores from local storage as fallback
         }
       } catch (localError) {
         console.warn('No local stores found:', localError);
@@ -161,6 +161,31 @@ const StoresPage: React.FC = () => {
   useEffect(() => {
     loadStores();
   }, [user]);
+
+  // Refresh stores when page gains focus (e.g., navigating back)
+  useEffect(() => {
+    const handleFocus = () => {
+      // Only reload if not currently loading
+      if (!isLoadingStores) {
+        loadStores();
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    
+    // Also refresh when the component becomes visible
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && !isLoadingStores) {
+        loadStores();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [isLoadingStores]);
 
   // Handle secure data errors
   useEffect(() => {
@@ -277,7 +302,7 @@ const StoresPage: React.FC = () => {
 
   // Poll for Shopify sync status
   const handleShopifyConnectSuccess = async (storeData: any) => {
-    console.log('Shopify connection successful, handling store data:', storeData);
+    // Shopify connection successful, handling store data
     
     // Close the modal immediately for better UX
     setShowShopifyConnect(false);
@@ -299,7 +324,7 @@ const StoresPage: React.FC = () => {
         throw new Error('User ID is missing');
       }
       
-      console.log('Syncing with store:', { storeDomain, userId });
+      // Syncing with store
       
       // First, trigger the sync endpoint to start importing data
       const apiUrl = getApiUrl();
@@ -313,7 +338,7 @@ const StoresPage: React.FC = () => {
       
       if (syncResponse.ok) {
         const syncResult = await syncResponse.json();
-        console.log('Sync initiated:', syncResult);
+        // Sync initiated successfully
         
         // Update the toast with progress
         toast.success(`✅ Connected! Imported ${syncResult.data?.products || 0} products, ${syncResult.data?.orders || 0} orders`, { 
@@ -451,8 +476,10 @@ const StoresPage: React.FC = () => {
     try {
       const apiUrl = getApiUrl();
       
-      // Call API to delete store
-      const response = await authService.authenticatedRequest(`${apiUrl}/api/stores/${storeToDelete.id}`);
+      // Call API to delete store using DELETE method
+      const response = await authService.authenticatedRequest(`/api/stores/${storeToDelete.id}`, {
+        method: 'DELETE'
+      });
 
       if (response.ok) {
         const updatedStores = stores.filter(store => store.id !== storeToDelete.id);
