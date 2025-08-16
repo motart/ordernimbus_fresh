@@ -52,9 +52,16 @@ fi
 # AWS Account ID
 AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text 2>/dev/null || echo "")
 
-# Shopify credentials (can be overridden via environment variables)
-SHOPIFY_CLIENT_ID="${SHOPIFY_CLIENT_ID:-d4599bc60ea67dabd0be7fccc10476d9}"
-SHOPIFY_CLIENT_SECRET="${SHOPIFY_CLIENT_SECRET:-0c9bd606f75d8bebc451115f996a17bc}"
+# Shopify credentials must be provided via environment variables or AWS Secrets Manager
+# DO NOT hardcode credentials here for security reasons
+SHOPIFY_CLIENT_ID="${SHOPIFY_CLIENT_ID:-}"
+SHOPIFY_CLIENT_SECRET="${SHOPIFY_CLIENT_SECRET:-}"
+
+# Check if Shopify credentials are provided
+if [ -z "$SHOPIFY_CLIENT_ID" ] || [ -z "$SHOPIFY_CLIENT_SECRET" ]; then
+    print_warning "Shopify credentials not provided. Set SHOPIFY_CLIENT_ID and SHOPIFY_CLIENT_SECRET environment variables."
+    print_warning "Shopify integration will need to be configured manually in AWS Secrets Manager."
+fi
 
 # Set stack name properly - avoid double "production"
 if [ "$ENVIRONMENT" = "production" ]; then
