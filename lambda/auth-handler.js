@@ -4,6 +4,7 @@
 const AWS = require('aws-sdk');
 const cognito = new AWS.CognitoIdentityServiceProvider();
 const dynamodb = new AWS.DynamoDB.DocumentClient();
+const { createSubscription } = require('./subscription-manager');
 
 exports.handler = async (event) => {
   console.log('Auth Event:', JSON.stringify(event));
@@ -188,7 +189,7 @@ async function handleLogin(body) {
 }
 
 async function handleRegister(body) {
-  const { email, password, companyName, firstName, lastName } = body;
+  const { email, password, companyName, firstName, lastName, planId = 'starter' } = body;
   
   if (!email || !password || !companyName) {
     return {
@@ -310,6 +311,23 @@ async function handleRegister(body) {
       }).promise();
     }
     
+    // Create subscription for the new user
+    let subscription = null;
+    try {
+      subscription = await createSubscription(createUserResult.User.Username, planId, {
+        source: 'registration',
+        metadata: {
+          companyId,
+          companyName: sanitizedCompanyName,
+          adminEmail: sanitizedEmail
+        }
+      });
+    } catch (subError) {
+      console.error('Failed to create subscription:', subError);
+      // Don't fail registration if subscription creation fails
+      // User can be prompted to select plan after login
+    }
+    
     return {
       statusCode: 200,
       body: {
@@ -317,7 +335,12 @@ async function handleRegister(body) {
         message: 'Registration successful',
         userId: createUserResult.User.Username,
         companyId: companyId,
-        companyName: sanitizedCompanyName
+        companyName: sanitizedCompanyName,
+        subscription: subscription ? {
+          planId: subscription.planId,
+          status: subscription.status,
+          trialEnd: subscription.trialEnd
+        } : null
       }
     };
   } catch (error) {

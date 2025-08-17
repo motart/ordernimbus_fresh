@@ -1,0 +1,112 @@
+{
+  "plans": [
+    {
+      "id": "starter",
+      "name": "Starter",
+      "description": "Perfect for small businesses getting started",
+      "price": {
+        "monthly": 29,
+        "annual": 290,
+        "currency": "USD"
+      },
+      "features": [
+        "Up to 1,000 products",
+        "Basic sales forecasting",
+        "1 store connection",
+        "Email support",
+        "Monthly reports",
+        "Basic analytics dashboard"
+      ],
+      "limits": {
+        "products": 1000,
+        "stores": 1,
+        "users": 2,
+        "apiCallsPerMonth": 10000,
+        "forecastHorizonDays": 30
+      },
+      "trial": {
+        "enabled": true,
+        "durationDays": 14
+      }
+    },
+    {
+      "id": "professional",
+      "name": "Professional",
+      "description": "For growing businesses with advanced needs",
+      "price": {
+        "monthly": 79,
+        "annual": 790,
+        "currency": "USD"
+      },
+      "features": [
+        "Up to 10,000 products",
+        "Advanced AI-powered forecasting",
+        "5 store connections",
+        "Priority email support",
+        "Weekly reports",
+        "Advanced analytics dashboard",
+        "Custom forecasting models",
+        "API access"
+      ],
+      "limits": {
+        "products": 10000,
+        "stores": 5,
+        "users": 10,
+        "apiCallsPerMonth": 100000,
+        "forecastHorizonDays": 90
+      },
+      "trial": {
+        "enabled": true,
+        "durationDays": 14
+      },
+      "popular": true
+    },
+    {
+      "id": "enterprise",
+      "name": "Enterprise",
+      "description": "Unlimited power for large operations",
+      "price": {
+        "monthly": 299,
+        "annual": 2990,
+        "currency": "USD"
+      },
+      "features": [
+        "Unlimited products",
+        "Enterprise AI forecasting",
+        "Unlimited store connections",
+        "24/7 phone & email support",
+        "Real-time reports",
+        "Custom analytics dashboard",
+        "Custom ML models",
+        "Unlimited API access",
+        "Dedicated account manager",
+        "Custom integrations",
+        "SLA guarantee"
+      ],
+      "limits": {
+        "products": -1,
+        "stores": -1,
+        "users": -1,
+        "apiCallsPerMonth": -1,
+        "forecastHorizonDays": 365
+      },
+      "trial": {
+        "enabled": true,
+        "durationDays": 14
+      }
+    }
+  ],
+  "trialPolicy": {
+    "defaultDurationDays": 14,
+    "requiresPaymentMethod": false,
+    "autoConvertToFree": false,
+    "reminderDays": [7, 3, 1],
+    "features": "full_access"
+  },
+  "billing": {
+    "gracePeriodDays": 7,
+    "retryAttempts": 3,
+    "dunningEmails": true,
+    "autoDowngrade": false
+  }
+}

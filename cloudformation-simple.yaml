@@ -58,6 +58,8 @@ Resources:
                 Resource: 
                   - !GetAtt MainTable.Arn
                   - !Sub '${MainTable.Arn}/index/*'
+                  - !GetAtt SubscriptionTable.Arn
+                  - !Sub '${SubscriptionTable.Arn}/index/*'
         - PolicyName: SecretsManagerAccess
           PolicyDocument:
             Version: '2012-10-17'
@@ -145,7 +147,7 @@ Resources:
       IdTokenValidity: 24
       RefreshTokenValidity: 30
 
-  # ==================== SINGLE DYNAMODB TABLE ====================
+  # ==================== DYNAMODB TABLES ====================
   MainTable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -161,6 +163,44 @@ Resources:
           KeyType: HASH
         - AttributeName: sk
           KeyType: RANGE
+  
+  # Subscription Management Table
+  SubscriptionTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: 'ordernimbus-production-subscriptions'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: subscriptionId
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: planId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: subscriptionId
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: StatusIndex
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+            - AttributeName: userId
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: PlanIndex
+          KeySchema:
+            - AttributeName: planId
+              KeyType: HASH
+            - AttributeName: userId
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
 
   # ==================== S3 BUCKET ====================
   FrontendBucket:
