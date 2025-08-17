@@ -4,16 +4,30 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 🔒 UNSHAKEABLE RULES - MANDATORY FOR ALL CHANGES
 
-### RULE #1: MANDATORY WORKFLOW FOR EVERY TASK
-**FOR EVERY PIECE OF WORK, WITHOUT EXCEPTION:**
+### RULE #1: TEST-DRIVEN DEVELOPMENT (TDD) IS MANDATORY
+**FOR EVERY FEATURE, WITHOUT EXCEPTION:**
+1. **WRITE TESTS FIRST** - Before writing ANY feature code
+2. **RUN TESTS** - Verify they fail (Red phase)
+3. **WRITE MINIMAL CODE** - Just enough to make tests pass (Green phase)
+4. **REFACTOR** - Improve code while keeping tests green
+5. **VERIFY ALL TESTS** - Run full test suite before committing
+
+**TDD WORKFLOW FOR EVERY TASK:**
 1. **CREATE** new branch from `develop` branch
-2. **IMPLEMENT** all changes in the feature branch
-3. **DEPLOY** to production to verify it works
-4. **CREATE** automergeable PR to `develop` with `gh pr merge <PR> --auto --squash`
-5. **IF TESTS FAIL**: Find what broke → Fix it → Start loop again
-6. **LOOP** until all tests pass and PR is ready to merge
+2. **WRITE FAILING TESTS** for the feature/fix
+3. **RUN TESTS LOCALLY** with `npm test` - ensure they fail appropriately
+4. **IMPLEMENT** code to make tests pass
+5. **RUN ALL TESTS** with `npm test` - ensure nothing breaks
+6. **COMMIT** only when ALL tests pass locally
+7. **CREATE** automergeable PR to `develop` with `gh pr merge <PR> --auto --squash`
+8. **IF PR TESTS FAIL**: Fix immediately before any other work
+
+**CRITICAL TDD RULES:**
+- **NEVER** write feature code without tests written first
+- **NEVER** commit code that breaks existing tests
+- **ALWAYS** run `npm test` before EVERY commit
+- **ALWAYS** fix test failures immediately - they block everything
 - **NO EXCEPTIONS** - This workflow is MANDATORY for ALL tasks
-- **CRITICAL**: All PRs MUST have auto-merge enabled immediately after creation!
 
 ### RULE #2: ALL CHANGES CREATE PR TO DEVELOP AUTOMATICALLY
 - **NEVER** commit directly to any protected branch
@@ -32,6 +46,26 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Branch protection rules prevent bypassing
 - Git hooks enforce locally
 - **See [UNSHAKEABLE_RULES.md](./UNSHAKEABLE_RULES.md) for complete details**
+
+### RULE #5: PREVENTING TEST FAILURES - MANDATORY PRACTICES
+**BEFORE ADDING ANY NEW FEATURE:**
+1. **CHECK EXISTING TESTS** - Run `npm test` to ensure clean baseline
+2. **INSTALL DEPENDENCIES** - If adding new packages, install in BOTH locations:
+   - Root: `npm install <package>`
+   - Lambda: `cd lambda && npm install <package>`
+   - Frontend: `cd app/frontend && npm install <package>`
+3. **MOCK EXTERNAL SERVICES** - Always mock AWS, Stripe, and other external APIs in tests
+4. **TEST ISOLATION** - Each test must be independent and not affect others
+5. **CLEANUP** - Always restore mocks and clear test data in `afterEach`
+
+**COMMON TEST FAILURE CAUSES TO PREVENT:**
+- Missing npm packages in test environment → Install in all needed directories
+- AWS SDK not properly mocked → Use AWS.mock() before requiring modules
+- Stripe or external APIs not mocked → Create proper stubs
+- Tests depending on real databases → Always use mocks
+- Module cache issues → Clear require cache in beforeEach
+- Async operations not handled → Use async/await properly
+- Test data conflicts → Use unique IDs for each test
 
 ## Custom Instructions & Observations for Claude
 
