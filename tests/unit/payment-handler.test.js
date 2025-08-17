@@ -7,17 +7,20 @@
 
 const { expect } = require('chai');
 const sinon = require('sinon');
-const AWS = require('aws-sdk-mock');
+const proxyquire = require('proxyquire');
 
 describe('Payment Handler Unit Tests', () => {
   let paymentHandler;
   let stripeStub;
   let dynamodbStub;
   let ssmStub;
+  let AWSStub;
   
   beforeEach(() => {
-    // Clear module cache
-    delete require.cache[require.resolve('../../lambda/payment-handler')];
+    // Set test environment
+    process.env.NODE_ENV = 'test';
+    process.env.MAIN_TABLE_NAME = 'test-main';
+    process.env.AWS_REGION = 'us-west-1';
     
     // Mock Stripe
     stripeStub = {
@@ -64,9 +67,8 @@ describe('Payment Handler Unit Tests', () => {
       }
     };
     
-    // Mock require for stripe module
+    // Mock stripe module function
     const stripeModule = sinon.stub().returns(stripeStub);
-    require.cache[require.resolve('stripe')] = { exports: stripeModule };
     
     // Mock DynamoDB
     dynamodbStub = {
@@ -74,10 +76,6 @@ describe('Payment Handler Unit Tests', () => {
       get: sinon.stub().returns({ promise: () => Promise.resolve({ Item: null }) }),
       update: sinon.stub().returns({ promise: () => Promise.resolve() })
     };
-    
-    AWS.mock('DynamoDB.DocumentClient', function() {
-      return dynamodbStub;
-    });
     
     // Mock SSM
     ssmStub = {
@@ -93,23 +91,26 @@ describe('Payment Handler Unit Tests', () => {
       })
     };
     
-    AWS.mock('SSM', function() {
-      return ssmStub;
-    });
+    // Create AWS stub
+    AWSStub = {
+      DynamoDB: {
+        DocumentClient: sinon.stub().returns(dynamodbStub)
+      },
+      SystemsManager: sinon.stub().returns(ssmStub)
+    };
     
-    // Mock SystemsManager separately for the payment handler
-    AWS.mock('SystemsManager', function() {
-      return ssmStub;
+    // Use proxyquire to load the module with stubbed dependencies
+    paymentHandler = proxyquire('../../lambda/payment-handler', {
+      'aws-sdk': AWSStub,
+      'stripe': stripeModule
     });
-    
-    // Import module after mocks
-    paymentHandler = require('../../lambda/payment-handler');
   });
   
   afterEach(() => {
-    AWS.restore();
     sinon.restore();
-    delete require.cache[require.resolve('stripe')];
+    delete process.env.NODE_ENV;
+    delete process.env.MAIN_TABLE_NAME;
+    delete process.env.AWS_REGION;
   });
   
   describe('handler', () => {
