@@ -192,10 +192,10 @@ const SubscriptionManager: React.FC = () => {
 
   const getStatusBadge = (status: string) => {
     const badges = {
-      trialing: { icon: <FaExclamationCircle size={16} />, text: 'Trial', class: 'trial' },
-      active: { icon: <FaCheckCircle size={16} />, text: 'Active', class: 'active' },
-      cancelled: { icon: <FaExclamationCircle size={16} />, text: 'Cancelled', class: 'cancelled' },
-      trial_expired: { icon: <FaExclamationCircle size={16} />, text: 'Trial Expired', class: 'expired' }
+      trialing: { icon: React.createElement(FaExclamationCircle as any, { size: 16 }), text: 'Trial', class: 'trial' },
+      active: { icon: React.createElement(FaCheckCircle as any, { size: 16 }), text: 'Active', class: 'active' },
+      cancelled: { icon: React.createElement(FaExclamationCircle as any, { size: 16 }), text: 'Cancelled', class: 'cancelled' },
+      trial_expired: { icon: React.createElement(FaExclamationCircle as any, { size: 16 }), text: 'Trial Expired', class: 'expired' }
     };
     
     const badge = badges[status as keyof typeof badges] || badges.active;
@@ -209,13 +209,13 @@ const SubscriptionManager: React.FC = () => {
   };
 
   const getUsageIcon = (key: string) => {
-    const icons: Record<string, JSX.Element> = {
-      products: <FaBox size={16} />,
-      stores: <FaDatabase size={16} />,
-      users: <FaUsers size={16} />,
-      apiCallsPerMonth: <FaChartLine size={16} />
+    const icons: Record<string, React.ReactElement> = {
+      products: React.createElement(FaBox as any, { size: 16 }),
+      stores: React.createElement(FaDatabase as any, { size: 16 }),
+      users: React.createElement(FaUsers as any, { size: 16 }),
+      apiCallsPerMonth: React.createElement(FaChartLine as any, { size: 16 })
     };
-    return icons[key] || <FaDatabase size={16} />;
+    return icons[key] || React.createElement(FaDatabase as any, { size: 16 });
   };
 
   const getUsageLabel = (key: string) => {
@@ -283,7 +283,7 @@ const SubscriptionManager: React.FC = () => {
         <h2>Subscription & Billing</h2>
         {subscription?.paymentMethodRequired && (
           <div className="payment-alert">
-            <FaExclamationCircle size={20} />
+            {React.createElement(FaExclamationCircle as any, { size: 20 })}
             <span>Payment method required to continue after trial</span>
             <button className="add-payment-btn">Add Payment Method</button>
           </div>
@@ -303,7 +303,7 @@ const SubscriptionManager: React.FC = () => {
               {/* Trial Information */}
               {subscription.status === 'trialing' && subscription.trialEnd && (
                 <div className="trial-info">
-                  <FaCalendar size={16} />
+                  {React.createElement(FaCalendar as any, { size: 16 })}
                   <span>Trial ends on {formatDate(subscription.trialEnd)}</span>
                   <span className="days-remaining">
                     ({getDaysRemaining(subscription.trialEnd)} days remaining)
@@ -314,7 +314,7 @@ const SubscriptionManager: React.FC = () => {
               {/* Billing Information */}
               {subscription.status === 'active' && (
                 <div className="billing-info">
-                  <FaCreditCard size={16} />
+                  {React.createElement(FaCreditCard as any, { size: 16 })}
                   <span>Next billing date: {formatDate(subscription.currentPeriodEnd)}</span>
                   <span className="billing-cycle">
                     ({subscription.billingCycle})
@@ -330,7 +330,7 @@ const SubscriptionManager: React.FC = () => {
                     className="change-plan-btn"
                     onClick={() => setShowPlanSelector(true)}
                   >
-                    <FaArrowUp size={16} />
+                    {React.createElement(FaArrowUp as any, { size: 16 })}
                     Change Plan
                   </button>
                   <button 
@@ -389,7 +389,7 @@ const SubscriptionManager: React.FC = () => {
             <div className="features-list">
               {subscription.features.map((feature, index) => (
                 <div key={index} className="feature-item">
-                  <FaCheckCircle size={16} className="feature-check" />
+                  {React.createElement(FaCheckCircle as any, { size: 16, className: "feature-check" })}
                   <span>{feature}</span>
                 </div>
               ))}
@@ -398,7 +398,7 @@ const SubscriptionManager: React.FC = () => {
         </>
       ) : (
         <div className="no-subscription">
-          <FaExclamationCircle size={48} />
+          {React.createElement(FaExclamationCircle as any, { size: 48 })}
           <h3>No Active Subscription</h3>
           <p>Choose a plan to get started with OrderNimbus</p>
           <button 

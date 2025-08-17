@@ -7,7 +7,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { FaCheck, FaTimes } from 'react-icons/fa';
+import { FaCheck } from 'react-icons/fa';
 import './PlanSelector.css';
 
 interface Plan {
@@ -176,7 +176,7 @@ const PlanSelector: React.FC<PlanSelectorProps> = ({
                 <ul>
                   {plan.features.map((feature, index) => (
                     <li key={index} className="feature-item">
-                      <FaCheck className="feature-icon" size={16} />
+                      {React.createElement(FaCheck as any, { className: "feature-icon", size: 16 })}
                       <span>{feature}</span>
                     </li>
                   ))}
@@ -193,7 +193,7 @@ const PlanSelector: React.FC<PlanSelectorProps> = ({
               >
                 {isSelected ? (
                   <>
-                    <FaCheck size={18} />
+                    {React.createElement(FaCheck as any, { size: 18 })}
                     Selected
                   </>
                 ) : (
