@@ -338,7 +338,7 @@ jobs:
         continue-on-error: true
 
   all-tests-passed:
-    name: All Tests Passed
+    name: All Tests Pass
     needs: [unit-tests, backend-lambda-tests, frontend-tests, security-tests, e2e-selenium-tests, integration-tests, code-quality]
     runs-on: ubuntu-latest
     if: always()
