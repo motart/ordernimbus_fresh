@@ -13,7 +13,8 @@ const {
   cancelSubscription,
   checkFeatureAccess,
   getUsageStats,
-  getAvailablePlans
+  getAvailablePlans,
+  checkTrialAndPaymentStatus
 } = require('./subscription-manager');
 
 exports.handler = async (event) => {
@@ -145,6 +146,21 @@ exports.handler = async (event) => {
           };
         }
         response = await handleCheckFeatureAccess(userId, body);
+        break;
+        
+      case 'trial-status':
+        // GET /api/subscription/trial-status - Check trial and payment status
+        if (!userId) {
+          return {
+            statusCode: 401,
+            headers: corsHeaders,
+            body: JSON.stringify({
+              success: false,
+              error: 'Unauthorized: User ID required'
+            })
+          };
+        }
+        response = await handleCheckTrialStatus(userId);
         break;
         
       default:
@@ -384,6 +400,29 @@ async function handleCheckFeatureAccess(userId, body) {
       body: {
         success: false,
         error: 'Failed to check feature access'
+      }
+    };
+  }
+}
+
+async function handleCheckTrialStatus(userId) {
+  try {
+    const status = await checkTrialAndPaymentStatus(userId);
+    
+    return {
+      statusCode: 200,
+      body: {
+        success: true,
+        ...status
+      }
+    };
+  } catch (error) {
+    console.error('Check trial status error:', error);
+    return {
+      statusCode: 500,
+      body: {
+        success: false,
+        error: 'Failed to check trial status'
       }
     };
   }
