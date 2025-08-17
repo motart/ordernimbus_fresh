@@ -10,9 +10,7 @@ const AWS = require('aws-sdk');
 const stripe = require('stripe');
 
 const dynamodb = new AWS.DynamoDB.DocumentClient();
-const ssm = new AWS.Systems
-
-Manager();
+const ssm = new AWS.SystemsManager();
 
 // Get Stripe configuration from SSM Parameter Store
 let stripeClient;
