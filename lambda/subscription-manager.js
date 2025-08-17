@@ -347,6 +347,139 @@ function getAvailablePlans() {
   }));
 }
 
+/**
+ * Check if trial has expired and payment method is required
+ * @param {string} userId - The authenticated user ID
+ * @returns {Object} Trial status and payment requirements
+ * 
+ * Security: Enforces payment method requirement when trial expires
+ * UX: Provides clear status for frontend to show appropriate prompts
+ */
+async function checkTrialAndPaymentStatus(userId) {
+  const subscription = await getSubscription(userId);
+  
+  if (!subscription) {
+    return {
+      hasSubscription: false,
+      requiresPaymentMethod: true,
+      message: 'No active subscription found'
+    };
+  }
+  
+  const now = new Date();
+  const trialEnd = subscription.trialEnd ? new Date(subscription.trialEnd) : null;
+  const daysRemaining = trialEnd ? Math.ceil((trialEnd - now) / (1000 * 60 * 60 * 24)) : 0;
+  
+  // Check payment method from payment service
+  const hasPaymentMethod = await checkUserHasPaymentMethod(userId);
+  
+  if (subscription.status === 'trialing') {
+    if (daysRemaining <= 0) {
+      // Trial has expired
+      if (!hasPaymentMethod) {
+        // Update subscription status to trial_expired
+        await dynamodb.update({
+          TableName: SUBSCRIPTION_TABLE,
+          Key: { userId },
+          UpdateExpression: 'SET #status = :status, paymentMethodRequired = :required, updatedAt = :now',
+          ExpressionAttributeNames: { '#status': 'status' },
+          ExpressionAttributeValues: {
+            ':status': 'trial_expired',
+            ':required': true,
+            ':now': now.toISOString()
+          }
+        }).promise();
+        
+        return {
+          status: 'trial_expired',
+          requiresPaymentMethod: true,
+          trialEnded: true,
+          daysRemaining: 0,
+          message: 'Your trial has expired. Please add a payment method to continue.'
+        };
+      } else {
+        // Convert to active subscription
+        await dynamodb.update({
+          TableName: SUBSCRIPTION_TABLE,
+          Key: { userId },
+          UpdateExpression: 'SET #status = :status, updatedAt = :now',
+          ExpressionAttributeNames: { '#status': 'status' },
+          ExpressionAttributeValues: {
+            ':status': 'active',
+            ':now': now.toISOString()
+          }
+        }).promise();
+        
+        return {
+          status: 'active',
+          requiresPaymentMethod: false,
+          hasPaymentMethod: true,
+          message: 'Subscription is active'
+        };
+      }
+    } else if (daysRemaining <= 3) {
+      // Trial ending soon
+      return {
+        status: 'trialing',
+        trialEnding: true,
+        daysRemaining,
+        requiresPaymentMethod: !hasPaymentMethod,
+        recommendAddPayment: !hasPaymentMethod,
+        message: `Your trial ends in ${daysRemaining} day${daysRemaining === 1 ? '' : 's'}. ${!hasPaymentMethod ? 'Add a payment method to avoid service interruption.' : ''}`
+      };
+    } else {
+      // Trial active
+      return {
+        status: 'trialing',
+        daysRemaining,
+        requiresPaymentMethod: false,
+        hasPaymentMethod,
+        message: `Trial active with ${daysRemaining} days remaining`
+      };
+    }
+  } else if (subscription.status === 'trial_expired') {
+    return {
+      status: 'trial_expired',
+      requiresPaymentMethod: !hasPaymentMethod,
+      hasPaymentMethod,
+      message: hasPaymentMethod ? 'Please confirm subscription to continue' : 'Trial expired. Add payment method to continue.'
+    };
+  } else {
+    // Active, cancelled, or other status
+    return {
+      status: subscription.status,
+      requiresPaymentMethod: false,
+      hasPaymentMethod,
+      message: `Subscription status: ${subscription.status}`
+    };
+  }
+}
+
+/**
+ * Check if user has a payment method on file
+ * @param {string} userId - The authenticated user ID
+ * @returns {boolean} Whether user has payment method
+ * 
+ * Security: Queries payment service securely
+ */
+async function checkUserHasPaymentMethod(userId) {
+  try {
+    // Check if user has Stripe customer record with payment method
+    const result = await dynamodb.get({
+      TableName: process.env.MAIN_TABLE_NAME || 'ordernimbus-production-main',
+      Key: {
+        PK: `USER#${userId}`,
+        SK: 'STRIPE_CUSTOMER'
+      }
+    }).promise();
+    
+    return !!(result.Item && result.Item.defaultPaymentMethodId);
+  } catch (error) {
+    console.error('Error checking payment method:', error);
+    return false;
+  }
+}
+
 module.exports = {
   createSubscription,
   getSubscription,
@@ -355,5 +488,7 @@ module.exports = {
   checkFeatureAccess,
   getUsageStats,
   sendTrialReminder,
-  getAvailablePlans
+  getAvailablePlans,
+  checkTrialAndPaymentStatus,
+  checkUserHasPaymentMethod
 };

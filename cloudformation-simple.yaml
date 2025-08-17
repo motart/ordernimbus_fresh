@@ -19,6 +19,11 @@ Parameters:
       - 'true'
       - 'false'
     Description: Enable CloudFront distribution (requires certificate in us-east-1)
+  
+  LambdaCodeBucket:
+    Type: String
+    Default: 'ordernimbus-lambda-code'
+    Description: S3 bucket containing Lambda function code
 
 Conditions:
   CreateApiDNS: !Not [!Equals [!Ref HostedZoneId, '']]
@@ -973,6 +978,85 @@ Resources:
               };
             }
           };
+
+  # ==================== PAYMENT LAMBDA FUNCTION ====================
+  PaymentLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: 'ordernimbus-production-payment'
+      Runtime: nodejs16.x
+      Handler: payment-handler.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 30
+      Environment:
+        Variables:
+          MAIN_TABLE_NAME: !Ref MainTable
+          ENVIRONMENT: production
+      Code:
+        S3Bucket: !Ref LambdaCodeBucket
+        S3Key: 'lambda/payment-handler.zip'
+
+  # Payment Lambda Permission for API Gateway
+  PaymentLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref PaymentLambda
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'
+
+  # Payment Lambda Integration
+  PaymentLambdaIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref ApiGateway
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${PaymentLambda}'
+      IntegrationMethod: POST
+      PayloadFormatVersion: '2.0'
+
+  # Payment API Routes
+  ApiPaymentSetupRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: 'POST /api/payment/setup-intent'
+      Target: !Sub 'integrations/${PaymentLambdaIntegration}'
+
+  ApiPaymentMethodsGetRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: 'GET /api/payment/methods'
+      Target: !Sub 'integrations/${PaymentLambdaIntegration}'
+
+  ApiPaymentMethodsPutRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: 'PUT /api/payment/methods'
+      Target: !Sub 'integrations/${PaymentLambdaIntegration}'
+
+  ApiPaymentMethodsDeleteRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: 'DELETE /api/payment/methods'
+      Target: !Sub 'integrations/${PaymentLambdaIntegration}'
+
+  ApiPaymentSubscriptionRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: 'POST /api/payment/subscription'
+      Target: !Sub 'integrations/${PaymentLambdaIntegration}'
+
+  ApiPaymentWebhookRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: 'POST /api/payment/webhook'
+      Target: !Sub 'integrations/${PaymentLambdaIntegration}'
 
   # ==================== API GATEWAY (Simplified) ====================
   ApiGateway:
