@@ -33,9 +33,9 @@ describe('Subscription and Billing Integration Tests', () => {
         return { promise: () => Promise.resolve() };
       },
       get: function(params) {
-        const key = `${params.Key.PK || params.Key.userId}#${params.Key.SK || ''}`;
+        const key = `${params.Key.PK || params.Key.userId}#${params.Key.SK || params.Key.subscriptionId || ''}`;
         const item = this.items.get(key);
-        return { promise: () => Promise.resolve({ Item: item }) };
+        return { promise: () => Promise.resolve({ Item: item || null }) };
       },
       query: function(params) {
         const prefix = params.ExpressionAttributeValues[':userId'] || params.ExpressionAttributeValues[':pk'];
@@ -46,9 +46,17 @@ describe('Subscription and Billing Integration Tests', () => {
       },
       update: function(params) {
         const key = `${params.Key.PK || params.Key.userId}#${params.Key.SK || params.Key.subscriptionId}`;
-        const item = this.items.get(key);
+        let item = this.items.get(key);
         if (item) {
           // Apply updates
+          Object.keys(params.ExpressionAttributeValues).forEach(key => {
+            const fieldName = key.substring(1); // Remove ':'
+            item[fieldName] = params.ExpressionAttributeValues[key];
+          });
+          this.items.set(key, item);
+        } else {
+          // Create new item if it doesn't exist (DynamoDB behavior)
+          item = { ...params.Key };
           Object.keys(params.ExpressionAttributeValues).forEach(key => {
             const fieldName = key.substring(1); // Remove ':'
             item[fieldName] = params.ExpressionAttributeValues[key];
