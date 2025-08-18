@@ -79,6 +79,7 @@
     "selenium-webdriver": "^4.35.0",
     "sinon": "^15.2.0",
     "source-map-support": "^0.5.21",
+    "stripe": "^14.0.0",
     "ts-node": "^10.9.0",
     "typescript": "^5.0.0"
   },
